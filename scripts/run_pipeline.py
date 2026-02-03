@@ -7,6 +7,7 @@ steps = [
     ["python", "scripts/build_index.py"],
     ["python", "scripts/download_drive.py"],
     ["python", "scripts/make_manifest.py"],
+    ["python", "scripts/run_inference.py"],
     ["python", "scripts/extract_metadata.py"],
     ["python", "scripts/make_output.py"],
 ]
