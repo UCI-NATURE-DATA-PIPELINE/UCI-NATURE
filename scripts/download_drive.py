@@ -1,4 +1,6 @@
-# downloads up to MAX_DOWNLOADS images from Google drive folder into data/staging/
+# downloads images using drive_index.csv as the source
+# CHANGE: now reads from drive_index.csv instead of doing its own Drive API query
+# This allows it to download files from nested folders that build_index.py already found
 
 import csv
 import io
@@ -11,7 +13,9 @@ from googleapiclient.http import MediaIoBaseDownload
 
 # config 
 SERVICE_ACCOUNT_FILE = "secrets/inf191a-uci-nature-sa.json"   # key file for service account auth
-FOLDER_ID = "0ACQBvZlfUN2CUk9PVA"               # folder to pull from 
+
+# CHANGE: now reads from drive_index.csv instead of querying Drive directly
+DRIVE_INDEX = Path("data/outputs/drive_index.csv")            # source of file IDs to download
 
 OUT_DIR = Path("data/staging")                                # where images get downloaded locally
 LOG_CSV = Path("data/outputs/download_log.csv")               # download log
@@ -22,9 +26,6 @@ MAX_DOWNLOADS = 300
 # so downloads can continue across multiple runs without restarting
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]    # read only access
-
-# only download these file names
-IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff")
 
 
 def make_local_name(file_id: str, original_name: str) -> str:
@@ -42,6 +43,9 @@ def log(writer, file_name: str, file_id: str, status: str, error: str = "") -> N
 
 
 def main() -> None:
+    if not DRIVE_INDEX.exists():
+        raise FileNotFoundError("drive_index.csv not found. Run build_index.py first.")
+
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     LOG_CSV.parent.mkdir(parents=True, exist_ok=True)
 
@@ -51,12 +55,10 @@ def main() -> None:
 
     # create API client
     drive = build("drive", "v3", credentials=creds)
-    query = f"'{FOLDER_ID}' in parents and trashed = false"
 
     downloaded = 0
-    page_token = None
 
-    print("Listing files from Drive folder...")
+    print(f"Reading file list from {DRIVE_INDEX}...")
 
     new_file = not LOG_CSV.exists()
     with open(LOG_CSV, "a", newline="", encoding="utf-8") as lf:
@@ -65,23 +67,15 @@ def main() -> None:
         )
         if new_file:
             writer.writeheader()
-        while True:
-            resp = drive.files().list(
-                q=query,
-                fields="nextPageToken, files(id,name,mimeType)",
-                pageSize=200,
-                pageToken=page_token,
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True,
-            ).execute()
 
-            for item in resp.get("files", []):
-                original_name = item.get("name", "")
-                file_id = item.get("id", "")
-
-                # skip non-image files
-                if not original_name.lower().endswith(IMAGE_EXTS):
-                    continue
+        # CHANGE: Read from drive_index.csv instead of calling Drive API list()
+        # This gives us all files from nested folders that build_index.py already crawled
+        with open(DRIVE_INDEX, "r", encoding="utf-8") as idx:
+            reader = csv.DictReader(idx)
+            
+            for row in reader:
+                file_id = row["file_id"]
+                original_name = row["file_name"]
 
                 # includes file_id to prevent collisions
                 local_name = make_local_name(file_id, original_name)
@@ -119,11 +113,6 @@ def main() -> None:
                     print(f"Done. Downloaded {downloaded} images to {OUT_DIR}")
                     print(f"Log saved to {LOG_CSV}")
                     return
-
-            # next page
-            page_token = resp.get("nextPageToken")
-            if not page_token:
-                break
 
     print(f"Done. Downloaded {downloaded} images to {OUT_DIR}")
     print(f"Log saved to {LOG_CSV}")
