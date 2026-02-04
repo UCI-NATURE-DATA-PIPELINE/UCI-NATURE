@@ -4,12 +4,14 @@
 
 import csv
 import io
+import time
 from datetime import datetime
 from pathlib import Path
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.errors import HttpError
 
 # config 
 SERVICE_ACCOUNT_FILE = "secrets/inf191a-uci-nature-sa.json"   # key file for service account auth
@@ -19,11 +21,11 @@ DRIVE_INDEX = Path("data/outputs/drive_index.csv")            # source of file I
 
 OUT_DIR = Path("data/staging")                                # where images get downloaded locally
 LOG_CSV = Path("data/outputs/download_log.csv")               # download log
+PROGRESS_FILE = Path("data/outputs/.download_progress.csv")   # NEW: tracks download state
 
 MAX_DOWNLOADS = 300
-# this prevents us from clearing the full backlog
-# we should consider removing or increasing this cap and adding a resume mechanism
-# so downloads can continue across multiple runs without restarting
+MAX_RETRIES = 3           # NEW: retry failed downloads up to 3 times
+RETRY_DELAY = 2           # NEW: initial delay in seconds (exponential backoff)
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]    # read only access
 
@@ -41,6 +43,113 @@ def log(writer, file_name: str, file_id: str, status: str, error: str = "") -> N
         "error": error,
     })
 
+def load_already_downloaded() -> set:
+    """Load set of file_ids that were already successfully downloaded"""
+    downloaded = set()
+    
+    # Check progress file first
+    if PROGRESS_FILE.exists():
+        with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("status") == "success":
+                    downloaded.add(row.get("file_id", ""))
+    
+    # Also check existing files in staging directory
+    if OUT_DIR.exists():
+        for path in OUT_DIR.iterdir():
+            if path.is_file() and "__" in path.name:
+                file_id = path.name.split("__")[0]
+                downloaded.add(file_id)
+    
+    return downloaded
+
+
+def save_progress(file_id: str, file_name: str, status: str, retry_count: int = 0):
+    """Save download progress to resume file"""
+    PROGRESS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Load existing progress
+    progress = {}
+    if PROGRESS_FILE.exists():
+        with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                progress[row["file_id"]] = row
+    
+    # Update with new status
+    progress[file_id] = {
+        "file_id": file_id,
+        "file_name": file_name,
+        "status": status,
+        "retry_count": retry_count,
+        "last_attempt": datetime.now().isoformat(timespec="seconds"),
+    }
+    
+    # Write back
+    with open(PROGRESS_FILE, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f, fieldnames=["file_id", "file_name", "status", "retry_count", "last_attempt"]
+        )
+        writer.writeheader()
+        writer.writerows(progress.values())
+
+
+def download_file_with_retry(drive, file_id: str, original_name: str, out_path: Path, 
+                             log_writer) -> bool:
+    """Download a single file with retry logic"""
+    
+    for attempt in range(MAX_RETRIES):
+        try:
+            request = drive.files().get_media(
+                fileId=file_id,
+                supportsAllDrives=True
+            )
+
+            with io.FileIO(out_path, "wb") as fh:
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    _, done = downloader.next_chunk()
+
+            # Success!
+            save_progress(file_id, original_name, "success", attempt)
+            log(log_writer, original_name, file_id, "success")
+            return True
+
+        except HttpError as e:
+            error_msg = f"HttpError {e.resp.status}: {e.error_details}"
+            
+            # Check if we should retry
+            if attempt < MAX_RETRIES - 1:
+                # Exponential backoff: 2s, 4s, 8s
+                delay = RETRY_DELAY * (2 ** attempt)
+                print(f"  Attempt {attempt + 1} failed: {error_msg}")
+                print(f"  Retrying in {delay}s...")
+                time.sleep(delay)
+                continue
+            else:
+                # Final attempt failed
+                save_progress(file_id, original_name, "failed", attempt + 1)
+                log(log_writer, original_name, file_id, "fail", error_msg)
+                return False
+
+        except Exception as e:
+            error_msg = repr(e)
+            
+            if attempt < MAX_RETRIES - 1:
+                delay = RETRY_DELAY * (2 ** attempt)
+                print(f"  Attempt {attempt + 1} failed: {error_msg}")
+                print(f"  Retrying in {delay}s...")
+                time.sleep(delay)
+                continue
+            else:
+                save_progress(file_id, original_name, "failed", attempt + 1)
+                log(log_writer, original_name, file_id, "fail", error_msg)
+                return False
+    
+    return False
+
 
 def main() -> None:
     if not DRIVE_INDEX.exists():
@@ -56,7 +165,13 @@ def main() -> None:
     # create API client
     drive = build("drive", "v3", credentials=creds)
 
+    # Load previously downloaded files
+    already_downloaded = load_already_downloaded()
+    print(f"Found {len(already_downloaded)} already downloaded files (will skip)")
+
     downloaded = 0
+    skipped = 0
+    failed = 0
 
     print(f"Reading file list from {DRIVE_INDEX}...")
 
@@ -77,45 +192,45 @@ def main() -> None:
                 file_id = row["file_id"]
                 original_name = row["file_name"]
 
-                # includes file_id to prevent collisions
                 local_name = make_local_name(file_id, original_name)
                 out_path = OUT_DIR / local_name
 
-                # if already downloaded, don't download again
-                if out_path.exists():
-                    log(writer, original_name, file_id, "skip_exists")
+                # Skip if already successfully downloaded
+                if file_id in already_downloaded and out_path.exists():
+                    skipped += 1
+                    if skipped % 50 == 0:
+                        print(f"Skipped {skipped} already-downloaded files...")
                     continue
 
-                try:
-                    # download file content
-                    request = drive.files().get_media(
-                        fileId=file_id,
-                        supportsAllDrives=True
-                    )
-
-                    # bytes to disk
-                    with io.FileIO(out_path, "wb") as fh:
-                        downloader = MediaIoBaseDownload(fh, request)
-                        done = False
-                        while not done:
-                            _, done = downloader.next_chunk()
-
+                # Download with retry
+                success = download_file_with_retry(drive, file_id, original_name, 
+                                                  out_path, writer)
+                
+                if success:
                     downloaded += 1
-                    print(f"Downloaded {downloaded}: {local_name}")
-                    log(writer, original_name, file_id, "success")
+                    print(f"Downloaded {downloaded}/{MAX_DOWNLOADS}: {local_name}")
+                else:
+                    failed += 1
+                    print(f"Failed to download: {local_name}")
 
-                except Exception as e:
-                    # log errors
-                    log(writer, original_name, file_id, "fail", repr(e))
-
-                # stop after MAX_DOWNLOADS files
+                # Stop after MAX_DOWNLOADS successful downloads
                 if downloaded >= MAX_DOWNLOADS:
-                    print(f"Done. Downloaded {downloaded} images to {OUT_DIR}")
-                    print(f"Log saved to {LOG_CSV}")
+                    print(f"\nReached MAX_DOWNLOADS limit.")
+                    print(f"Successfully downloaded: {downloaded}")
+                    print(f"Skipped (already exists): {skipped}")
+                    print(f"Failed: {failed}")
+                    print(f"Files saved to: {OUT_DIR}")
+                    print(f"Log saved to: {LOG_CSV}")
+                    print(f"Progress saved to: {PROGRESS_FILE}")
                     return
 
-    print(f"Done. Downloaded {downloaded} images to {OUT_DIR}")
-    print(f"Log saved to {LOG_CSV}")
+    print(f"\nDownload complete!")
+    print(f"Successfully downloaded: {downloaded}")
+    print(f"Skipped (already exists): {skipped}")
+    print(f"Failed: {failed}")
+    print(f"Files saved to: {OUT_DIR}")
+    print(f"Log saved to: {LOG_CSV}")
+    print(f"Progress saved to: {PROGRESS_FILE}")
 
 
 if __name__ == "__main__":
