@@ -9,6 +9,12 @@ data/outputs/*.json
 data/outputs/*.txt
 data/outputs/.download_progress.csv
 
+# allow small sample data to be committed
+!data/sample/
+!data/sample/**
+!data/sample/images/**
+!data/sample/outputs/**
+
 # python
 __pycache__/
 *.pyc
