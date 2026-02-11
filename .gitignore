@@ -1,15 +1,26 @@
-.venv/
-__pycache__/
-*.pyc
-.DS_Store
-
+# secrets
 secrets/
 *.json
 
+# data 
 data/staging/
-data/outputs/
-data/test_images/
+data/outputs/*.csv
+data/outputs/*.json
+data/outputs/*.txt
+data/outputs/.download_progress.csv
 
-notes/to_do.md
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
 
-*.zip
+# mac
+.DS_Store
+
+# envs
+.env
+.venv
+.conda/
+*.env

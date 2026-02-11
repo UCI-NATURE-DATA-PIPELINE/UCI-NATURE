@@ -10,6 +10,14 @@ Current workflow relies on manual review by student interns. Images accumulate f
 
 Automated pipeline that retrieves images from Google Drive, extracts metadata, detects duplicates, and classifies images as blank or containing animals.
 
+## Recent updates
+
+- Drive indexing is recursive (nested folders included)
+- Downloader reads from `drive_index.csv` and preserves the full Drive folder path locally
+- Resumable downloads via `data/outputs/.download_progress.csv` + skip already-downloaded files
+- Retry logic with exponential backoff for transient Drive/network failures
+- ML output CSV now includes `is_blank` and logs unmatched/failed items to `inference_errors.csv`
+
 ## Pipeline Flow
 
 ```
@@ -135,9 +143,9 @@ python scripts/validate_output.py
 ### 2. download_drive.py
 
 - Downloads images using file IDs from drive_index.csv
-- Preserves file ID in local filename for tracking
-- **Output:** `data/staging/` (images), `data/outputs/download_log.csv`
-- **Features:** Resume support, exponential backoff retry
+- Preserves the Drive folder structure locally and prefixes the filename with `file_id__` for tracking
+- **Output:** `data/staging/` (images), `data/outputs/download_log.csv`, `data/outputs/.download_progress.csv`
+- **Features:** Resume support, exponential backoff retry, optional parallel downloads (thread pool)
 
 ### 3. make_manifest.py
 
@@ -195,8 +203,7 @@ To populate animal/blank classification:
 1. **Run MegaDetector** on downloaded images:
 
 ```bash
-# Using MegaDetector (run separately)
-python run_detector.py data/staging/ data/outputs/md_results.json
+python scripts/ml/run_megadetector.py
 ```
 
 2. **Process results:**
@@ -262,7 +269,7 @@ Edit these values in the scripts as needed:
 
 | Setting             | File              | Default             |
 | ------------------- | ----------------- | ------------------- |
-| `MAX_DOWNLOADS`     | download_drive.py | 300                 |
+| `MAX_DOWNLOADS`     | download_drive.py | None                |
 | `MAX_ROWS`          | build_index.py    | 2000                |
 | `FOLDER_ID`         | build_index.py    | (UCI Nature folder) |
 | `DEFAULT_THRESHOLD` | run_inference.py  | 0.5                 |
@@ -310,6 +317,28 @@ python scripts/validate_output.py
 Julie Ellen Coffey - UCI Campus Reserves Manager
 
 ## Troubleshooting
+
+### "No module named 'google.oauth2'"
+
+You're running `download_drive.py` in an environment missing the Google Drive client libraries.
+
+Fix:
+
+```bash
+conda activate ucinature-md
+pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+```
+
+### "No module named 'megadetector'"
+
+You're running the MegaDetector step in an environment where MegaDetector isn't installed.
+
+Fix:
+
+```bash
+conda activate ucinature-md
+pip install megadetector
+```
 
 ### "drive_index.csv not found"
 
