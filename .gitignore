@@ -34,4 +34,4 @@ outputs/
 outputs/
 
 echo "data/sample/images/" >> .gitignore
-echo "notes/*.png" >> .gitignore
+echo "notes/*.png" >> .gitignoredata/
