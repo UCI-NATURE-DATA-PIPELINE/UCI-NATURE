@@ -32,3 +32,6 @@ __pycache__/
 *.envsample/outputs/
 outputs/
 outputs/
+
+echo "data/sample/images/" >> .gitignore
+echo "notes/*.png" >> .gitignore
