@@ -30,3 +30,4 @@ __pycache__/
 .venv
 .conda/
 *.envsample/outputs/
+outputs/
