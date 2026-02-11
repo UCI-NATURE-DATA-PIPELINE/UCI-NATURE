@@ -8,97 +8,181 @@ Current workflow relies on manual review by student interns. Images accumulate f
 
 ## Solution
 
-Automated pipeline that retrieves images from Google Drive, extracts metadata, detects duplicates, and classifies images as blank or containing animals. 
+Automated pipeline that retrieves images from Google Drive, runs MegaDetector + SpeciesNet AI to classify images and identify species, and outputs per-location CSVs ready for review.
+
+**Key result:** MegaDetector filters out ~50-70% of blank images automatically. SpeciesNet identifies species (squirrel, raccoon, coyote, etc.) so interns don't have to.
 
 ## Pipeline Flow
 
 ```
-Google Drive → Download → Metadata → Duplicate Detection → Classification → CSV Output (Subject to change with aditional steps)
+build_index.py       → Index all Google Drive images (recursive)
+download_drive.py    → Download images to local staging
+make_manifest.py     → Create local file inventory
+run_megadetector.py  → AI detection (animal/person/vehicle)
+run_speciesnet.py    → AI species classification (squirrel, coyote, etc.)
+run_inference.py     → Parse both JSONs → ml_outputs.csv
+extract_metadata.py  → Extract EXIF data + merge ML results
+make_output.py       → Generate filtered per-location CSVs
 ```
 
-## Components
+## Requirements
 
-**Core Scripts:**
-- `build_index.py` - Index Google Drive files
-- `download_drive.py` - Download images (with resume)
-- `make_manifest.py` - Create file manifest
-- `extract_metadata.py` - Extract EXIF data
-- `make_output.py` - Generate final CSV
-- `run_pipeline.py` - Execute full pipeline
-- `config.py` - Configuration settings
+- **Python 3.11** (MegaDetector is not compatible with 3.13+)
+- Virtual environment with megadetector + speciesnet packages
+- Google Drive service account credentials
 
-**Additional:**
-- `detect_duplicates.py` - Perceptual hashing for duplicate detection
-- ...
 ## Installation
 
 ```bash
-pip install google-auth google-auth-oauthlib google-api-python-client
-pip install Pillow exifread imagehash
+# Create Python 3.11 virtual environment
+python3.11 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install SpeciesNet (optional, for species classification)
+pip install speciesnet --use-pep517
 ```
 
 ## Setup
 
-1. Create service account at Google Cloud Console
+1. Create a service account at [Google Cloud Console](https://console.cloud.google.com/)
 2. Save credentials as `secrets/inf191a-uci-nature-sa.json`
-3. Share Drive folder with service account email
-4. Update `FOLDER_ID` in `config.py`
+3. Share the Drive folder with the service account email
+4. The `FOLDER_ID` is already configured in the scripts
 
 ## Usage
 
-**Full pipeline:**
+**Always activate the virtual environment first:**
 ```bash
-python run_pipeline.py
+source .venv/bin/activate
 ```
 
-**Individual steps:**
+**Run the full pipeline:**
 ```bash
-python build_index.py          # Index Drive
-python download_drive.py        # Download images
-python make_manifest.py         # Create manifest
-python extract_metadata.py      # Extract EXIF
-python detect_duplicates.py     # Find duplicates
-python make_output.py           # Generate CSV
+python scripts/run_pipeline.py
+```
+
+**Run individual steps:**
+```bash
+python scripts/build_index.py          # Index Drive
+python scripts/download_drive.py       # Download images
+python scripts/make_manifest.py        # Create manifest
+python scripts/run_megadetector.py     # Run AI detection
+python scripts/run_speciesnet.py       # Run species classification
+python scripts/run_inference.py        # Parse ML results
+python scripts/extract_metadata.py     # Extract EXIF
+python scripts/make_output.py          # Generate CSVs
 ```
 
 ## Output
 
-CSV files in `data/outputs/`:
-- `drive_index.csv` - Drive file listing
-- `download_log.csv` - Download status
-- `manifest.csv` - Local file manifest
-- `metadata.csv` - EXIF data
-- `duplicate_report.csv` - Duplicate groups
-- `output.csv` - Final merged data
+### Per-Location CSVs
+```
+data/outputs/by_location/
+├── BonitaCanyon1.csv
+├── BonitaCanyon2.csv
+├── Marshtrail.csv
+└── ResearchPark.csv
+```
+
+Only rows with animal or human detections are included (blanks filtered out).
+
+| Column | Source | Description |
+|--------|--------|-------------|
+| CameraName | Folder structure | Camera location name |
+| DeploymentFolder | Folder structure | SD card upload identifier |
+| Image# | Filename | Image number (e.g., IMG_0001) |
+| Species | SpeciesNet | Species label (squirrel, raccoon, etc.) |
+| # of Individuals | MegaDetector | Number of detections |
+| Date | EXIF metadata | Date taken (YYYYMMDD) |
+| Time | EXIF metadata | Time taken (HH:MM:SS) |
+| has_animal | MegaDetector | 1 = animal detected |
+| model_certainty | MegaDetector | Confidence score (0.0–1.0) |
+| Notes | Manual | For human review notes |
+
+## Configuration
+
+| Setting | File | Default | Description |
+|---------|------|---------|-------------|
+| `MAX_DOWNLOADS` | `download_drive.py` | None | Images per batch |
+| `MAX_ROWS` | `build_index.py` | None | Index limit (None = all) |
+| `MODEL_NAME` | `run_megadetector.py` | MDV5A | MegaDetector model |
+| `DEFAULT_THRESHOLD` | `run_inference.py` | 0.5 | Detection confidence threshold |
+| `COUNTRY` / `ADMIN1_REGION` | `run_speciesnet.py` | USA / CA | Geofencing for species |
+
+## Adding New Species Labels
+
+SpeciesNet returns taxonomy strings. We map them to simple labels in `run_inference.py`:
+
+```python
+SPECIES_MAP = {
+    "canis latrans": "coyote",
+    "sciuridae": "squirrel",
+    "procyon lotor": "raccoon",
+    # add new mappings here
+}
+```
+
+If a species shows as "unknown" in output, find the taxonomy term in `speciesnet_results.json` and add a mapping.
+
+## Processing at Scale
+
+For the full 173k+ image backlog:
+
+1. **Process in batches** — set `MAX_DOWNLOADS` in `download_drive.py`
+2. **Clean staging between runs** — pipeline prompts to delete images after each run
+3. **GPU recommended** — CPU processing is slow (~75 min for 100 images). An NVIDIA GPU gives 50-100x speedup.
+4. **Storage:** 300 images ≈ 550 MB. Process in batches, don't store all at once.
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| `ModuleNotFoundError: megadetector` | Activate venv: `source .venv/bin/activate` |
+| `numpy` errors | `pip install "numpy<2"` |
+| Pipeline uses wrong Python version | Always run from activated `.venv` |
+| `drive_index.csv` has 0 rows | Check `FOLDER_ID` and service account permissions |
+| Species shows as "unknown" | Add mapping to `SPECIES_MAP` in `run_inference.py` |
+| SpeciesNet not found | `pip install speciesnet --use-pep517` |
 
 ## Project Structure
 
 ```
-project/
+UCI-NATURE/
 ├── scripts/
-│   ├── build_index.py
-│   ├── download_drive.py
-│   ├── make_manifest.py
-│   ├── extract_metadata.py
-│   ├── make_output.py
-│   ├── detect_duplicates.py
-│   └── run_pipeline.py
+│   ├── build_index.py         # Index Google Drive
+│   ├── download_drive.py      # Download images
+│   ├── make_manifest.py       # Create file manifest
+│   ├── run_megadetector.py    # Run AI detection
+│   ├── run_speciesnet.py      # Run species classification
+│   ├── run_inference.py       # Parse ML results
+│   ├── extract_metadata.py    # Extract EXIF data
+│   ├── make_output.py         # Generate per-location CSVs
+│   ├── run_pipeline.py        # Execute full pipeline
+│   ├── validate_output.py     # Validate output quality
+│   ├── list_drive.py          # Test Drive connection
+│   └── config.py              # Shared configuration
 ├── data/
-│   ├── staging/          # Downloaded images
-│   └── outputs/          # CSV outputs
-├── secrets/
-│   └── inf191a-uci-nature-sa.json
-└── config.py
+│   ├── staging/               # Downloaded images (temporary)
+│   └── outputs/               # CSV outputs + ML results
+│       └── by_location/       # Final per-camera CSVs
+├── secrets/                   # Service account key (DO NOT COMMIT)
+├── notes/                     # Team research notes
+├── requirements.txt
+├── .gitignore
+└── README.md
 ```
 
 ## Team
 
-- Ghadeer Al Jufout 
-- Ranya A. Alkhleef 
+- Ghadeer Al Jufout
+- Ranya A. Alkhleef
 - Andy Dao Hoang
-- Jadon Tapp 
-- Yifan Wu 
+- Jadon Tapp
+- Yifan Wu
 
 ## Partner
 
-Julie Ellen Coffey - UCI Campus Reserves Manager
+Julie Ellen Coffey — UCI Campus Reserves Manager

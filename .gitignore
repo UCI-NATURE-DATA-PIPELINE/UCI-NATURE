@@ -13,3 +13,12 @@ data/test_images/
 notes/to_do.md
 
 *.zip
+
+# Installer files
+Miniforge3-*.sh
+Mambaforge-*.sh
+Miniconda3-*.sh
+
+# macOS
+.Spotlight-V100
+.Trashes

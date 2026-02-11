@@ -1,5 +1,6 @@
 # reads manifest.csv and extracts EXIF datetime + image width/height for each local file.
-# NEW: adds ML output columns (blank/animal + certainty) by merging data/outputs/ml_outputs.csv (if present)
+# Adds ML output columns by merging data/outputs/ml_outputs.csv (if present)
+# Supports: has_animal, has_human, species, count, model_certainty
 
 import csv
 from pathlib import Path
@@ -71,6 +72,7 @@ def main():
 
             ml = ml_by_id.get(file_id, {})
             has_animal = ml.get("has_animal", "")
+            has_human = ml.get("has_human", "")
             is_blank = ""
             if str(has_animal).strip() != "":
                 try:
@@ -92,6 +94,7 @@ def main():
 
                 # ML (filled if ml_outputs.csv exists)
                 "has_animal": has_animal,
+                "has_human": has_human,
                 "is_blank": is_blank,
                 "species": ml.get("species", ""),
                 "count": ml.get("count", ""),
@@ -100,10 +103,10 @@ def main():
 
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
-        "file_id","file_name","local_file_name",
-        "exif_datetime","date","time",
-        "width","height",
-        "has_animal","is_blank","species","count","model_certainty"
+        "file_id", "file_name", "local_file_name",
+        "exif_datetime", "date", "time",
+        "width", "height",
+        "has_animal", "has_human", "is_blank", "species", "count", "model_certainty"
     ]
     with open(OUT_CSV, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)

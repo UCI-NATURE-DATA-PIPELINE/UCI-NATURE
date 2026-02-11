@@ -23,14 +23,14 @@ def main():
     OUT.parent.mkdir(parents=True, exist_ok=True)
 
     rows = []
-    for p in sorted(STAGING.iterdir()):
+    for p in sorted(STAGING.rglob("*")):
         if not p.is_file():
             continue
 
         file_id, original_name = split_local_name(p.name)
 
         rows.append({
-            "file_id": file_id,                 # drive ID 
+            "file_id": file_id,                 # drive ID
             "file_name": original_name,         # original filename
             "local_file_name": p.name,          # what gets saved locally
             "local_path": str(p),
