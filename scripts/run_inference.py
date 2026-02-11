@@ -1,23 +1,27 @@
-# Converts model outputs into a simple per-image CSV keyed by file_id.
-# Supports:
-#   - MegaDetector JSON (animal/person/vehicle detection)
-#   - SpeciesNet JSON (species classification)
+# Converts SpeciesNet output into a simple per-image CSV keyed by file_id.
+#
+# SpeciesNet runs MegaDetector internally, so speciesnet_results.json contains:
+#   - detections: animal/person/vehicle (same categories as MegaDetector)
+#   - prediction: species classification with geofencing
+#   - prediction_score: confidence
 #
 # Species labels are simplified to match Julie's spreadsheet format:
 #   coyote, rabbit, raccoon, squirrel, bird, opossum, skunk, bobcat, human, etc.
+#
+# Only images with animal or human detections are kept. Blanks/vehicles are filtered out.
 
 import csv
 import json
 from pathlib import Path
 
 MANIFEST = Path("data/outputs/manifest.csv")
-MD_RESULTS_JSON = Path("data/outputs/md_results.json")
 SPECIESNET_JSON = Path("data/outputs/speciesnet_results.json")
 OUT_ML = Path("data/outputs/ml_outputs.csv")
 
-# MegaDetector category mapping
-ANIMAL_CATEGORY = {"1", 1}
-PERSON_CATEGORY = {"2", 2}
+# SpeciesNet uses MegaDetector detection categories:
+# "1" = animal, "2" = human, "3" = vehicle
+ANIMAL_CATEGORY = {"1", "animal"}
+PERSON_CATEGORY = {"2", "human"}
 DEFAULT_THRESHOLD = 0.5
 
 # ============================================================
@@ -133,7 +137,6 @@ def parse_species_label(prediction_str: str) -> str:
     # [4] = genus, [5] = species, [6] = common_name
 
     # Check fields from most specific to least specific
-    # Order: common_name, "genus species", species, genus, family, order, class
     fields_to_check = []
 
     # Common name (index 6)
@@ -164,12 +167,11 @@ def parse_species_label(prediction_str: str) -> str:
     if len(parts) > 1 and parts[1].strip():
         fields_to_check.append(parts[1].strip().lower())
 
-    # Try each field against the map
     for field in fields_to_check:
         if field in SPECIES_MAP:
             return SPECIES_MAP[field]
 
-    # If nothing matched, return the common name as-is (or empty)
+    # If nothing matched, return the common name as-is (or "unknown")
     if len(parts) > 6 and parts[6].strip():
         return parts[6].strip().lower()
 
@@ -177,6 +179,7 @@ def parse_species_label(prediction_str: str) -> str:
 
 
 def load_manifest_index():
+    """Build indices to match SpeciesNet filepaths back to our file_id."""
     by_local_path = {}
     by_basename = {}
 
@@ -196,50 +199,14 @@ def load_manifest_index():
     return by_local_path, by_basename
 
 
-def find_file_id(md_file: str, by_local_path: dict, by_basename: dict):
-    if not md_file:
+def find_file_id(filepath: str, by_local_path: dict, by_basename: dict) -> str:
+    """Match a SpeciesNet filepath to our file_id."""
+    if not filepath:
         return ""
-    if md_file in by_local_path:
-        return by_local_path[md_file]
-    bn = Path(md_file).name
+    if filepath in by_local_path:
+        return by_local_path[filepath]
+    bn = Path(filepath).name
     return by_basename.get(bn, "")
-
-
-def load_speciesnet_results() -> dict:
-    """
-    Load SpeciesNet predictions keyed by basename.
-    Returns dict: { basename: { "label": "squirrel", "confidence": 0.89 } }
-    """
-    if not SPECIESNET_JSON.exists():
-        return {}
-
-    with open(SPECIESNET_JSON, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    species_by_file = {}
-    predictions = data.get("predictions", [])
-
-    for pred in predictions:
-        filepath = pred.get("filepath", "")
-        prediction_str = pred.get("prediction", "")
-        prediction_score = pred.get("prediction_score", 0.0)
-
-        if not filepath:
-            continue
-
-        label = parse_species_label(prediction_str)
-
-        # Skip blank/empty predictions
-        if not label or label in ("blank", "empty"):
-            continue
-
-        basename = Path(filepath).name
-        species_by_file[basename] = {
-            "label": label,
-            "confidence": prediction_score,
-        }
-
-    return species_by_file
 
 
 def main():
@@ -249,53 +216,49 @@ def main():
 
     by_local_path, by_basename = load_manifest_index()
 
-    species_data = load_speciesnet_results()
-    if species_data:
-        print(f"Loaded SpeciesNet results for {len(species_data)} images")
-    else:
-        print("No SpeciesNet results found (species column will be blank)")
-
-    if not MD_RESULTS_JSON.exists():
+    if not SPECIESNET_JSON.exists():
+        print(f"speciesnet_results.json not found -> writing empty {OUT_ML}")
+        print("Run SpeciesNet first: python scripts/run_speciesnet.py")
         with open(OUT_ML, "w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=fieldnames)
-            w.writeheader()
-        print(f"md_results.json not found -> wrote empty {OUT_ML}")
+            csv.DictWriter(f, fieldnames=fieldnames).writeheader()
         return
 
-    with open(MD_RESULTS_JSON, "r", encoding="utf-8") as f:
-        md = json.load(f)
+    with open(SPECIESNET_JSON, "r", encoding="utf-8") as f:
+        data = json.load(f)
 
-    images = md.get("images", [])
+    predictions = data.get("predictions", [])
     rows = []
 
-    for img in images:
-        md_file = img.get("file") or img.get("filename") or ""
-        fid = find_file_id(md_file, by_local_path, by_basename)
+    for pred in predictions:
+        filepath = pred.get("filepath", "")
+        fid = find_file_id(filepath, by_local_path, by_basename)
         if not fid:
             continue
 
-        dets = img.get("detections") or []
+        # Parse detections (same format as MegaDetector: category 1/2/3)
+        detections = pred.get("detections", [])
 
         animal_confs = []
         person_confs = []
         animal_count = 0
         person_count = 0
 
-        for det in dets:
-            cat = det.get("category")
+        for det in detections:
+            cat = det.get("category", "")
+            label = det.get("label", "")
             conf = det.get("conf")
             if conf is None:
                 continue
             try:
                 conf_f = float(conf)
-            except Exception:
+            except (ValueError, TypeError):
                 continue
 
-            if cat in ANIMAL_CATEGORY:
+            if cat in ANIMAL_CATEGORY or label == "animal":
                 animal_confs.append(conf_f)
                 if conf_f >= DEFAULT_THRESHOLD:
                     animal_count += 1
-            elif cat in PERSON_CATEGORY:
+            elif cat in PERSON_CATEGORY or label == "human":
                 person_confs.append(conf_f)
                 if conf_f >= DEFAULT_THRESHOLD:
                     person_count += 1
@@ -309,15 +272,19 @@ def main():
         if not has_animal and not has_human:
             continue
 
-        # Determine species
+        # Parse species from prediction string
+        prediction_str = pred.get("prediction", "")
+        prediction_score = pred.get("prediction_score", 0.0)
+
         if has_human and not has_animal:
             species = "human"
             best_conf = max_person_conf
             count = person_count
         elif has_animal:
-            basename = Path(md_file).name
-            sn = species_data.get(basename, {})
-            species = sn.get("label", "unknown")
+            species = parse_species_label(prediction_str)
+            # Skip if SpeciesNet itself says blank
+            if species in ("blank", "empty", ""):
+                species = "unknown"
             best_conf = max_animal_conf
             count = animal_count
         else:
@@ -343,14 +310,13 @@ def main():
         w.writerows(dedup.values())
 
     # Summary
+    total_input = len(predictions)
+    total_kept = len(dedup)
+    total_skipped = total_input - total_kept
     animal_rows = sum(1 for r in dedup.values() if r["has_animal"] == 1)
     human_rows = sum(1 for r in dedup.values() if r["has_human"] == 1 and r["has_animal"] == 0)
     species_filled = sum(1 for r in dedup.values() if r["species"] and r["species"] != "unknown")
-    total_input = len(images)
-    total_kept = len(dedup)
-    total_skipped = total_input - total_kept
 
-    # Count species distribution
     species_counts = {}
     for r in dedup.values():
         s = r["species"]

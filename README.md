@@ -18,12 +18,13 @@ Automated pipeline that retrieves images from Google Drive, runs MegaDetector + 
 build_index.py       → Index all Google Drive images (recursive)
 download_drive.py    → Download images to local staging
 make_manifest.py     → Create local file inventory
-run_megadetector.py  → AI detection (animal/person/vehicle)
-run_speciesnet.py    → AI species classification (squirrel, coyote, etc.)
-run_inference.py     → Parse both JSONs → ml_outputs.csv
+run_speciesnet.py    → AI detection + species classification (single pass)
+run_inference.py     → Parse SpeciesNet JSON → ml_outputs.csv
 extract_metadata.py  → Extract EXIF data + merge ML results
 make_output.py       → Generate filtered per-location CSVs
 ```
+
+SpeciesNet runs MegaDetector internally, so one pass handles both detection and species ID.
 
 ## Requirements
 
@@ -69,12 +70,13 @@ python scripts/run_pipeline.py
 python scripts/build_index.py          # Index Drive
 python scripts/download_drive.py       # Download images
 python scripts/make_manifest.py        # Create manifest
-python scripts/run_megadetector.py     # Run AI detection
-python scripts/run_speciesnet.py       # Run species classification
+python scripts/run_speciesnet.py       # Run AI detection + species
 python scripts/run_inference.py        # Parse ML results
 python scripts/extract_metadata.py     # Extract EXIF
 python scripts/make_output.py          # Generate CSVs
 ```
+
+> `run_megadetector.py` is still in the repo as a standalone fallback if needed.
 
 ## Output
 
@@ -108,7 +110,6 @@ Only rows with animal or human detections are included (blanks filtered out).
 |---------|------|---------|-------------|
 | `MAX_DOWNLOADS` | `download_drive.py` | None | Images per batch |
 | `MAX_ROWS` | `build_index.py` | None | Index limit (None = all) |
-| `MODEL_NAME` | `run_megadetector.py` | MDV5A | MegaDetector model |
 | `DEFAULT_THRESHOLD` | `run_inference.py` | 0.5 | Detection confidence threshold |
 | `COUNTRY` / `ADMIN1_REGION` | `run_speciesnet.py` | USA / CA | Geofencing for species |
 
@@ -155,7 +156,8 @@ UCI-NATURE/
 │   ├── build_index.py         # Index Google Drive
 │   ├── download_drive.py      # Download images
 │   ├── make_manifest.py       # Create file manifest
-│   ├── run_megadetector.py    # Run AI detection
+│   ├── run_megadetector.py    # Standalone MegaDetector (fallback)
+│   ├── run_speciesnet.py      # Run AI detection + species (primary)
 │   ├── run_speciesnet.py      # Run species classification
 │   ├── run_inference.py       # Parse ML results
 │   ├── extract_metadata.py    # Extract EXIF data

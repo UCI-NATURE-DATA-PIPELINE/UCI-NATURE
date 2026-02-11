@@ -1,11 +1,11 @@
 # runs the pipeline in the correct order:
-# index > download > manifest > megadetector > speciesnet > inference > metadata > output
+# index > download > manifest > speciesnet > inference > metadata > output
+#
+# SpeciesNet runs MegaDetector internally, so we only need one ML step.
 #
 # IMPORTANT: Run this from your .venv so all steps use Python 3.11:
 #   source .venv/bin/activate
 #   python scripts/run_pipeline.py
-#
-# sys.executable ensures every subprocess uses the same Python that launched this script.
 
 import subprocess
 import sys
@@ -19,7 +19,6 @@ STEPS = [
     ("Index Drive",          [PYTHON, "scripts/build_index.py"]),
     ("Download Images",      [PYTHON, "scripts/download_drive.py"]),
     ("Create Manifest",      [PYTHON, "scripts/make_manifest.py"]),
-    ("Run MegaDetector",     [PYTHON, "scripts/run_megadetector.py"]),
     ("Run SpeciesNet",       [PYTHON, "scripts/run_speciesnet.py"]),
     ("Parse ML Results",     [PYTHON, "scripts/run_inference.py"]),
     ("Extract Metadata",     [PYTHON, "scripts/extract_metadata.py"]),
@@ -30,13 +29,12 @@ STAGING_DIR = Path("data/staging")
 
 
 def main():
-    # Verify we're running in the venv with Python 3.11
     print(f"Using Python: {PYTHON}")
     print(f"Python version: {sys.version}")
 
     if "3.13" in sys.version:
         print("\nWARNING: You're using Python 3.13 (system default).")
-        print("MegaDetector and SpeciesNet require Python 3.11.")
+        print("SpeciesNet requires Python 3.11.")
         print("Activate your venv first:")
         print("  source .venv/bin/activate")
         print("  python scripts/run_pipeline.py")
@@ -69,7 +67,6 @@ def main():
 
     total_duration = time.time() - total_start
 
-    # Summary
     print("\n" + "=" * 60)
     print("PIPELINE SUMMARY")
     print("=" * 60)
@@ -86,10 +83,8 @@ def main():
     print("\nPipeline complete!")
     print("\nOutputs:")
     print("  - Per-location CSVs: data/outputs/by_location/")
-    print("  - MegaDetector results: data/outputs/md_results.json")
     print("  - SpeciesNet results: data/outputs/speciesnet_results.json")
 
-    # Optional: clean up staging to free disk space
     if STAGING_DIR.exists():
         staging_size = sum(f.stat().st_size for f in STAGING_DIR.rglob("*") if f.is_file())
         staging_mb = staging_size / (1024 * 1024)
