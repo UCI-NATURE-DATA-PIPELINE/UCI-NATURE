@@ -4,10 +4,10 @@ secrets/
 
 # data 
 data/staging/
-data/outputs/*.csv
-data/outputs/*.json
-data/outputs/*.txt
-data/outputs/.download_progress.csv
+data/outputs/*
+!data/outputs/animals_only.csv
+!data/outputs/output.csv
+!data/outputs/final_output.csv
 
 # allow small sample data to be committed
 !data/sample/
