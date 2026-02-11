@@ -30,9 +30,26 @@ RETRY_DELAY = 2           # NEW: initial delay in seconds (exponential backoff)
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]    # read only access
 
 
-def make_local_name(file_id: str, original_name: str) -> str:
-    return f"{file_id}__{original_name}"
+# def make_local_name(file_id: str, original_name: str) -> str:
+#     return f"{file_id}__{original_name}"
 
+def make_local_path(file_id: str, original_name: str, drive_path: str) -> Path:
+    '''Takes 3 param and returns Path object'''
+    if not drive_path: 
+        return OUT_DIR / f"{file_id}__{original_name}"
+
+    # Remove filename from drive_path to get folder structure
+    path_parts = Path(drive_path).parts[:-1] #excluding filename itself
+    
+    # Build local folder path 
+    local_folder = OUT_DIR
+    for part in path_parts:
+        local_folder = local_folder / part
+    
+    # creating the local filename with prefix of file_id
+    local_filename = f"{file_id}__{original_name}"
+
+    return local_folder/local_filename
 
 def log(writer, file_name: str, file_id: str, status: str, error: str = "") -> None:
     writer.writerow({
@@ -54,10 +71,12 @@ def load_already_downloaded() -> set:
             for row in reader:
                 if row.get("status") == "success":
                     downloaded.add(row.get("file_id", ""))
-    
-    # Also check existing files in staging directory
+
+
+    # Also check existing files in staging directory (recursively)
     if OUT_DIR.exists():
-        for path in OUT_DIR.iterdir():
+        # searches "data/staging/**/* (all subdirectories recursively)"
+        for path in OUT_DIR.rglob("*"): # recursive searching, previous only searches "data/staging/" one level 
             if path.is_file() and "__" in path.name:
                 file_id = path.name.split("__")[0]
                 downloaded.add(file_id)
@@ -99,6 +118,9 @@ def download_file_with_retry(drive, file_id: str, original_name: str, out_path: 
                              log_writer) -> bool:
     """Download a single file with retry logic"""
     
+    # Create Parent directories 
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
     for attempt in range(MAX_RETRIES):
         try:
             request = drive.files().get_media(
@@ -191,9 +213,12 @@ def main() -> None:
             for row in reader:
                 file_id = row["file_id"]
                 original_name = row["file_name"]
+                drive_path = row.get("drive_path", "") # get drive_path from csv
 
-                local_name = make_local_name(file_id, original_name)
-                out_path = OUT_DIR / local_name
+                # local_name = make_local_name(file_id, original_name)
+                # out_path = OUT_DIR / local_name
+
+                out_path = make_local_path(file_id, original_name, drive_path) # new function with 3 parameters
 
                 # Skip if already successfully downloaded
                 if file_id in already_downloaded and out_path.exists():
@@ -208,10 +233,15 @@ def main() -> None:
                 
                 if success:
                     downloaded += 1
-                    print(f"Downloaded {downloaded}/{MAX_DOWNLOADS}: {local_name}")
+                    rel_path = out_path.relative_to(OUT_DIR) #
+                    # print(f"Downloaded {downloaded}/{MAX_DOWNLOADS}: {local_name}")
+                    print(f"Downloaded {downloaded}/{MAX_DOWNLOADS}: {rel_path}") # shows which folder it went into
+
                 else:
                     failed += 1
-                    print(f"Failed to download: {local_name}")
+                    # print(f"Failed to download: {local_name}") # was local name
+
+                    print(f"Failed to download: {original_name}") # was local name
 
                 # Stop after MAX_DOWNLOADS successful downloads
                 if downloaded >= MAX_DOWNLOADS:
