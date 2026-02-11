@@ -8,97 +8,329 @@ Current workflow relies on manual review by student interns. Images accumulate f
 
 ## Solution
 
-Automated pipeline that retrieves images from Google Drive, extracts metadata, detects duplicates, and classifies images as blank or containing animals. 
+Automated pipeline that retrieves images from Google Drive, extracts metadata, detects duplicates, and classifies images as blank or containing animals.
 
 ## Pipeline Flow
 
 ```
-Google Drive → Download → Metadata → Duplicate Detection → Classification → CSV Output (Subject to change with aditional steps)
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        WILDLIFE IMAGE PIPELINE                          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+  │  INDEX   │───▶│ DOWNLOAD │───▶│ MANIFEST │───▶│INFERENCE │
+  │  DRIVE   │    │  IMAGES  │    │  CREATE  │    │  (ML)    │
+  └──────────┘    └──────────┘    └──────────┘    └──────────┘
+       │               │               │               │
+       ▼               ▼               ▼               ▼
+  drive_index.csv  download_log.csv  manifest.csv  ml_outputs.csv
+                                           │
+                                           ▼
+                                    ┌──────────┐
+                                    │ EXTRACT  │
+                                    │ METADATA │
+                                    └──────────┘
+                                           │
+                                           ▼
+                                    metadata.csv
+                                           │
+                                           ▼
+                                    ┌──────────┐
+                                    │  MERGE   │
+                                    │  OUTPUT  │
+                                    └──────────┘
+                                           │
+                                           ▼
+                                    ┌──────────┐
+                                    │ VALIDATE │
+                                    └──────────┘
+                                           │
+                                           ▼
+                                     output.csv ← FINAL OUTPUT
 ```
 
-## Components
-
-**Core Scripts:**
-- `build_index.py` - Index Google Drive files
-- `download_drive.py` - Download images (with resume)
-- `make_manifest.py` - Create file manifest
-- `extract_metadata.py` - Extract EXIF data
-- `make_output.py` - Generate final CSV
-- `run_pipeline.py` - Execute full pipeline
-- `config.py` - Configuration settings
-
-**Additional:**
-- `detect_duplicates.py` - Perceptual hashing for duplicate detection
-- ...
 ## Installation
 
 ```bash
-pip install google-auth google-auth-oauthlib google-api-python-client
-pip install Pillow exifread imagehash
+# Create virtual environment (recommended)
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# or: .venv\Scripts\activate  # Windows
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Requirements
+
+```
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
+pillow
+exifread
 ```
 
 ## Setup
 
-1. Create service account at Google Cloud Console
-2. Save credentials as `secrets/inf191a-uci-nature-sa.json`
-3. Share Drive folder with service account email
-4. Update `FOLDER_ID` in `config.py`
+1. **Create service account** at [Google Cloud Console](https://console.cloud.google.com/)
+2. **Download credentials** and save as `secrets/inf191a-uci-nature-sa.json`
+3. **Share Drive folder** with the service account email
+4. **Update `FOLDER_ID`** in `scripts/build_index.py` if needed
 
 ## Usage
 
-**Full pipeline:**
+### Run Full Pipeline
+
 ```bash
-python run_pipeline.py
+python scripts/run_pipeline.py
 ```
 
-**Individual steps:**
+This runs all steps in order:
+
+1. Index Drive files
+2. Download images
+3. Create manifest
+4. Run inference (ML classification)
+5. Extract metadata
+6. Generate final output
+7. Validate output
+
+### Run Individual Steps
+
 ```bash
-python build_index.py          # Index Drive
-python download_drive.py        # Download images
-python make_manifest.py         # Create manifest
-python extract_metadata.py      # Extract EXIF
-python detect_duplicates.py     # Find duplicates
-python make_output.py           # Generate CSV
+# Step 1: Index Google Drive
+python scripts/build_index.py
+
+# Step 2: Download images
+python scripts/download_drive.py
+
+# Step 3: Create local manifest
+python scripts/make_manifest.py
+
+# Step 4: Process ML results (requires MegaDetector output)
+python scripts/run_inference.py
+
+# Step 5: Extract EXIF metadata
+python scripts/extract_metadata.py
+
+# Step 6: Generate final CSV
+python scripts/make_output.py
+
+# Step 7: Validate output
+python scripts/validate_output.py
 ```
 
-## Output
+## Pipeline Steps Detail
 
-CSV files in `data/outputs/`:
-- `drive_index.csv` - Drive file listing
-- `download_log.csv` - Download status
-- `manifest.csv` - Local file manifest
-- `metadata.csv` - EXIF data
-- `duplicate_report.csv` - Duplicate groups
-- `output.csv` - Final merged data
+### 1. build_index.py
+
+- Recursively scans Google Drive folder
+- Extracts file IDs, paths, and folder structure
+- Parses site/camera names from folder paths
+- **Output:** `data/outputs/drive_index.csv`
+- **Features:** Checkpoint/resume support, retry logic
+
+### 2. download_drive.py
+
+- Downloads images using file IDs from drive_index.csv
+- Preserves file ID in local filename for tracking
+- **Output:** `data/staging/` (images), `data/outputs/download_log.csv`
+- **Features:** Resume support, exponential backoff retry
+
+### 3. make_manifest.py
+
+- Creates inventory of downloaded files
+- Links file IDs to local paths
+- **Output:** `data/outputs/manifest.csv`
+
+### 4. run_inference.py
+
+- Converts MegaDetector JSON output to CSV format
+- Calculates animal/blank classification
+- **Input:** `data/outputs/md_results.json` (from MegaDetector)
+- **Output:** `data/outputs/ml_outputs.csv`
+- **Note:** If MegaDetector output is missing, creates empty ML columns
+
+### 5. extract_metadata.py
+
+- Extracts EXIF datetime from images
+- Gets image dimensions
+- Merges ML classification data
+- **Output:** `data/outputs/metadata.csv`
+
+### 6. make_output.py
+
+- Merges all data sources into final output
+- Validates required columns are present
+- **Output:** `data/outputs/output.csv`, `data/outputs/validation_report.csv`
+
+### 7. validate_output.py
+
+- Validates final output completeness
+- Checks all required columns exist
+- Reports data quality statistics
+
+## Output Format
+
+The final `output.csv` contains these columns:
+
+| Column            | Description                           |
+| ----------------- | ------------------------------------- |
+| `image_id`        | Unique file ID (from Google Drive)    |
+| `camera_name`     | Camera/site name (from folder path)   |
+| `date`            | Image date (YYYY-MM-DD)               |
+| `time`            | Image time (HH:MM:SS)                 |
+| `has_animal`      | 1 = animal detected, 0 = no animal    |
+| `is_blank`        | 1 = blank image, 0 = has content      |
+| `species`         | Species name (placeholder for future) |
+| `count`           | Number of animals detected            |
+| `model_certainty` | ML confidence score (0-1)             |
+
+## ML Integration (MegaDetector)
+
+To populate animal/blank classification:
+
+1. **Run MegaDetector** on downloaded images:
+
+```bash
+# Using MegaDetector (run separately)
+python run_detector.py data/staging/ data/outputs/md_results.json
+```
+
+2. **Process results:**
+
+```bash
+python scripts/run_inference.py
+python scripts/extract_metadata.py
+python scripts/make_output.py
+```
+
+Without MegaDetector results, ML columns will be empty but the pipeline will still work.
+
+## Error Handling & Logging
+
+The pipeline generates detailed logs:
+
+| Log File                             | Description                    |
+| ------------------------------------ | ------------------------------ |
+| `data/outputs/pipeline_log.txt`      | Overall pipeline execution log |
+| `data/outputs/download_log.csv`      | Download status for each file  |
+| `data/outputs/inference_log.txt`     | ML processing log              |
+| `data/outputs/inference_errors.csv`  | ML processing errors           |
+| `data/outputs/metadata_log.txt`      | Metadata extraction log        |
+| `data/outputs/metadata_errors.csv`   | Metadata extraction errors     |
+| `data/outputs/output_log.txt`        | Final output generation log    |
+| `data/outputs/validation_report.csv` | Data validation issues         |
+
+### Resume Support
+
+The pipeline supports resuming interrupted runs:
+
+- **Indexing:** Saves checkpoint every 100 files
+- **Downloads:** Tracks successfully downloaded files
+- **Re-run:** Simply run the same command again to resume
 
 ## Project Structure
 
 ```
 project/
 ├── scripts/
-│   ├── build_index.py
-│   ├── download_drive.py
-│   ├── make_manifest.py
-│   ├── extract_metadata.py
-│   ├── make_output.py
-│   ├── detect_duplicates.py
-│   └── run_pipeline.py
+│   ├── build_index.py       # Index Drive files
+│   ├── download_drive.py    # Download images
+│   ├── make_manifest.py     # Create file manifest
+│   ├── run_inference.py     # Process ML output
+│   ├── extract_metadata.py  # Extract EXIF data
+│   ├── make_output.py       # Generate final CSV
+│   ├── validate_output.py   # Validate output
+│   ├── run_pipeline.py      # Run full pipeline
+│   └── config.py            # Configuration
 ├── data/
-│   ├── staging/          # Downloaded images
-│   └── outputs/          # CSV outputs
+│   ├── staging/             # Downloaded images
+│   └── outputs/             # CSV outputs & logs
 ├── secrets/
-│   └── inf191a-uci-nature-sa.json
-└── config.py
+│   └── inf191a-uci-nature-sa.json  # Service account key
+├── notes/                   # Development notes
+├── requirements.txt
+└── README.md
+```
+
+## Configuration
+
+Edit these values in the scripts as needed:
+
+| Setting             | File              | Default             |
+| ------------------- | ----------------- | ------------------- |
+| `MAX_DOWNLOADS`     | download_drive.py | 300                 |
+| `MAX_ROWS`          | build_index.py    | 2000                |
+| `FOLDER_ID`         | build_index.py    | (UCI Nature folder) |
+| `DEFAULT_THRESHOLD` | run_inference.py  | 0.5                 |
+
+## Testing
+
+### Quick Test (Small Batch)
+
+1. Set `MAX_DOWNLOADS = 10` in `scripts/download_drive.py`
+2. Set `MAX_ROWS = 50` in `scripts/build_index.py`
+3. Run pipeline:
+
+```bash
+python scripts/run_pipeline.py
+```
+
+4. Check output:
+
+```bash
+python scripts/validate_output.py
+```
+
+### Validate Output
+
+```bash
+# Check final output
+python scripts/validate_output.py
+
+# Expected output:
+# ✓ All required columns present
+# Total rows: X
+# With ML results: Y
 ```
 
 ## Team
 
-- Ghadeer Al Jufout 
-- Ranya A. Alkhleef 
+- Ghadeer Al Jufout
+- Ranya A. Alkhleef
 - Andy Dao Hoang
-- Jadon Tapp 
-- Yifan Wu 
+- Jadon Tapp
+- Yifan Wu
 
 ## Partner
 
 Julie Ellen Coffey - UCI Campus Reserves Manager
+
+## Troubleshooting
+
+### "drive_index.csv not found"
+
+Run `python scripts/build_index.py` first.
+
+### "manifest.csv not found"
+
+Run `python scripts/download_drive.py` and `python scripts/make_manifest.py`.
+
+### ML columns are empty
+
+MegaDetector output (`md_results.json`) is missing. Run MegaDetector on your images first.
+
+### API quota errors
+
+The pipeline uses exponential backoff. If errors persist, wait and retry.
+
+### Downloads failing
+
+Check `data/outputs/download_log.csv` for error details. Common issues:
+
+- Service account doesn't have access to folder
+- Network connectivity issues
+- File was deleted from Drive
