@@ -25,7 +25,7 @@ OUT_DIR = Path("data/staging")                                # where images get
 LOG_CSV = Path("data/outputs/download_log.csv")               # download log
 PROGRESS_FILE = Path("data/outputs/.download_progress.csv")   # NEW: tracks download state
 
-MAX_DOWNLOADS = None
+MAX_DOWNLOADS = None # change for small testing!
 MAX_RETRIES = 3           # NEW: retry failed downloads up to 3 times
 RETRY_DELAY = 2           # NEW: initial delay in seconds (exponential backoff)
 
