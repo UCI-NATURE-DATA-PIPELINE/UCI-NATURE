@@ -5,7 +5,7 @@
 #
 # IMPORTANT: Run this from your .venv so all steps use Python 3.11:
 #   source .venv/bin/activate
-#   python scripts/run_pipeline.py
+#   python scripts/pipeline/run_pipeline.py
 
 import subprocess
 import sys
@@ -16,13 +16,13 @@ from pathlib import Path
 PYTHON = sys.executable
 
 STEPS = [
-    ("Index Drive",          [PYTHON, "scripts/build_index.py"]),
+    ("Index Drive",          [PYTHON, "scripts/pipeline/build_index.py"]),
     ("Download Images",      [PYTHON, "scripts/pipeline/download_drive.py"]),
-    ("Create Manifest",      [PYTHON, "scripts/make_manifest.py"]),
-    ("Run SpeciesNet",       [PYTHON, "scripts/run_speciesnet.py"]),
-    ("Parse ML Results",     [PYTHON, "scripts/run_inference.py"]),
-    ("Extract Metadata",     [PYTHON, "scripts/extract_metadata.py"]),
-    ("Generate Output CSVs", [PYTHON, "scripts/make_output.py"]),
+    ("Create Manifest",      [PYTHON, "scripts/pipeline/make_manifest.py"]),
+    ("Run SpeciesNet",       [PYTHON, "scripts/ml/run_speciesnet.py"]),
+    ("Parse ML Results",     [PYTHON, "scripts/ml/run_inference.py"]),
+    ("Extract Metadata",     [PYTHON, "scripts/pipeline/extract_metadata.py"]),
+    ("Generate Output CSVs", [PYTHON, "scripts/pipeline/make_output.py"]),
 ]
 
 STAGING_DIR = Path("data/staging")
@@ -37,7 +37,7 @@ def main():
         print("SpeciesNet requires Python 3.11.")
         print("Activate your venv first:")
         print("  source .venv/bin/activate")
-        print("  python scripts/run_pipeline.py")
+        print("  python scripts/pipeline/run_pipeline.py")
         sys.exit(1)
 
     print("=" * 60)

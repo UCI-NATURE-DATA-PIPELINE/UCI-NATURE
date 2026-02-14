@@ -62,18 +62,18 @@ source .venv/bin/activate
 
 **Run the full pipeline:**
 ```bash
-python scripts/run_pipeline.py
+python scripts/pipeline/run_pipeline.py
 ```
 
 **Run individual steps:**
 ```bash
-python scripts/build_index.py          # Index Drive
+python scripts/pipeline/build_index.py          # Index Drive
 python scripts/pipeline/download_drive.py       # Download images
-python scripts/make_manifest.py        # Create manifest
-python scripts/run_speciesnet.py       # Run AI detection + species
-python scripts/run_inference.py        # Parse ML results
-python scripts/extract_metadata.py     # Extract EXIF
-python scripts/make_output.py          # Generate CSVs
+python scripts/pipeline/make_manifest.py        # Create manifest
+python scripts/ml/run_speciesnet.py       # Run AI detection + species
+python scripts/ml/run_inference.py        # Parse ML results
+python scripts/pipeline/extract_metadata.py     # Extract EXIF
+python scripts/pipeline/make_output.py          # Generate CSVs
 ```
 
 > `run_megadetector.py` is still in the repo as a standalone fallback if needed.

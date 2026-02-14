@@ -139,9 +139,9 @@ inference_errors.csv
 ## Run Commands
 
 Full run (manual):
-python scripts/build_index.py
+python scripts/pipeline/build_index.py
 python scripts/pipeline/download_drive.py
-python scripts/make_manifest.py
+python scripts/pipeline/make_manifest.py
 python scripts/ml/run_megadetector.py
 python scripts/ml/convert_outputs.py  # or your provider-based converter
 

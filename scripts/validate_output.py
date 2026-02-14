@@ -61,7 +61,7 @@ def main():
 
     if not OUTPUT_DIR.exists():
         print(f"\n[ERROR] Output directory not found: {OUTPUT_DIR}")
-        print("Run the pipeline first: python scripts/run_pipeline.py")
+        print("Run the pipeline first: python scripts/pipeline/run_pipeline.py")
         sys.exit(1)
 
     csv_files = sorted(OUTPUT_DIR.glob("*.csv"))

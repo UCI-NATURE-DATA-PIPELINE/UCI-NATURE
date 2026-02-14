@@ -218,7 +218,7 @@ def main():
 
     if not SPECIESNET_JSON.exists():
         print(f"speciesnet_results.json not found -> writing empty {OUT_ML}")
-        print("Run SpeciesNet first: python scripts/run_speciesnet.py")
+        print("Run SpeciesNet first: python scripts/ml/run_speciesnet.py")
         with open(OUT_ML, "w", newline="", encoding="utf-8") as f:
             csv.DictWriter(f, fieldnames=fieldnames).writeheader()
         return
