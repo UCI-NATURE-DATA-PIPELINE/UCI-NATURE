@@ -16,18 +16,16 @@ from googleapiclient.http import MediaIoBaseDownload
 from googleapiclient.errors import HttpError
 
 # config
-SERVICE_ACCOUNT_FILE = "secrets/inf191a-uci-nature-sa.json"   # key file for service account auth
+from scripts.config import SERVICE_ACCOUNT_FILE, MAX_IMAGES
 
-# CHANGE: now reads from drive_index.csv instead of querying Drive directly
-DRIVE_INDEX = Path("data/outputs/drive_index.csv")            # source of file IDs to download
+DRIVE_INDEX = Path("data/outputs/drive_index.csv")
+OUT_DIR = Path("data/staging")
+LOG_CSV = Path("data/outputs/download_log.csv")
+PROGRESS_FILE = Path("data/outputs/.download_progress.csv")
 
-OUT_DIR = Path("data/staging")                                # where images get downloaded locally
-LOG_CSV = Path("data/outputs/download_log.csv")               # download log
-PROGRESS_FILE = Path("data/outputs/.download_progress.csv")   # NEW: tracks download state
-
-MAX_DOWNLOADS = None # change for small testing!
-MAX_RETRIES = 3           # NEW: retry failed downloads up to 3 times
-RETRY_DELAY = 2           # NEW: initial delay in seconds (exponential backoff)
+MAX_DOWNLOADS = MAX_IMAGES  # from config.py
+MAX_RETRIES = 3
+RETRY_DELAY = 2
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]    # read only access
 
