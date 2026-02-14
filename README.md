@@ -92,11 +92,11 @@ pip install -r requirements.txt
 **Install SpeciesNet**
 pip install speciesnet --use-pep517
 
-**Run the pipeline**
-py scripts\run_pipeline.py
-
 **Set PYTHONPATH to current directory**
 $env:PYTHONPATH = (Get-Location).Path
+
+**Run the pipeline**
+py scripts\run_pipeline.py
 ```
 > (For Julie's Lab Computer)!!
 
