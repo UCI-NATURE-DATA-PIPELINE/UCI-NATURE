@@ -19,7 +19,7 @@ ADMIN1_REGION = "CA"
 def count_images(directory: Path) -> int:
     extensions = {".jpg", ".jpeg", ".png"}
     count = 0
-    for f in directory.iterdir():
+    for f in directory.rglob("*"):  # FIXED: rglob searches recursively
         if f.is_file() and f.suffix.lower() in extensions:
             count += 1
     return count
