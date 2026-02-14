@@ -79,23 +79,22 @@ python scripts/make_output.py          # Generate CSVs
 > `run_megadetector.py` is still in the repo as a standalone fallback if needed.
 
 ## For Windows!
-run:
-# Create virtual environment
+
+**Create virtual environment**
 py -m venv .venv
 
-# Activate it
+**Activate it**
 .venv\Scripts\Activate.ps1
 
-# Install dependencies
+**Install dependencies**
 pip install -r requirements.txt
 
-# Install SpeciesNet
+**Install SpeciesNet**
 pip install speciesnet --use-pep517
 
-# Run the pipeline
+**Run the pipeline**
 py scripts\run_pipeline.py
-
-(For Julie's Lab Computer)
+> (For Julie's Lab Computer)!!
 
 ## Output
 
