@@ -126,14 +126,9 @@ Only rows with animal or human detections are included (blanks filtered out).
 | model_certainty | MegaDetector | Confidence score (0.0–1.0) |
 | Notes | Manual | For human review notes |
 
-## Configuration
+## Batch testing
 
-| Setting | File | Default | Description |
-|---------|------|---------|-------------|
-| `MAX_DOWNLOADS` | `download_drive.py` | None | Images per batch |
-| `MAX_ROWS` | `build_index.py` | None | Index limit (None = all) |
-| `DEFAULT_THRESHOLD` | `run_inference.py` | 0.5 | Detection confidence threshold |
-| `COUNTRY` / `ADMIN1_REGION` | `run_speciesnet.py` | USA / CA | Geofencing for species |
+Set 'MAX_IMAGES' in ```config.py``` to whatever number for batch testing. Setting to 'None' does everything. 
 
 ## Adding New Species Labels
 
