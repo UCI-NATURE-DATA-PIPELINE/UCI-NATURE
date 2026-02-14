@@ -5,9 +5,8 @@
 #
 # IMPORTANT: Run this from your .venv so all steps use Python 3.11:
 #   source .venv/bin/activate
-#   python scripts/pipeline/run_pipeline.py
+#   python scripts/run_pipeline.py
 
-import argparse
 import subprocess
 import sys
 import shutil
@@ -16,80 +15,20 @@ from pathlib import Path
 
 PYTHON = sys.executable
 
+STEPS = [
+    ("Index Drive",          [PYTHON, "scripts/build_index.py"]),
+    ("Download Images",      [PYTHON, "scripts/pipeline/download_drive.py"]),
+    ("Create Manifest",      [PYTHON, "scripts/make_manifest.py"]),
+    ("Run SpeciesNet",       [PYTHON, "scripts/run_speciesnet.py"]),
+    ("Parse ML Results",     [PYTHON, "scripts/run_inference.py"]),
+    ("Extract Metadata",     [PYTHON, "scripts/extract_metadata.py"]),
+    ("Generate Output CSVs", [PYTHON, "scripts/make_output.py"]),
+]
+
 STAGING_DIR = Path("data/staging")
 
 
-def parse_id_list(value):
-    if not value:
-        return []
-    return [s.strip() for s in str(value).split(",") if s.strip()]
-
-
-def make_run_tag(drive_root: str | None, start_folders: str | None):
-    ids = parse_id_list(start_folders)
-    if ids:
-        return "_".join(ids)
-    return drive_root or ""
-
-
-def infer_index_path(args):
-    if args.index:
-        return args.index
-    if args.out_index:
-        return args.out_index
-    if args.per_folder:
-        tag = make_run_tag(args.drive_root, args.start_folders)
-        if tag:
-            return str(Path("data/outputs") / f"drive_index_{tag}.csv")
-    return "data/outputs/drive_index.csv"
-
-
-def build_steps(args):
-    index_cmd = [PYTHON, "scripts/pipeline/build_index.py"]
-
-    if args.drive_root:
-        index_cmd += ["--drive_root", args.drive_root]
-    if args.start_folders:
-        index_cmd += ["--start_folders", args.start_folders]
-    if args.out_index:
-        index_cmd += ["--out", args.out_index]
-    if args.per_folder:
-        index_cmd += ["--per_folder"]
-    if args.resume:
-        index_cmd += ["--resume"]
-    if args.max_files is not None:
-        index_cmd += ["--max_files", str(args.max_files)]
-
-    download_cmd = [PYTHON, "scripts/pipeline/download_drive.py"]
-    download_cmd += ["--index", infer_index_path(args)]
-    if args.resume:
-        download_cmd += ["--resume"]
-    if args.max_downloads is not None:
-        download_cmd += ["--max_downloads", str(args.max_downloads)]
-
-    return [
-        ("Index Drive",          index_cmd),
-        ("Download Images",      download_cmd),
-        ("Create Manifest",      [PYTHON, "scripts/pipeline/make_manifest.py"]),
-        ("Run SpeciesNet",       [PYTHON, "scripts/ml/run_speciesnet.py"]),
-        ("Parse ML Results",     [PYTHON, "scripts/ml/run_inference.py"]),
-        ("Extract Metadata",     [PYTHON, "scripts/pipeline/extract_metadata.py"]),
-        ("Generate Output CSVs", [PYTHON, "scripts/pipeline/make_output.py"]),
-    ]
-
-
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--drive_root", default=None)
-    parser.add_argument("--start_folders", default=None)
-    parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--max_files", type=int, default=None)
-    parser.add_argument("--out_index", default=None)
-    parser.add_argument("--per_folder", action="store_true")
-    parser.add_argument("--index", default=None)
-    parser.add_argument("--max_downloads", type=int, default=None)
-    args = parser.parse_args()
-
     print(f"Using Python: {PYTHON}")
     print(f"Python version: {sys.version}")
 
@@ -98,22 +37,19 @@ def main():
         print("SpeciesNet requires Python 3.11.")
         print("Activate your venv first:")
         print("  source .venv/bin/activate")
-        print("  python scripts/pipeline/run_pipeline.py")
+        print("  python scripts/run_pipeline.py")
         sys.exit(1)
 
     print("=" * 60)
     print("WILDLIFE CAMERA IMAGE PROCESSING PIPELINE")
     print("=" * 60)
 
-    steps = build_steps(args)
-
     total_start = time.time()
     results = []
 
-    for i, (name, cmd) in enumerate(steps, 1):
-        print(f"\n[Step {i}/{len(steps)}] {name}")
+    for i, (name, cmd) in enumerate(STEPS, 1):
+        print(f"\n[Step {i}/{len(STEPS)}] {name}")
         print("-" * 40)
-        print("Command:", " ".join(cmd))
 
         start = time.time()
         result = subprocess.run(cmd)
