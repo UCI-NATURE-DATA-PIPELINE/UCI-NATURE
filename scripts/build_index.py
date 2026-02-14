@@ -10,8 +10,8 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-SERVICE_ACCOUNT_FILE = "secrets/inf191a-uci-nature-sa.json"
-FOLDER_ID = "0ACQBvZlfUN2CUk9PVA"
+from scripts.config import SERVICE_ACCOUNT_FILE, FOLDER_ID, MAX_IMAGES
+
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
 OUT_CSV = Path("data/outputs/drive_index.csv")
@@ -26,7 +26,7 @@ FIELDS = [
 FOLDER_MIMETYPE = "application/vnd.google-apps.folder"
 
 PRINT_EVERY = 500
-MAX_ROWS = None        # None = unlimited, set a number for testing
+MAX_ROWS = MAX_IMAGES  # from config.py
 CHECKPOINT_EVERY = 100
 MAX_RETRIES = 3
 RETRY_DELAY = 2
