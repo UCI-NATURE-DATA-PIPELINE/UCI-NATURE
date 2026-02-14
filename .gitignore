@@ -22,3 +22,4 @@ Miniconda3-*.sh
 # macOS
 .Spotlight-V100
 .Trashes
+data/
