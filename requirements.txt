@@ -4,5 +4,3 @@ google-auth-httplib2
 google-auth-oauthlib
 pillow
 exifread
-megadetector
-numpy<2

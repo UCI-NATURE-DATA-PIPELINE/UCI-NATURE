@@ -9,7 +9,6 @@ from datetime import datetime
 from pathlib import Path
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import sys
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -17,20 +16,18 @@ from googleapiclient.http import MediaIoBaseDownload
 from googleapiclient.errors import HttpError
 
 # config
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+SERVICE_ACCOUNT_FILE = "secrets/inf191a-uci-nature-sa.json"   # key file for service account auth
 
-from scripts.config import SERVICE_ACCOUNT_FILE, MAX_IMAGES
+# CHANGE: now reads from drive_index.csv instead of querying Drive directly
+DRIVE_INDEX = Path("data/outputs/drive_index.csv")            # source of file IDs to download
 
-DRIVE_INDEX = Path("data/outputs/drive_index.csv")
-OUT_DIR = Path("data/staging")
-LOG_CSV = Path("data/outputs/download_log.csv")
-PROGRESS_FILE = Path("data/outputs/.download_progress.csv")
+OUT_DIR = Path("data/staging")                                # where images get downloaded locally
+LOG_CSV = Path("data/outputs/download_log.csv")               # download log
+PROGRESS_FILE = Path("data/outputs/.download_progress.csv")   # NEW: tracks download state
 
-MAX_DOWNLOADS = MAX_IMAGES  # from config.py
-MAX_RETRIES = 3
-RETRY_DELAY = 2
+MAX_DOWNLOADS = None
+MAX_RETRIES = 3           # NEW: retry failed downloads up to 3 times
+RETRY_DELAY = 2           # NEW: initial delay in seconds (exponential backoff)
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]    # read only access
 
@@ -77,18 +74,15 @@ def load_already_downloaded() -> set:
             reader = csv.DictReader(f)
             for row in reader:
                 if row.get("status") == "success":
-                    fid = (row.get("file_id", "") or "").strip()
-                    if fid:
-                        downloaded.add(fid)
+                    downloaded.add(row.get("file_id", ""))
 
     # Also check existing files in staging directory (recursively)
     if OUT_DIR.exists():
         # searches "data/staging/**/* (all subdirectories recursively)"
         for path in OUT_DIR.rglob("*"):
             if path.is_file() and "__" in path.name:
-                fid = path.name.split("__", 1)[0].strip()
-                if fid:
-                    downloaded.add(fid)
+                file_id = path.name.split("__")[0]
+                downloaded.add(file_id)
 
     return downloaded
 
@@ -150,13 +144,7 @@ def download_file_with_retry(drive, file_id: str, original_name: str, out_path: 
             return True
 
         except HttpError as e:
-            try:
-                details = getattr(e, "error_details", None)
-                if not details:
-                    details = getattr(e, "content", b"")
-                error_msg = f"HttpError {e.resp.status}: {details}"
-            except Exception:
-                error_msg = f"HttpError {getattr(e, 'resp', None)}: {repr(e)}"
+            error_msg = f"HttpError {e.resp.status}: {e.error_details}"
 
             if attempt < MAX_RETRIES - 1:
                 delay = RETRY_DELAY * (2 ** attempt)
@@ -242,12 +230,9 @@ def main() -> None:
 
             to_download = []
             for row in reader:
-                file_id = (row.get("file_id") or "").strip()
-                original_name = (row.get("file_name") or "").strip()
-                drive_path = row.get("drive_path", "") or ""
-
-                if not file_id or not original_name:
-                    continue
+                file_id = row["file_id"]
+                original_name = row["file_name"]
+                drive_path = row.get("drive_path", "")
 
                 out_path = make_local_path(file_id, original_name, drive_path)
 

@@ -8,197 +8,300 @@ Current workflow relies on manual review by student interns. Images accumulate f
 
 ## Solution
 
-Automated pipeline that retrieves images from Google Drive, runs MegaDetector + SpeciesNet AI to classify images and identify species, and outputs per-location CSVs ready for review.
+Automated pipeline that retrieves images from Google Drive, extracts metadata, detects duplicates, and classifies images as blank or containing animals.
 
-**Key result:** MegaDetector filters out ~50-70% of blank images automatically. SpeciesNet identifies species (squirrel, raccoon, coyote, etc.) so interns don't have to.
+## Recent updates
+
+- Drive indexing is recursive (nested folders included)
+- Downloader reads from `drive_index.csv` and preserves the full Drive folder path locally
+- Resumable downloads via `data/outputs/.download_progress.csv` + skip already-downloaded files
+- Retry logic with exponential backoff for transient Drive/network failures
+- ML output CSV now includes `is_blank` and logs unmatched/failed items to `inference_errors.csv`
 
 ## Pipeline Flow
 
 ```
-build_index.py       → Index all Google Drive images (recursive)
-download_drive.py    → Download images to local staging
-make_manifest.py     → Create local file inventory
-run_speciesnet.py    → AI detection + species classification (single pass)
-run_inference.py     → Parse SpeciesNet JSON → ml_outputs.csv
-extract_metadata.py  → Extract EXIF data + merge ML results
-make_output.py       → Generate filtered per-location CSVs
-validate_output.py   → Quick validation checks (optional)
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        WILDLIFE IMAGE PIPELINE                          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+  │  INDEX   │───▶│ DOWNLOAD │───▶│ MANIFEST │───▶│INFERENCE │
+  │  DRIVE   │    │  IMAGES  │    │  CREATE  │    │  (ML)    │
+  └──────────┘    └──────────┘    └──────────┘    └──────────┘
+       │               │               │               │
+       ▼               ▼               ▼               ▼
+  drive_index.csv  download_log.csv  manifest.csv  ml_outputs.csv
+                                           │
+                                           ▼
+                                    ┌──────────┐
+                                    │ EXTRACT  │
+                                    │ METADATA │
+                                    └──────────┘
+                                           │
+                                           ▼
+                                    metadata.csv
+                                           │
+                                           ▼
+                                    ┌──────────┐
+                                    │  MERGE   │
+                                    │  OUTPUT  │
+                                    └──────────┘
+                                           │
+                                           ▼
+                                    ┌──────────┐
+                                    │ VALIDATE │
+                                    └──────────┘
+                                           │
+                                           ▼
+                                     output.csv ← FINAL OUTPUT
 ```
-
-SpeciesNet runs MegaDetector internally, so one pass handles both detection and species ID.
-
-## Requirements
-
-- **Python 3.11** (MegaDetector is not compatible with 3.13+)
-- Virtual environment with megadetector + speciesnet packages
-- Google Drive service account credentials
 
 ## Installation
 
 ```bash
-# Create Python 3.11 virtual environment
-python3.11 -m venv .venv
-source .venv/bin/activate
+# Create virtual environment (recommended)
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# or: .venv\Scripts\activate  # Windows
 
 # Install dependencies
 pip install -r requirements.txt
+```
 
-# Install SpeciesNet (optional, for species classification)
-pip install speciesnet --use-pep517
+### Requirements
+
+```
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
+pillow
+exifread
 ```
 
 ## Setup
 
-1. Create a service account at [Google Cloud Console](https://console.cloud.google.com/)
-2. Save credentials as `secrets/inf191a-uci-nature-sa.json`
-3. Share the Drive folder with the service account email
-4. The `FOLDER_ID` is already configured in the scripts
+1. **Create service account** at [Google Cloud Console](https://console.cloud.google.com/)
+2. **Download credentials** and save as `secrets/inf191a-uci-nature-sa.json`
+3. **Share Drive folder** with the service account email
+4. **Update `FOLDER_ID`** in `scripts/build_index.py` if needed
 
 ## Usage
 
-**Always activate the virtual environment first:**
+### Run Full Pipeline
+
 ```bash
-source .venv/bin/activate
+python scripts/run_pipeline.py
 ```
 
-**Run the full pipeline:**
+This runs all steps in order:
+
+1. Index Drive files
+2. Download images
+3. Create manifest
+4. Run inference (ML classification)
+5. Extract metadata
+6. Generate final output
+7. Validate output
+
+### Run Individual Steps
+
 ```bash
-python scripts/pipeline/run_pipeline.py
+# Step 1: Index Google Drive
+python scripts/build_index.py
+
+# Step 2: Download images
+python scripts/download_drive.py
+
+# Step 3: Create local manifest
+python scripts/make_manifest.py
+
+# Step 4: Process ML results (requires MegaDetector output)
+python scripts/run_inference.py
+
+# Step 5: Extract EXIF metadata
+python scripts/extract_metadata.py
+
+# Step 6: Generate final CSV
+python scripts/make_output.py
+
+# Step 7: Validate output
+python scripts/validate_output.py
 ```
 
-**Run individual steps:**
+## Pipeline Steps Detail
+
+### 1. build_index.py
+
+- Recursively scans Google Drive folder
+- Extracts file IDs, paths, and folder structure
+- Parses site/camera names from folder paths
+- **Output:** `data/outputs/drive_index.csv`
+- **Features:** Checkpoint/resume support, retry logic
+
+### 2. download_drive.py
+
+- Downloads images using file IDs from drive_index.csv
+- Preserves the Drive folder structure locally and prefixes the filename with `file_id__` for tracking
+- **Output:** `data/staging/` (images), `data/outputs/download_log.csv`, `data/outputs/.download_progress.csv`
+- **Features:** Resume support, exponential backoff retry, optional parallel downloads (thread pool)
+
+### 3. make_manifest.py
+
+- Creates inventory of downloaded files
+- Links file IDs to local paths
+- **Output:** `data/outputs/manifest.csv`
+
+### 4. run_inference.py
+
+- Converts MegaDetector JSON output to CSV format
+- Calculates animal/blank classification
+- **Input:** `data/outputs/md_results.json` (from MegaDetector)
+- **Output:** `data/outputs/ml_outputs.csv`
+- **Note:** If MegaDetector output is missing, creates empty ML columns
+
+### 5. extract_metadata.py
+
+- Extracts EXIF datetime from images
+- Gets image dimensions
+- Merges ML classification data
+- **Output:** `data/outputs/metadata.csv`
+
+### 6. make_output.py
+
+- Merges all data sources into final output
+- Validates required columns are present
+- **Output:** `data/outputs/output.csv`, `data/outputs/validation_report.csv`
+
+### 7. validate_output.py
+
+- Validates final output completeness
+- Checks all required columns exist
+- Reports data quality statistics
+
+## Output Format
+
+The final `output.csv` contains these columns:
+
+| Column            | Description                           |
+| ----------------- | ------------------------------------- |
+| `image_id`        | Unique file ID (from Google Drive)    |
+| `camera_name`     | Camera/site name (from folder path)   |
+| `date`            | Image date (YYYY-MM-DD)               |
+| `time`            | Image time (HH:MM:SS)                 |
+| `has_animal`      | 1 = animal detected, 0 = no animal    |
+| `is_blank`        | 1 = blank image, 0 = has content      |
+| `species`         | Species name (placeholder for future) |
+| `count`           | Number of animals detected            |
+| `model_certainty` | ML confidence score (0-1)             |
+
+## ML Integration (MegaDetector)
+
+To populate animal/blank classification:
+
+1. **Run MegaDetector** on downloaded images:
+
 ```bash
-python scripts/pipeline/build_index.py          # Index Drive
-python scripts/pipeline/download_drive.py       # Download images
-python scripts/pipeline/make_manifest.py        # Create manifest
-python scripts/ml/run_speciesnet.py             # Run AI detection + species
-python scripts/ml/run_inference.py              # Parse ML results
-python scripts/pipeline/extract_metadata.py     # Extract EXIF + merge outputs
-python scripts/pipeline/make_output.py          # Generate CSVs
-python scripts/pipeline/validate_output.py      # Optional validation checks
+python scripts/ml/run_megadetector.py
 ```
 
-> `python scripts/archive/run_megadetector.py` is still in the repo as a standalone fallback if needed.
+2. **Process results:**
 
-## For Windows
-
-**Create virtual environment**
-```powershell
-py -3.11 -m venv .venv
-
-**Activate it**
-.venv\Scripts\Activate.ps1
-
-**Install dependencies**
-pip install -r requirements.txt
-
-**Install SpeciesNet**
-pip install speciesnet --use-pep517
-
-**Set PYTHONPATH to current directory**
-$env:PYTHONPATH = (Get-Location).Path
-
-**Run the pipeline**
-py scripts\pipeline\run_pipeline.py
-```
-> (For Julie's Lab Computer)!!
-
-## Output
-
-### Per-Location CSVs
-```
-data/outputs/by_location/
-├── BonitaCanyon1.csv
-├── BonitaCanyon2.csv
-├── Marshtrail.csv
-└── ResearchPark.csv
+```bash
+python scripts/run_inference.py
+python scripts/extract_metadata.py
+python scripts/make_output.py
 ```
 
-Only rows with animal or human detections are included (blanks filtered out).
+Without MegaDetector results, ML columns will be empty but the pipeline will still work.
 
-| Column | Source | Description |
-|--------|--------|-------------|
-| CameraName | Folder structure | Camera location name |
-| DeploymentFolder | Folder structure | SD card upload identifier |
-| Image# | Filename | Image number (e.g., IMG_0001) |
-| Species | SpeciesNet | Species label (squirrel, raccoon, etc.) |
-| # of Individuals | MegaDetector | Number of detections |
-| Date | EXIF metadata | Date taken (YYYYMMDD) |
-| Time | EXIF metadata | Time taken (HH:MM:SS) |
-| has_animal | MegaDetector | 1 = animal detected |
-| model_certainty | MegaDetector | Confidence score (0.0–1.0) |
-| Notes | Manual | For human review notes |
+## Error Handling & Logging
 
-## Batch testing
+The pipeline generates detailed logs:
 
-Set 'MAX_IMAGES' in ```config.py``` to whatever number for batch testing. Setting to 'None' does everything. 
+| Log File                             | Description                    |
+| ------------------------------------ | ------------------------------ |
+| `data/outputs/pipeline_log.txt`      | Overall pipeline execution log |
+| `data/outputs/download_log.csv`      | Download status for each file  |
+| `data/outputs/inference_log.txt`     | ML processing log              |
+| `data/outputs/inference_errors.csv`  | ML processing errors           |
+| `data/outputs/metadata_log.txt`      | Metadata extraction log        |
+| `data/outputs/metadata_errors.csv`   | Metadata extraction errors     |
+| `data/outputs/output_log.txt`        | Final output generation log    |
+| `data/outputs/validation_report.csv` | Data validation issues         |
 
-## Adding New Species Labels
+### Resume Support
 
-SpeciesNet returns taxonomy strings. We map them to simple labels in `run_inference.py`:
+The pipeline supports resuming interrupted runs:
 
-```python
-SPECIES_MAP = {
-    "canis latrans": "coyote",
-    "sciuridae": "squirrel",
-    "procyon lotor": "raccoon",
-    # add new mappings here
-}
-```
-
-If a species shows as "unknown" in output, find the taxonomy term in `speciesnet_results.json` and add a mapping.
-
-## Processing at Scale
-
-For the full 173k+ image backlog:
-
-1. **Process in batches** — set `MAX_DOWNLOADS` in `download_drive.py`
-2. **Clean staging between runs** — pipeline prompts to delete images after each run
-3. **GPU recommended** — CPU processing is slow (~75 min for 100 images). An NVIDIA GPU gives 50-100x speedup.
-4. **Storage:** 300 images ≈ 550 MB. Process in batches, don't store all at once.
-
-## Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| `ModuleNotFoundError: megadetector` | Activate venv: `source .venv/bin/activate` |
-| `numpy` errors | `pip install "numpy<2"` |
-| Pipeline uses wrong Python version | Always run from activated `.venv` |
-| `drive_index.csv` has 0 rows | Check `FOLDER_ID` and service account permissions |
-| Species shows as "unknown" | Add mapping to `SPECIES_MAP` in `run_inference.py` |
-| SpeciesNet not found | `pip install speciesnet --use-pep517` |
+- **Indexing:** Saves checkpoint every 100 files
+- **Downloads:** Tracks successfully downloaded files
+- **Re-run:** Simply run the same command again to resume
 
 ## Project Structure
 
 ```
-UCI-NATURE/
+project/
 ├── scripts/
-│   ├── __init__.py
-│   ├── config.py
-│   ├── pipeline/
-│   │   ├── build_index.py
-│   │   ├── download_drive.py
-│   │   ├── extract_metadata.py
-│   │   ├── list_drive.py
-│   │   ├── make_manifest.py
-│   │   ├── make_output.py
-│   │   ├── run_pipeline.py
-│   │   └── validate_output.py
-│   ├── ml/
-│   │   ├── run_speciesnet.py
-│   │   ├── run_inference.py
-│   │   └── postprocess_speciesnet.py
-│   └── archive/
-│       └── run_megadetector.py
+│   ├── build_index.py       # Index Drive files
+│   ├── download_drive.py    # Download images
+│   ├── make_manifest.py     # Create file manifest
+│   ├── run_inference.py     # Process ML output
+│   ├── extract_metadata.py  # Extract EXIF data
+│   ├── make_output.py       # Generate final CSV
+│   ├── validate_output.py   # Validate output
+│   ├── run_pipeline.py      # Run full pipeline
+│   └── config.py            # Configuration
 ├── data/
-│   ├── staging/               # Downloaded images (temporary)
-│   └── outputs/               # CSV outputs + ML results
-│       └── by_location/       # Final per-camera CSVs
-├── secrets/                   # Service account key (DO NOT COMMIT)
-├── notes/                     # Team research notes
+│   ├── staging/             # Downloaded images
+│   └── outputs/             # CSV outputs & logs
+├── secrets/
+│   └── inf191a-uci-nature-sa.json  # Service account key
+├── notes/                   # Development notes
 ├── requirements.txt
-├── .gitignore
 └── README.md
+```
+
+## Configuration
+
+Edit these values in the scripts as needed:
+
+| Setting             | File              | Default             |
+| ------------------- | ----------------- | ------------------- |
+| `MAX_DOWNLOADS`     | download_drive.py | None                |
+| `MAX_ROWS`          | build_index.py    | 2000                |
+| `FOLDER_ID`         | build_index.py    | (UCI Nature folder) |
+| `DEFAULT_THRESHOLD` | run_inference.py  | 0.5                 |
+
+## Testing
+
+### Quick Test (Small Batch)
+
+1. Set `MAX_DOWNLOADS = 10` in `scripts/download_drive.py`
+2. Set `MAX_ROWS = 50` in `scripts/build_index.py`
+3. Run pipeline:
+
+```bash
+python scripts/run_pipeline.py
+```
+
+4. Check output:
+
+```bash
+python scripts/validate_output.py
+```
+
+### Validate Output
+
+```bash
+# Check final output
+python scripts/validate_output.py
+
+# Expected output:
+# ✓ All required columns present
+# Total rows: X
+# With ML results: Y
 ```
 
 ## Team
@@ -211,4 +314,52 @@ UCI-NATURE/
 
 ## Partner
 
-Julie Ellen Coffey — UCI Campus Reserves Manager
+Julie Ellen Coffey - UCI Campus Reserves Manager
+
+## Troubleshooting
+
+### "No module named 'google.oauth2'"
+
+You're running `download_drive.py` in an environment missing the Google Drive client libraries.
+
+Fix:
+
+```bash
+conda activate ucinature-md
+pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+```
+
+### "No module named 'megadetector'"
+
+You're running the MegaDetector step in an environment where MegaDetector isn't installed.
+
+Fix:
+
+```bash
+conda activate ucinature-md
+pip install megadetector
+```
+
+### "drive_index.csv not found"
+
+Run `python scripts/build_index.py` first.
+
+### "manifest.csv not found"
+
+Run `python scripts/download_drive.py` and `python scripts/make_manifest.py`.
+
+### ML columns are empty
+
+MegaDetector output (`md_results.json`) is missing. Run MegaDetector on your images first.
+
+### API quota errors
+
+The pipeline uses exponential backoff. If errors persist, wait and retry.
+
+### Downloads failing
+
+Check `data/outputs/download_log.csv` for error details. Common issues:
+
+- Service account doesn't have access to folder
+- Network connectivity issues
+- File was deleted from Drive

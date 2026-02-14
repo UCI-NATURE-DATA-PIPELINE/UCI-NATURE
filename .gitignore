@@ -1,25 +1,37 @@
-.venv/
-__pycache__/
-*.pyc
-.DS_Store
-
+# secrets
 secrets/
 *.json
 
+# data 
 data/staging/
-data/outputs/
-data/test_images/
+data/outputs/*
+!data/outputs/animals_only.csv
+!data/outputs/output.csv
+!data/outputs/final_output.csv
 
-notes/to_do.md
+# allow small sample data to be committed
+!data/sample/
+!data/sample/**
+!data/sample/images/**
+!data/sample/outputs/**
 
-*.zip
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
 
-# Installer files
-Miniforge3-*.sh
-Mambaforge-*.sh
-Miniconda3-*.sh
+# mac
+.DS_Store
 
-# macOS
-.Spotlight-V100
-.Trashes
-data/
+# envs
+.env
+.venv
+.conda/
+*.envsample/outputs/
+outputs/
+outputs/
+
+echo "data/sample/images/" >> .gitignore
+echo "notes/*.png" >> .gitignoredata/
