@@ -68,7 +68,7 @@ python scripts/run_pipeline.py
 **Run individual steps:**
 ```bash
 python scripts/build_index.py          # Index Drive
-python scripts/download_drive.py       # Download images
+python scripts/pipeline/download_drive.py       # Download images
 python scripts/make_manifest.py        # Create manifest
 python scripts/run_speciesnet.py       # Run AI detection + species
 python scripts/run_inference.py        # Parse ML results

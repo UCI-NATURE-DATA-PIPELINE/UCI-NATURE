@@ -17,7 +17,7 @@ PYTHON = sys.executable
 
 STEPS = [
     ("Index Drive",          [PYTHON, "scripts/build_index.py"]),
-    ("Download Images",      [PYTHON, "scripts/download_drive.py"]),
+    ("Download Images",      [PYTHON, "scripts/pipeline/download_drive.py"]),
     ("Create Manifest",      [PYTHON, "scripts/make_manifest.py"]),
     ("Run SpeciesNet",       [PYTHON, "scripts/run_speciesnet.py"]),
     ("Parse ML Results",     [PYTHON, "scripts/run_inference.py"]),
