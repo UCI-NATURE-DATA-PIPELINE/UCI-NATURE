@@ -22,6 +22,7 @@ run_speciesnet.py    → AI detection + species classification (single pass)
 run_inference.py     → Parse SpeciesNet JSON → ml_outputs.csv
 extract_metadata.py  → Extract EXIF data + merge ML results
 make_output.py       → Generate filtered per-location CSVs
+validate_output.py   → Quick validation checks (optional)
 ```
 
 SpeciesNet runs MegaDetector internally, so one pass handles both detection and species ID.
@@ -70,18 +71,20 @@ python scripts/pipeline/run_pipeline.py
 python scripts/pipeline/build_index.py          # Index Drive
 python scripts/pipeline/download_drive.py       # Download images
 python scripts/pipeline/make_manifest.py        # Create manifest
-python scripts/ml/run_speciesnet.py       # Run AI detection + species
-python scripts/ml/run_inference.py        # Parse ML results
-python scripts/pipeline/extract_metadata.py     # Extract EXIF
+python scripts/ml/run_speciesnet.py             # Run AI detection + species
+python scripts/ml/run_inference.py              # Parse ML results
+python scripts/pipeline/extract_metadata.py     # Extract EXIF + merge outputs
 python scripts/pipeline/make_output.py          # Generate CSVs
+python scripts/pipeline/validate_output.py      # Optional validation checks
 ```
 
-> `run_megadetector.py` is still in the repo as a standalone fallback if needed.
+> `python scripts/archive/run_megadetector.py` is still in the repo as a standalone fallback if needed.
 
-## For Windows!
-```bash
+## For Windows
+
 **Create virtual environment**
-py -m venv .venv
+```powershell
+py -3.11 -m venv .venv
 
 **Activate it**
 .venv\Scripts\Activate.ps1
@@ -96,7 +99,7 @@ pip install speciesnet --use-pep517
 $env:PYTHONPATH = (Get-Location).Path
 
 **Run the pipeline**
-py scripts\run_pipeline.py
+py scripts\pipeline\run_pipeline.py
 ```
 > (For Julie's Lab Computer)!!
 
@@ -170,19 +173,23 @@ For the full 173k+ image backlog:
 ```
 UCI-NATURE/
 ├── scripts/
-│   ├── build_index.py         # Index Google Drive
-│   ├── download_drive.py      # Download images
-│   ├── make_manifest.py       # Create file manifest
-│   ├── run_megadetector.py    # Standalone MegaDetector (fallback)
-│   ├── run_speciesnet.py      # Run AI detection + species (primary)
-│   ├── run_speciesnet.py      # Run species classification
-│   ├── run_inference.py       # Parse ML results
-│   ├── extract_metadata.py    # Extract EXIF data
-│   ├── make_output.py         # Generate per-location CSVs
-│   ├── run_pipeline.py        # Execute full pipeline
-│   ├── validate_output.py     # Validate output quality
-│   ├── list_drive.py          # Test Drive connection
-│   └── config.py              # Shared configuration
+│   ├── __init__.py
+│   ├── config.py
+│   ├── pipeline/
+│   │   ├── build_index.py
+│   │   ├── download_drive.py
+│   │   ├── extract_metadata.py
+│   │   ├── list_drive.py
+│   │   ├── make_manifest.py
+│   │   ├── make_output.py
+│   │   ├── run_pipeline.py
+│   │   └── validate_output.py
+│   ├── ml/
+│   │   ├── run_speciesnet.py
+│   │   ├── run_inference.py
+│   │   └── postprocess_speciesnet.py
+│   └── archive/
+│       └── run_megadetector.py
 ├── data/
 │   ├── staging/               # Downloaded images (temporary)
 │   └── outputs/               # CSV outputs + ML results
