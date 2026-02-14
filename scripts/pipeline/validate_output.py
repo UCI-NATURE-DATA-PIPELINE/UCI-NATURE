@@ -24,8 +24,11 @@ REQUIRED_COLUMNS = [
 def validate_csv(csv_path: Path) -> dict:
     """Validate a single output CSV and return stats."""
     stats = {
-        "total": 0, "with_date": 0, "with_species": 0,
-        "animals": 0, "species": Counter(),
+        "total": 0,
+        "with_date": 0,
+        "with_species": 0,
+        "animals": 0,
+        "species": Counter(),
     }
     column_issues = []
 
@@ -40,15 +43,15 @@ def validate_csv(csv_path: Path) -> dict:
         for row in reader:
             stats["total"] += 1
 
-            if row.get("Date"):
+            if (row.get("Date") or "").strip():
                 stats["with_date"] += 1
 
-            species = row.get("Species", "").strip()
+            species = (row.get("Species") or "").strip()
             if species:
                 stats["with_species"] += 1
                 stats["species"][species] += 1
 
-            if row.get("has_animal") == "1":
+            if (row.get("has_animal") or "").strip() == "1":
                 stats["animals"] += 1
 
     return {"stats": stats, "column_issues": column_issues}
@@ -89,28 +92,30 @@ def main():
         if issues:
             all_ok = False
 
-        print(f"  {status} {csv_path.name}: {stats['total']} rows, "
-              f"{stats['with_species']} with species, "
-              f"{stats['with_date']} with date")
+        print(
+            f"  {status} {csv_path.name}: {stats['total']} rows, "
+            f"{stats['with_species']} with species, "
+            f"{stats['with_date']} with date"
+        )
 
         if issues:
             print(f"       Missing columns: {issues}")
 
-    print(f"\n" + "-" * 40)
-    print(f"SUMMARY")
-    print(f"-" * 40)
+    print("\n" + "-" * 40)
+    print("SUMMARY")
+    print("-" * 40)
     print(f"Total rows across all files: {total_rows}")
     print(f"With species classification: {total_species}")
 
     if all_species:
-        print(f"\nSpecies distribution:")
+        print("\nSpecies distribution:")
         for species, count in all_species.most_common():
             print(f"  {species}: {count}")
 
     if all_ok:
-        print(f"\n[OK] All validations passed!")
+        print("\n[OK] All validations passed!")
     else:
-        print(f"\n[WARN] Some files have issues (see above)")
+        print("\n[WARN] Some files have issues (see above)")
 
     return 0 if all_ok else 1
 

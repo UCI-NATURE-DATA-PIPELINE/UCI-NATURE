@@ -29,11 +29,16 @@ def main():
 
         file_id, original_name = split_local_name(p.name)
 
+        try:
+            local_path = str(p.relative_to(Path.cwd()))
+        except ValueError:
+            local_path = str(p)
+
         rows.append({
             "file_id": file_id,                 # drive ID
             "file_name": original_name,         # original filename
             "local_file_name": p.name,          # what gets saved locally
-            "local_path": str(p),
+            "local_path": local_path,
             "size_bytes": p.stat().st_size,
             "modified_time": datetime.fromtimestamp(p.stat().st_mtime).isoformat(),
         })

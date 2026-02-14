@@ -178,6 +178,10 @@ def parse_species_label(prediction_str: str) -> str:
     return "unknown"
 
 
+def _norm_path(p: str) -> str:
+    return (p or "").replace("\\", "/").strip()
+
+
 def load_manifest_index():
     """Build indices to match SpeciesNet filepaths back to our file_id."""
     by_local_path = {}
@@ -188,12 +192,13 @@ def load_manifest_index():
 
     with open(MANIFEST, "r", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            fid = row.get("file_id", "")
-            lp = row.get("local_path", "")
-            bn = Path(lp).name if lp else row.get("local_file_name", "")
+            fid = (row.get("file_id") or "").strip()
+            lp = (row.get("local_path") or "").strip()
+            bn = Path(lp).name if lp else (row.get("local_file_name") or "").strip()
             if fid:
                 if lp:
-                    by_local_path[lp] = fid
+                    lp_n = _norm_path(lp)
+                    by_local_path[lp_n] = fid
                 if bn:
                     by_basename[bn] = fid
     return by_local_path, by_basename
@@ -203,9 +208,10 @@ def find_file_id(filepath: str, by_local_path: dict, by_basename: dict) -> str:
     """Match a SpeciesNet filepath to our file_id."""
     if not filepath:
         return ""
-    if filepath in by_local_path:
-        return by_local_path[filepath]
-    bn = Path(filepath).name
+    fp_n = _norm_path(filepath)
+    if fp_n in by_local_path:
+        return by_local_path[fp_n]
+    bn = Path(fp_n).name
     return by_basename.get(bn, "")
 
 
@@ -230,13 +236,13 @@ def main():
     rows = []
 
     for pred in predictions:
-        filepath = pred.get("filepath", "")
+        filepath = _norm_path(pred.get("filepath", ""))
         fid = find_file_id(filepath, by_local_path, by_basename)
         if not fid:
             continue
 
         # Parse detections (same format as MegaDetector: category 1/2/3)
-        detections = pred.get("detections", [])
+        detections = pred.get("detections", []) or []
 
         animal_confs = []
         person_confs = []
@@ -245,8 +251,12 @@ def main():
 
         for det in detections:
             cat = det.get("category", "")
-            label = det.get("label", "")
+            label = (det.get("label", "") or "").strip().lower()
             conf = det.get("conf")
+            if conf is None:
+                conf = det.get("confidence")
+            if conf is None:
+                conf = det.get("score")
             if conf is None:
                 continue
             try:
@@ -254,11 +264,12 @@ def main():
             except (ValueError, TypeError):
                 continue
 
-            if cat in ANIMAL_CATEGORY or label == "animal":
+            cat_s = str(cat).strip().lower()
+            if cat_s in ANIMAL_CATEGORY or label == "animal":
                 animal_confs.append(conf_f)
                 if conf_f >= DEFAULT_THRESHOLD:
                     animal_count += 1
-            elif cat in PERSON_CATEGORY or label == "human":
+            elif cat_s in PERSON_CATEGORY or label == "human" or label == "person":
                 person_confs.append(conf_f)
                 if conf_f >= DEFAULT_THRESHOLD:
                     person_count += 1
@@ -268,29 +279,51 @@ def main():
         has_animal = 1 if max_animal_conf >= DEFAULT_THRESHOLD else 0
         has_human = 1 if max_person_conf >= DEFAULT_THRESHOLD else 0
 
-        # Skip blank/vehicle-only images
-        if not has_animal and not has_human:
-            continue
-
         # Parse species from prediction string
         prediction_str = pred.get("prediction", "")
         prediction_score = pred.get("prediction_score", 0.0)
+        try:
+            prediction_score_f = float(prediction_score)
+        except (ValueError, TypeError):
+            prediction_score_f = 0.0
 
-        if has_human and not has_animal:
-            species = "human"
-            best_conf = max_person_conf
-            count = person_count
-        elif has_animal:
-            species = parse_species_label(prediction_str)
-            # Skip if SpeciesNet itself says blank
-            if species in ("blank", "empty", ""):
-                species = "unknown"
-            best_conf = max_animal_conf
-            count = animal_count
+        # If detections are missing/empty, fall back to classifier label
+        if not detections:
+            species_guess = parse_species_label(prediction_str)
+            if species_guess in ("blank", "empty", ""):
+                continue
+            if species_guess == "human":
+                has_human = 1
+                has_animal = 0
+                count = 1
+                best_conf = prediction_score_f
+                species = "human"
+            else:
+                has_animal = 1
+                has_human = 0
+                count = 1
+                best_conf = prediction_score_f
+                species = species_guess if species_guess else "unknown"
         else:
-            species = ""
-            best_conf = 0.0
-            count = 0
+            # Skip blank/vehicle-only images
+            if not has_animal and not has_human:
+                continue
+
+            if has_human and not has_animal:
+                species = "human"
+                best_conf = max_person_conf
+                count = person_count
+            elif has_animal:
+                species = parse_species_label(prediction_str)
+                # Skip if SpeciesNet itself says blank
+                if species in ("blank", "empty", ""):
+                    species = "unknown"
+                best_conf = max_animal_conf
+                count = animal_count
+            else:
+                species = ""
+                best_conf = 0.0
+                count = 0
 
         rows.append({
             "file_id": fid,
@@ -298,7 +331,7 @@ def main():
             "has_human": has_human,
             "species": species,
             "count": count,
-            "model_certainty": round(best_conf, 4),
+            "model_certainty": round(float(best_conf), 4),
         })
 
     # Deduplicate by file_id

@@ -7,6 +7,7 @@
 
 import csv
 import re
+import argparse
 from pathlib import Path
 from collections import defaultdict
 
@@ -108,18 +109,37 @@ def write_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
         w.writerows(rows)
 
 
+def safe_filename(name: str) -> str:
+    # keep it simple: remove characters that break filenames
+    cleaned = re.sub(r'[\\/:*?"<>|]+', "_", name)
+    cleaned = cleaned.strip().strip(".")
+    return cleaned or "Unknown"
+
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--manifest", default=str(MANIFEST))
+    parser.add_argument("--metadata", default=str(META))
+    parser.add_argument("--drive_index", default=str(DRIVE_INDEX))
+    parser.add_argument("--out_dir", default=str(OUT_DIR))
+    args = parser.parse_args()
+
+    manifest_path = Path(args.manifest)
+    meta_path = Path(args.metadata)
+    drive_index_path = Path(args.drive_index)
+    out_dir = Path(args.out_dir)
+
     # Check required files exist
-    if not MANIFEST.exists():
+    if not manifest_path.exists():
         raise FileNotFoundError("manifest.csv not found. Run make_manifest.py first.")
-    if not META.exists():
+    if not meta_path.exists():
         raise FileNotFoundError("metadata.csv not found. Run extract_metadata.py first.")
-    if not DRIVE_INDEX.exists():
+    if not drive_index_path.exists():
         raise FileNotFoundError("drive_index.csv not found. Run build_index.py first.")
 
     # Load data
-    meta_by_id = load_csv_by_key(META, "file_id")
-    drive_by_id = load_csv_by_key(DRIVE_INDEX, "file_id")
+    meta_by_id = load_csv_by_key(meta_path, "file_id")
+    drive_by_id = load_csv_by_key(drive_index_path, "file_id")
 
     # Group rows by camera location
     rows_by_camera = defaultdict(list)
@@ -127,7 +147,7 @@ def main():
     total_processed = 0
     total_skipped_blank = 0
 
-    with open(MANIFEST, "r", encoding="utf-8") as f:
+    with open(manifest_path, "r", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             file_id = row["file_id"]
             filename = row["file_name"]
@@ -138,16 +158,16 @@ def main():
             total_processed += 1
 
             # Get ML outputs
-            has_animal = m.get("has_animal", "")
-            has_human = m.get("has_human", "")
-            species = m.get("species", "")
-            count = m.get("count", "")
-            model_certainty = m.get("model_certainty", "")
+            has_animal = (m.get("has_animal", "") or "").strip()
+            has_human = (m.get("has_human", "") or "").strip()
+            species = (m.get("species", "") or "").strip()
+            count = (m.get("count", "") or "").strip()
+            model_certainty = (m.get("model_certainty", "") or "").strip()
 
             # FILTER: Only include rows with animal or human detected
             # Skip blank images (no detection) and vehicle-only images
-            is_animal = str(has_animal).strip() == "1"
-            is_human = str(has_human).strip() == "1"
+            is_animal = has_animal == "1"
+            is_human = has_human == "1"
 
             if not is_animal and not is_human:
                 total_skipped_blank += 1
@@ -158,9 +178,16 @@ def main():
             deployment_folder = d.get("deployment_folder", "")
             image_num = extract_image_number(filename)
 
-            exif_dt = m.get("exif_datetime", "")
-            date = format_date(exif_dt)
-            time = format_time(exif_dt)
+            # Prefer metadata.csv date/time (already standardized), fallback to exif_datetime if needed
+            date = (m.get("date", "") or "").strip()
+            time_val = (m.get("time", "") or "").strip()
+
+            if not date or not time_val:
+                exif_dt = (m.get("exif_datetime", "") or "").strip()
+                if not date:
+                    date = format_date(exif_dt)
+                if not time_val:
+                    time_val = format_time(exif_dt)
 
             row_data = {
                 "CameraName": camera_name,
@@ -169,7 +196,7 @@ def main():
                 "Species": species,
                 "# of Individuals": count,
                 "Date": date,
-                "Time": time,
+                "Time": time_val,
                 "has_animal": has_animal,
                 "model_certainty": model_certainty,
                 "Notes": "",
@@ -193,7 +220,7 @@ def main():
     ]
 
     # Write one CSV per camera location
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     total_output = 0
     for camera_name, rows in sorted(rows_by_camera.items()):
@@ -201,7 +228,7 @@ def main():
         rows.sort(key=lambda r: (r.get("Date", ""), r.get("Time", "")))
 
         # Write CSV for this camera
-        csv_path = OUT_DIR / f"{camera_name}.csv"
+        csv_path = out_dir / f"{safe_filename(camera_name)}.csv"
         write_csv(csv_path, rows, FINAL_FIELDS)
 
         total_output += len(rows)
@@ -209,18 +236,18 @@ def main():
 
     # Count what's actually in the output
     all_rows = [r for rows in rows_by_camera.values() for r in rows]
-    animal_count = sum(1 for r in all_rows if str(r.get("has_animal", "")) == "1")
-    human_count = sum(1 for r in all_rows if str(r.get("has_animal", "")) == "0")
-    species_filled = sum(1 for r in all_rows if r.get("Species", "") != "")
+    animal_count = sum(1 for r in all_rows if (r.get("has_animal", "") or "").strip() == "1")
+    human_only_count = sum(1 for r in all_rows if ((r.get("Species", "") or "").strip().lower() == "human"))
+    species_filled = sum(1 for r in all_rows if (r.get("Species", "") or "").strip() != "")
 
     print(f"\nTotal: {total_output} images across {len(rows_by_camera)} locations")
-    print(f"Output directory: {OUT_DIR}")
+    print(f"Output directory: {out_dir}")
 
     print(f"\nFiltering:")
     print(f"  Total images processed: {total_processed}")
     print(f"  Kept (animal or human): {total_output}")
     print(f"    Animals: {animal_count}")
-    print(f"    Humans: {human_count}")
+    print(f"    Humans (by Species=human): {human_only_count}")
     print(f"  Skipped (blank/vehicle): {total_skipped_blank}")
 
     print(f"\nColumns filled automatically:")
@@ -231,7 +258,7 @@ def main():
     print("  ✓ Time (from EXIF metadata)")
 
     print(f"\nMegaDetector results:")
-    print(f"  ✓ has_animal — {animal_count} animals, {human_count} humans")
+    print(f"  ✓ has_animal — {animal_count} animals")
     print(f"  ✓ model_certainty — confidence scores filled")
     print(f"  ✓ # of Individuals — detection counts filled")
 

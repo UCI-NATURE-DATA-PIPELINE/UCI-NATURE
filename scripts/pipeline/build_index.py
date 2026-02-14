@@ -27,7 +27,7 @@ FIELDS = [
 FOLDER_MIMETYPE = "application/vnd.google-apps.folder"
 
 PRINT_EVERY = 500
-MAX_ROWS = None        # None = unlimited, set a number for testing
+MAX_ROWS = 300        # None = unlimited, set a number for testing
 CHECKPOINT_EVERY = 100
 MAX_RETRIES = 3
 RETRY_DELAY = 2

@@ -29,7 +29,7 @@ def split_date_time(dt_str: str):
         return "", ""
     try:
         date_part, time_part = dt_str.split(" ", 1)
-        return date_part.replace(":", "-"), time_part  # YYYY-MM-DD, HH:MM:SS
+        return date_part.replace(":", ""), time_part  # YYYYMMDD, HH:MM:SS
     except Exception:
         return "", ""
 
@@ -54,6 +54,16 @@ def load_ml_by_id(path: Path) -> dict:
     return out
 
 
+def to_flag01(val):
+    s = str(val).strip()
+    if s == "":
+        return ""
+    try:
+        return "1" if int(float(s)) == 1 else "0"
+    except Exception:
+        return ""
+
+
 def main():
     if not MANIFEST.exists():
         raise FileNotFoundError("manifest.csv not found. Run download and make_manifest first.")
@@ -71,14 +81,12 @@ def main():
             w, h = get_size(path)
 
             ml = ml_by_id.get(file_id, {})
-            has_animal = ml.get("has_animal", "")
-            has_human = ml.get("has_human", "")
+            has_animal = to_flag01(ml.get("has_animal", ""))
+            has_human = to_flag01(ml.get("has_human", ""))
+
             is_blank = ""
-            if str(has_animal).strip() != "":
-                try:
-                    is_blank = "1" if int(float(has_animal)) == 0 else "0"
-                except Exception:
-                    is_blank = ""
+            if has_animal != "" and has_human != "":
+                is_blank = "1" if (has_animal == "0" and has_human == "0") else "0"
 
             rows_out.append({
                 "file_id": file_id,
