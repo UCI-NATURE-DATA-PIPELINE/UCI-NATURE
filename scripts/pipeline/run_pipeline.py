@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import time
+import csv
 from pathlib import Path
 
 # make imports like "from scripts.config import ..." work reliably
@@ -24,6 +25,7 @@ os.chdir(REPO_ROOT)  # ensure relative paths like data/... work
 
 PYTHON = sys.executable
 STAGING_DIR = Path("data/staging")
+STAGING_BACKUP = Path("data/staging_full_backup")
 
 
 def parse_id_list(value: str | None) -> list[str]:
@@ -52,31 +54,42 @@ def infer_index_path(args: argparse.Namespace) -> str:
     return "data/outputs/drive_index.csv"
 
 
-def prepare_staging_for_manual_mode(args: argparse.Namespace) -> None:
-    """
-    Manual Mode (process selected folder only)
+def ensure_python_311() -> None:
+    if sys.version_info[:2] != (3, 11):
+        print("\n[ERROR] Wrong Python version.")
+        print(f"Using: {sys.version.split()[0]}")
+        print("SpeciesNet requires Python 3.11.")
+        print("Activate your venv first:")
+        print("  source .venv/bin/activate")
+        print("  python scripts/pipeline/run_pipeline.py")
+        sys.exit(1)
 
-    If --folder is provided, we copy that folder into data/staging so downstream
-    steps (make_manifest, speciesnet, etc.) operate on ONLY that folder.
-    """
-    if not args.folder:
-        return
 
-    src = Path(args.folder).expanduser().resolve()
+def make_subprocess_env() -> dict[str, str]:
+    """
+    Ensure child processes can import `scripts.*` no matter how the script is launched.
+    """
+    env = os.environ.copy()
+    current = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(REPO_ROOT) + (os.pathsep + current if current else "")
+    return env
+
+
+def prepare_staging_for_manual_mode(folder: str) -> None:
+    """
+    Manual Mode: copy provided folder/file into data/staging so the pipeline processes ONLY it.
+    """
+    src = Path(folder).expanduser().resolve()
     if not src.exists():
         raise FileNotFoundError(f"Manual folder not found: {src}")
 
-    # Reset staging
     if STAGING_DIR.exists():
         shutil.rmtree(STAGING_DIR)
     STAGING_DIR.mkdir(parents=True, exist_ok=True)
 
     if src.is_file():
-        # single file
         shutil.copy2(src, STAGING_DIR / src.name)
     else:
-        # directory: copy contents into staging
-        # copytree() needs a non-existing dst, so copy children instead
         for child in src.iterdir():
             dst = STAGING_DIR / child.name
             if child.is_dir():
@@ -87,17 +100,81 @@ def prepare_staging_for_manual_mode(args: argparse.Namespace) -> None:
     print(f"[Manual Mode] Copied '{src}' -> '{STAGING_DIR}'")
 
 
-def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
-    """
-    Auto Mode:
-      - index drive
-      - download images
-      - run the rest of pipeline
+def _rows_in_manifest(path: Path) -> int:
+    if not path.exists():
+        return 0
+    with open(path, "r", encoding="utf-8") as f:
+        return max(0, sum(1 for _ in f) - 1)
 
-    Manual Mode:
-      - skip index + download
-      - assumes data/staging contains ONLY the selected folder/files
+
+def prepare_staging_for_auto_new(manifest_new: Path) -> None:
     """
+    Auto Mode caching:
+    - Move current data/staging -> data/staging_full_backup
+    - Recreate data/staging with ONLY files listed in manifest_new
+    - After pipeline finishes, we restore staging in finally-block
+    """
+    if STAGING_BACKUP.exists():
+        shutil.rmtree(STAGING_BACKUP)
+
+    if STAGING_DIR.exists():
+        shutil.move(str(STAGING_DIR), str(STAGING_BACKUP))
+
+    STAGING_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Copy only new files from backup into staging
+    with open(manifest_new, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if not reader.fieldnames or "local_path" not in reader.fieldnames:
+            raise ValueError(f"{manifest_new} is missing local_path column")
+
+        copied = 0
+        missing = 0
+
+        for r in reader:
+            lp = (r.get("local_path") or "").strip()
+            if not lp:
+                continue
+
+            # local_path is like "data/staging/Research Park/.../file.jpg"
+            # map to backup root: data/staging_full_backup/Research Park/.../file.jpg
+            p = Path(lp)
+            parts = list(p.parts)
+
+            # find "data/staging" in path parts
+            try:
+                idx = parts.index("data")
+                if idx + 1 < len(parts) and parts[idx + 1] == "staging":
+                    rel_parts = parts[idx + 2 :]
+                else:
+                    rel_parts = parts
+            except ValueError:
+                rel_parts = parts
+
+            src = STAGING_BACKUP.joinpath(*rel_parts)
+            dst = STAGING_DIR.joinpath(*rel_parts)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+
+            if src.exists():
+                shutil.copy2(src, dst)
+                copied += 1
+            else:
+                missing += 1
+
+        print(f"[Auto Mode] Prepared staging with new files: copied={copied}, missing={missing}")
+
+
+def restore_staging_after_auto() -> None:
+    """
+    Restore original staging after auto new-only processing.
+    """
+    if STAGING_DIR.exists():
+        shutil.rmtree(STAGING_DIR)
+    if STAGING_BACKUP.exists():
+        shutil.move(str(STAGING_BACKUP), str(STAGING_DIR))
+
+
+def build_steps(args: argparse.Namespace, manifest_to_process: str) -> list[tuple[str, list[str]]]:
     steps: list[tuple[str, list[str]]] = []
 
     if args.mode == "auto":
@@ -122,63 +199,49 @@ def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
             download_cmd += ["--max_downloads", str(args.max_downloads)]
 
         steps += [
-            ("Index Drive",     index_cmd),
+            ("Index Drive", index_cmd),
             ("Download Images", download_cmd),
         ]
 
-    # Create manifest always runs (both modes)
-    steps.append(("Create Manifest", [PYTHON, "scripts/pipeline/make_manifest.py"]))
-
-    # ML steps depend on provider
-    if args.ml_provider == "speciesnet":
-        steps.append(("Run SpeciesNet", [PYTHON, "scripts/ml/run_speciesnet.py"]))
-        steps.append(("Parse ML Results", [PYTHON, "scripts/ml/run_inference.py", "--provider", "speciesnet"]))
+    # Create manifest
+    if args.mode == "auto":
+        steps.append((
+            "Create Manifest (new-only)",
+            [PYTHON, "scripts/pipeline/make_manifest.py",
+             "--cache", args.cache,
+             "--new_out", args.new_manifest,
+             "--write_new_only"]
+        ))
     else:
-        steps.append(("Run MegaDetector", [PYTHON, "scripts/ml/run_megadetector.py"]))
-        steps.append(("Parse ML Results", [PYTHON, "scripts/ml/run_inference.py", "--provider", "megadetector"]))
+        steps.append(("Create Manifest", [PYTHON, "scripts/pipeline/make_manifest.py"]))
 
-    # Remaining pipeline steps
-    steps += [
-        ("Extract Metadata",     [PYTHON, "scripts/pipeline/extract_metadata.py"]),
-        ("Generate Output CSVs", [PYTHON, "scripts/pipeline/make_output.py"]),
-    ]
+    # SpeciesNet + parse results
+    steps.append(("Run SpeciesNet", [PYTHON, "scripts/ml/run_speciesnet.py"]))
+    steps.append(("Parse ML Results", [PYTHON, "scripts/ml/run_inference.py", "--provider", "speciesnet"]))
+
+    # Remaining pipeline steps (use the manifest we chose)
+    steps.append(("Extract Metadata", [PYTHON, "scripts/pipeline/extract_metadata.py", "--manifest", manifest_to_process]))
+    steps.append(("Generate Output CSVs", [
+        PYTHON, "scripts/pipeline/make_output.py",
+        "--manifest", manifest_to_process,
+        "--burst_seconds", str(args.burst_seconds),
+        "--burst_export", args.burst_export
+    ]))
 
     return steps
 
 
-def ensure_python_311() -> None:
-    if sys.version_info[:2] != (3, 11):
-        print("\n[ERROR] Wrong Python version.")
-        print(f"Using: {sys.version.split()[0]}")
-        print("SpeciesNet requires Python 3.11.")
-        print("Activate your venv first:")
-        print("  source .venv/bin/activate")
-        print("  python scripts/pipeline/run_pipeline.py")
-        sys.exit(1)
-
-
-def make_subprocess_env() -> dict[str, str]:
-    """
-    Ensure child processes can import `scripts.*` no matter how the script is launched.
-    """
-    env = os.environ.copy()
-    # Prepend repo root to PYTHONPATH (don’t clobber existing)
-    current = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = str(REPO_ROOT) + (os.pathsep + current if current else "")
-    return env
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the wildlife pipeline end-to-end.")
-    # run modes
+
     parser.add_argument("--mode", default="auto", choices=["auto", "manual"],
-                        help="Auto: index+download+process. Manual: process selected folder only.")
+                        help="Auto: index+download+process NEW images with caching. Manual: process selected folder only.")
     parser.add_argument("--folder", default=None,
                         help="Manual mode only: local folder/file to copy into data/staging before processing.")
 
-    # ML provider
-    parser.add_argument("--ml_provider", default="speciesnet", choices=["speciesnet", "megadetector"],
-                        help="Which ML provider to run. (SpeciesNet includes species labels; MegaDetector is detection-only.)")
+    # SpeciesNet only (MegaDetector is inside it)
+    parser.add_argument("--ml_provider", default="speciesnet", choices=["speciesnet"],
+                        help="Only SpeciesNet is supported (it runs MegaDetector internally).")
 
     # build_index passthrough
     parser.add_argument("--drive_root", default=None, help="Drive root folder id (optional).")
@@ -192,9 +255,13 @@ def main() -> None:
     parser.add_argument("--index", default=None, help="Explicit index path to download from.")
     parser.add_argument("--max_downloads", type=int, default=None, help="Limit downloads for testing.")
 
-    # staging cleanup
-    parser.add_argument("--no_prompt_cleanup", action="store_true", help="Never prompt to delete staging.")
-    parser.add_argument("--cleanup_staging", action="store_true", help="Auto-delete staging at end (no prompt).")
+    # cache + new manifest
+    parser.add_argument("--cache", default="data/outputs/cache/processed_file_ids.txt")
+    parser.add_argument("--new_manifest", default="data/outputs/manifest_new.csv")
+
+    # burst output controls
+    parser.add_argument("--burst_seconds", type=int, default=5)
+    parser.add_argument("--burst_export", choices=["all", "first"], default="first")
 
     args = parser.parse_args()
 
@@ -205,19 +272,25 @@ def main() -> None:
     ensure_python_311()
 
     if args.mode == "manual":
-        prepare_staging_for_manual_mode(args)
+        if not args.folder:
+            raise ValueError("Manual mode requires --folder")
+        prepare_staging_for_manual_mode(args.folder)
+        manifest_to_process = "data/outputs/manifest.csv"
+    else:
+        manifest_to_process = args.new_manifest
 
     print("=" * 60)
     print("WILDLIFE CAMERA IMAGE PROCESSING PIPELINE")
     print("=" * 60)
 
-    steps = build_steps(args)
     env = make_subprocess_env()
 
-    total_start = time.time()
-    results: list[tuple[str, bool, float]] = []
-
     try:
+        steps = build_steps(args, manifest_to_process)
+
+        total_start = time.time()
+        results: list[tuple[str, bool, float]] = []
+
         for i, (name, cmd) in enumerate(steps, 1):
             print(f"\n[Step {i}/{len(steps)}] {name}")
             print("-" * 40)
@@ -237,49 +310,51 @@ def main() -> None:
                 print(f"Stopped due to error on: {name}")
                 break
 
-    except KeyboardInterrupt:
-        print("\nInterrupted by user. Stopping pipeline gracefully.")
-        # do not raise; just continue to summary
+            # After creating manifest_new in auto mode, if 0 rows -> exit cleanly
+            if args.mode == "auto" and name.startswith("Create Manifest"):
+                n_new = _rows_in_manifest(Path(args.new_manifest))
+                if n_new == 0:
+                    print(f"\n[OK] No new images to process (0 rows in {args.new_manifest}).")
+                    return
 
-    total_duration = time.time() - total_start
+                # Prepare staging to contain ONLY new images for SpeciesNet run
+                prepare_staging_for_auto_new(Path(args.new_manifest))
 
-    print("\n" + "=" * 60)
-    print("PIPELINE SUMMARY")
-    print("=" * 60)
+        total_duration = time.time() - total_start
 
-    for name, success, duration in results:
-        status = "[OK]" if success else "[FAILED]"
-        print(f"  {status} {name}: {duration:.1f}s")
+        print("\n" + "=" * 60)
+        print("PIPELINE SUMMARY")
+        print("=" * 60)
 
-    print(f"\nTotal time: {total_duration:.1f}s ({total_duration/60:.1f} min)")
+        for name, success, duration in results:
+            status = "[OK]" if success else "[FAILED]"
+            print(f"  {status} {name}: {duration:.1f}s")
 
-    if results and not all(success for _, success, _ in results):
-        sys.exit(1)
+        print(f"\nTotal time: {total_duration:.1f}s ({total_duration/60:.1f} min)")
 
-    # If user interrupted before any step finished, exit cleanly
-    if not results:
-        print("\nNo steps completed.")
-        sys.exit(0)
+        if results and not all(success for _, success, _ in results):
+            sys.exit(1)
 
-    # Optional cleanup
-    if STAGING_DIR.exists():
-        staging_size = sum(f.stat().st_size for f in STAGING_DIR.rglob("*") if f.is_file())
-        staging_mb = staging_size / (1024 * 1024)
+        if not results:
+            print("\nNo steps completed.")
+            sys.exit(0)
 
-        if staging_mb > 1:
-            if args.cleanup_staging:
-                shutil.rmtree(STAGING_DIR)
-                STAGING_DIR.mkdir(parents=True, exist_ok=True)
-                print(f"\nCleared {staging_mb:.0f} MB from {STAGING_DIR}")
-            elif not args.no_prompt_cleanup:
-                print(f"\nStaging directory: {staging_mb:.0f} MB")
-                response = input("Delete staging images to free disk space? [y/N]: ").strip().lower()
-                if response == "y":
-                    shutil.rmtree(STAGING_DIR)
-                    STAGING_DIR.mkdir(parents=True, exist_ok=True)
-                    print(f"  Cleared {staging_mb:.0f} MB from {STAGING_DIR}")
-                else:
-                    print("  Keeping staging images.")
+        # Auto mode: update cache ONLY AFTER SUCCESS
+        if args.mode == "auto":
+            update_cmd = [
+                PYTHON, "scripts/pipeline/make_manifest.py",
+                "--cache", args.cache,
+                "--new_out", args.new_manifest,
+                "--write_new_only",
+                "--update_cache",
+            ]
+            print("\nUpdating cache...")
+            subprocess.run(update_cmd, env=env)
+
+    finally:
+        # Restore original staging after auto run (so user’s staging isn’t destroyed)
+        if args.mode == "auto" and STAGING_BACKUP.exists():
+            restore_staging_after_auto()
 
 
 if __name__ == "__main__":
