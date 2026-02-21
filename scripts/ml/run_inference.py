@@ -20,6 +20,10 @@ SPECIESNET_JSON = Path("data/outputs/speciesnet_results.json")
 MEGADETECTOR_JSON = Path("data/outputs/md_results.json")
 OUT_ML = Path("data/outputs/ml_outputs.csv")
 
+LOG_DIR = Path("data/outputs/logs")
+UNMATCHED_CSV = LOG_DIR / "unmatched_predictions.csv"
+SUMMARY_JSON = LOG_DIR / "ml_summary.json"
+
 # SpeciesNet uses MegaDetector detection categories:
 # "1" = animal, "2" = human, "3" = vehicle
 ANIMAL_CATEGORY = {"1", "animal"}
@@ -200,6 +204,9 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
     predictions = data.get("predictions", []) or []
 
     rows = []
+    unmatched = []
+    blank_or_vehicle = 0
+
     for pred in predictions:
         local_name = (pred.get("file") or pred.get("file_name") or "").strip()
         if not local_name:
@@ -209,7 +216,10 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
 
         manifest_row = manifest_by_local.get(local_name)
         if not manifest_row:
-            # Skip anything not in the manifest
+            unmatched.append({
+                "provider": "speciesnet",
+                "pred_file": local_name,
+            })
             continue
 
         detections = pred.get("detections") or []
@@ -221,6 +231,7 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
 
         # Skip blanks/vehicles: keep only animal or human
         if has_animal == 0 and has_human == 0:
+            blank_or_vehicle += 1
             continue
 
         prediction_str = pred.get("prediction", "")
@@ -261,6 +272,26 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
         w.writeheader()
         w.writerows(dedup.values())
 
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    with open(UNMATCHED_CSV, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=["provider", "pred_file"])
+        w.writeheader()
+        w.writerows(unmatched)
+
+    summary = {
+        "provider": "speciesnet",
+        "total_predictions_in_json": len(predictions),
+        "matched_to_manifest": len(predictions) - len(unmatched),
+        "unmatched_to_manifest": len(unmatched),
+        "kept_animal_or_human": len(dedup),
+        "filtered_blank_or_vehicle": blank_or_vehicle,
+        "threshold": threshold,
+        "out_csv": str(out_csv),
+        "unmatched_csv": str(UNMATCHED_CSV),
+    }
+    with open(SUMMARY_JSON, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+
     # Summary
     total_input = len(predictions)
     total_kept = len(dedup)
@@ -276,6 +307,8 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
             species_counts[s] = species_counts.get(s, 0) + 1
 
     print(f"wrote {total_kept} rows -> {out_csv}")
+    print(f"\nunmatched: {len(unmatched)} -> {UNMATCHED_CSV}")
+    print(f"summary: {SUMMARY_JSON}")
     print(f"\nSummary:")
     print(f"  Total images processed: {total_input}")
     print(f"  Kept (animal or human): {total_kept}")

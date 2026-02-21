@@ -1,11 +1,14 @@
 # creates manifest.csv from local downloaded images in data/staging/
+# optionally creates batch manifests in data/outputs/batches/
 
 import csv
+import argparse
 from datetime import datetime
 from pathlib import Path
 
 STAGING = Path("data/staging")
 OUT = Path("data/outputs/manifest.csv")
+BATCH_DIR = Path("data/outputs/batches")
 
 
 def split_local_name(local_file_name: str):
@@ -16,14 +19,32 @@ def split_local_name(local_file_name: str):
     return "", local_file_name
 
 
-def main():
-    if not STAGING.exists():
-        raise FileNotFoundError("data/staging not found. Run download_drive.py first.")
+def write_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+        w.writerows(rows)
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--staging", default=str(STAGING))
+    parser.add_argument("--out", default=str(OUT))
+    parser.add_argument("--batch_size", type=int, default=0, help="0 = no batch manifests")
+    parser.add_argument("--batch_dir", default=str(BATCH_DIR))
+    args = parser.parse_args()
+
+    staging = Path(args.staging)
+    out = Path(args.out)
+    batch_size = args.batch_size
+    batch_dir = Path(args.batch_dir)
+
+    if not staging.exists():
+        raise FileNotFoundError(f"{staging} not found. Run download_drive.py first.")
 
     rows = []
-    for p in sorted(STAGING.rglob("*")):
+    for p in sorted(staging.rglob("*")):
         if not p.is_file():
             continue
 
@@ -35,23 +56,31 @@ def main():
             local_path = str(p)
 
         rows.append({
-            "file_id": file_id,                 # drive ID
-            "file_name": original_name,         # original filename
-            "local_file_name": p.name,          # what gets saved locally
+            "file_id": file_id,
+            "file_name": original_name,
+            "local_file_name": p.name,
             "local_path": local_path,
             "size_bytes": p.stat().st_size,
             "modified_time": datetime.fromtimestamp(p.stat().st_mtime).isoformat(),
         })
 
-    with open(OUT, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(
-            f,
-            fieldnames=["file_id", "file_name", "local_file_name", "local_path", "size_bytes", "modified_time"],
-        )
-        w.writeheader()
-        w.writerows(rows)
+    fieldnames = ["file_id", "file_name", "local_file_name", "local_path", "size_bytes", "modified_time"]
+    write_csv(out, rows, fieldnames)
+    print(f"wrote {len(rows)} rows -> {out}")
 
-    print(f"wrote {len(rows)} rows -> {OUT}")
+    # batch manifests
+    if batch_size and batch_size > 0:
+        batch_dir.mkdir(parents=True, exist_ok=True)
+        total = len(rows)
+        batch_count = (total + batch_size - 1) // batch_size
+
+        for i in range(batch_count):
+            start = i * batch_size
+            end = min(start + batch_size, total)
+            batch_rows = rows[start:end]
+            batch_path = batch_dir / f"batch_{i+1:04d}.csv"
+            write_csv(batch_path, batch_rows, fieldnames)
+            print(f"  batch {i+1:04d}: {len(batch_rows)} rows -> {batch_path}")
 
 
 if __name__ == "__main__":

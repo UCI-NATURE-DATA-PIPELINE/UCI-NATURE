@@ -2,8 +2,15 @@
 secrets/
 *.json
 
-# data 
+# data
 data/staging/
+data/downloads/
+data/tmp/
+data/cache/
+data/test_runs/
+data/staging_all/
+
+# ignore outputs except a few small csvs
 data/outputs/*
 !data/outputs/animals_only.csv
 !data/outputs/output.csv
@@ -25,13 +32,12 @@ __pycache__/
 # mac
 .DS_Store
 
-# envs
+# envs / venvs
 .env
 .venv
+.venv*/
+venv/
 .conda/
-*.envsample/outputs/
-outputs/
-outputs/
 
-echo "data/sample/images/" >> .gitignore
-echo "notes/*.png" >> .gitignoredata/
+# notes/screenshots
+notes/*.png
