@@ -12,43 +12,43 @@ from pathlib import Path
 STEPS = [
     {
         "name": "Index Drive",
-        "cmd": ["python", "scripts/build_index.py"],
+        "cmd": ["python", "scripts/pipeline/build_index.py"],
         "output": "data/outputs/drive_index.csv",
         "required": True,
     },
     {
         "name": "Download Images",
-        "cmd": ["python", "scripts/download_drive.py"],
+        "cmd": ["python", "scripts/pipeline/download_drive.py"],
         "output": "data/outputs/download_log.csv",
         "required": True,
     },
     {
         "name": "Create Manifest",
-        "cmd": ["python", "scripts/make_manifest.py"],
+        "cmd": ["python", "scripts/pipeline/make_manifest.py"],
         "output": "data/outputs/manifest.csv",
         "required": True,
     },
     {
         "name": "Run Inference",
-        "cmd": ["python", "scripts/run_inference.py"],
+        "cmd": ["python", "scripts/ml/run_inference.py"],
         "output": "data/outputs/ml_outputs.csv",
         "required": False,
     },
     {
         "name": "Extract Metadata",
-        "cmd": ["python", "scripts/extract_metadata.py"],
+        "cmd": ["python", "scripts/pipeline/extract_metadata.py"],
         "output": "data/outputs/metadata.csv",
         "required": True,
     },
     {
         "name": "Generate Output",
-        "cmd": ["python", "scripts/make_output.py"],
+        "cmd": ["python", "scripts/pipeline/make_output.py"],
         "output": "data/outputs/output.csv",
         "required": True,
     },
     {
         "name": "Validate Output",
-        "cmd": ["python", "scripts/validate_output.py"],
+        "cmd": ["python", "scripts/pipeline/validate_output.py"],
         "output": None,
         "required": False,
     },
@@ -98,6 +98,10 @@ def run_step(step: dict) -> tuple:
         
         return True, duration
         
+    except KeyboardInterrupt:
+        duration = time.time() - start
+        log(f"  [STOPPED] Interrupted by user (Ctrl+C)")
+        return False, duration
     except FileNotFoundError:
         duration = time.time() - start
         log(f"  [FAILED] Script not found: {cmd[1]}")
@@ -115,8 +119,13 @@ def main():
     
     total_start = time.time()
     results = []
+
+    python_exe = sys.executable
     
     for i, step in enumerate(STEPS, 1):
+        step = dict(step)
+        step["cmd"] = [python_exe] + step["cmd"][1:]
+
         log(f"\n[Step {i}/{len(STEPS)}] {step['name']}")
         log("-" * 40)
         

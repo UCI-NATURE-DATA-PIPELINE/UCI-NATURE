@@ -52,36 +52,98 @@ def infer_index_path(args: argparse.Namespace) -> str:
     return "data/outputs/drive_index.csv"
 
 
+def prepare_staging_for_manual_mode(args: argparse.Namespace) -> None:
+    """
+    Manual Mode (process selected folder only)
+
+    If --folder is provided, we copy that folder into data/staging so downstream
+    steps (make_manifest, speciesnet, etc.) operate on ONLY that folder.
+    """
+    if not args.folder:
+        return
+
+    src = Path(args.folder).expanduser().resolve()
+    if not src.exists():
+        raise FileNotFoundError(f"Manual folder not found: {src}")
+
+    # Reset staging
+    if STAGING_DIR.exists():
+        shutil.rmtree(STAGING_DIR)
+    STAGING_DIR.mkdir(parents=True, exist_ok=True)
+
+    if src.is_file():
+        # single file
+        shutil.copy2(src, STAGING_DIR / src.name)
+    else:
+        # directory: copy contents into staging
+        # copytree() needs a non-existing dst, so copy children instead
+        for child in src.iterdir():
+            dst = STAGING_DIR / child.name
+            if child.is_dir():
+                shutil.copytree(child, dst)
+            else:
+                shutil.copy2(child, dst)
+
+    print(f"[Manual Mode] Copied '{src}' -> '{STAGING_DIR}'")
+
+
 def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
-    index_cmd = [PYTHON, "scripts/pipeline/build_index.py"]
-    if args.drive_root:
-        index_cmd += ["--drive_root", args.drive_root]
-    if args.start_folders:
-        index_cmd += ["--start_folders", args.start_folders]
-    if args.out_index:
-        index_cmd += ["--out", args.out_index]
-    if args.per_folder:
-        index_cmd += ["--per_folder"]
-    if args.resume:
-        index_cmd += ["--resume"]
-    if args.max_files is not None:
-        index_cmd += ["--max_files", str(args.max_files)]
+    """
+    Auto Mode:
+      - index drive
+      - download images
+      - run the rest of pipeline
 
-    download_cmd = [PYTHON, "scripts/pipeline/download_drive.py", "--index", infer_index_path(args)]
-    if args.resume:
-        download_cmd += ["--resume"]
-    if args.max_downloads is not None:
-        download_cmd += ["--max_downloads", str(args.max_downloads)]
+    Manual Mode:
+      - skip index + download
+      - assumes data/staging contains ONLY the selected folder/files
+    """
+    steps: list[tuple[str, list[str]]] = []
 
-    return [
-        ("Index Drive",          index_cmd),
-        ("Download Images",      download_cmd),
-        ("Create Manifest",      [PYTHON, "scripts/pipeline/make_manifest.py"]),
-        ("Run SpeciesNet",       [PYTHON, "scripts/ml/run_speciesnet.py"]),
-        ("Parse ML Results",     [PYTHON, "scripts/ml/run_inference.py"]),
+    if args.mode == "auto":
+        index_cmd = [PYTHON, "scripts/pipeline/build_index.py"]
+        if args.drive_root:
+            index_cmd += ["--drive_root", args.drive_root]
+        if args.start_folders:
+            index_cmd += ["--start_folders", args.start_folders]
+        if args.out_index:
+            index_cmd += ["--out", args.out_index]
+        if args.per_folder:
+            index_cmd += ["--per_folder"]
+        if args.resume:
+            index_cmd += ["--resume"]
+        if args.max_files is not None:
+            index_cmd += ["--max_files", str(args.max_files)]
+
+        download_cmd = [PYTHON, "scripts/pipeline/download_drive.py", "--index", infer_index_path(args)]
+        if args.resume:
+            download_cmd += ["--resume"]
+        if args.max_downloads is not None:
+            download_cmd += ["--max_downloads", str(args.max_downloads)]
+
+        steps += [
+            ("Index Drive",     index_cmd),
+            ("Download Images", download_cmd),
+        ]
+
+    # Create manifest always runs (both modes)
+    steps.append(("Create Manifest", [PYTHON, "scripts/pipeline/make_manifest.py"]))
+
+    # ML steps depend on provider
+    if args.ml_provider == "speciesnet":
+        steps.append(("Run SpeciesNet", [PYTHON, "scripts/ml/run_speciesnet.py"]))
+        steps.append(("Parse ML Results", [PYTHON, "scripts/ml/run_inference.py", "--provider", "speciesnet"]))
+    else:
+        steps.append(("Run MegaDetector", [PYTHON, "scripts/ml/run_megadetector.py"]))
+        steps.append(("Parse ML Results", [PYTHON, "scripts/ml/run_inference.py", "--provider", "megadetector"]))
+
+    # Remaining pipeline steps
+    steps += [
         ("Extract Metadata",     [PYTHON, "scripts/pipeline/extract_metadata.py"]),
         ("Generate Output CSVs", [PYTHON, "scripts/pipeline/make_output.py"]),
     ]
+
+    return steps
 
 
 def ensure_python_311() -> None:
@@ -108,6 +170,16 @@ def make_subprocess_env() -> dict[str, str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the wildlife pipeline end-to-end.")
+    # run modes
+    parser.add_argument("--mode", default="auto", choices=["auto", "manual"],
+                        help="Auto: index+download+process. Manual: process selected folder only.")
+    parser.add_argument("--folder", default=None,
+                        help="Manual mode only: local folder/file to copy into data/staging before processing.")
+
+    # ML provider
+    parser.add_argument("--ml_provider", default="speciesnet", choices=["speciesnet", "megadetector"],
+                        help="Which ML provider to run. (SpeciesNet includes species labels; MegaDetector is detection-only.)")
+
     # build_index passthrough
     parser.add_argument("--drive_root", default=None, help="Drive root folder id (optional).")
     parser.add_argument("--start_folders", default=None, help="Comma-separated folder IDs to start from.")
@@ -131,6 +203,9 @@ def main() -> None:
     print(f"Python version: {sys.version.split()[0]}")
 
     ensure_python_311()
+
+    if args.mode == "manual":
+        prepare_staging_for_manual_mode(args)
 
     print("=" * 60)
     print("WILDLIFE CAMERA IMAGE PROCESSING PIPELINE")

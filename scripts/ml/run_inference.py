@@ -10,12 +10,14 @@
 #
 # Only images with animal or human detections are kept. Blanks/vehicles are filtered out.
 
+import argparse
 import csv
 import json
 from pathlib import Path
 
 MANIFEST = Path("data/outputs/manifest.csv")
 SPECIESNET_JSON = Path("data/outputs/speciesnet_results.json")
+MEGADETECTOR_JSON = Path("data/outputs/md_results.json")
 OUT_ML = Path("data/outputs/ml_outputs.csv")
 
 # SpeciesNet uses MegaDetector detection categories:
@@ -133,211 +135,128 @@ def parse_species_label(prediction_str: str) -> str:
         return ""
 
     parts = prediction_str.split(";")
-    # parts[0] = uuid, [1] = class, [2] = order, [3] = family,
-    # [4] = genus, [5] = species, [6] = common_name
+    # Expected: uuid;class;order;family;genus;species;common_name
+    # Guard against short/odd strings
+    while len(parts) < 7:
+        parts.append("")
 
-    # Check fields from most specific to least specific
-    fields_to_check = []
+    uuid, cls, order, family, genus, species, common = [p.strip().lower() for p in parts[:7]]
 
-    # Common name (index 6)
-    if len(parts) > 6 and parts[6].strip():
-        fields_to_check.append(parts[6].strip().lower())
+    # Check from most specific to least
+    for key in (common, species, genus, family, order, cls):
+        if key and key in SPECIES_MAP:
+            return SPECIES_MAP[key]
 
-    # "genus species" combined (index 4 + 5)
-    if len(parts) > 5 and parts[4].strip() and parts[5].strip():
-        fields_to_check.append(f"{parts[4].strip()} {parts[5].strip()}".lower())
-
-    # Species (index 5)
-    if len(parts) > 5 and parts[5].strip():
-        fields_to_check.append(parts[5].strip().lower())
-
-    # Genus (index 4)
-    if len(parts) > 4 and parts[4].strip():
-        fields_to_check.append(parts[4].strip().lower())
-
-    # Family (index 3)
-    if len(parts) > 3 and parts[3].strip():
-        fields_to_check.append(parts[3].strip().lower())
-
-    # Order (index 2)
-    if len(parts) > 2 and parts[2].strip():
-        fields_to_check.append(parts[2].strip().lower())
-
-    # Class (index 1)
-    if len(parts) > 1 and parts[1].strip():
-        fields_to_check.append(parts[1].strip().lower())
-
-    for field in fields_to_check:
-        if field in SPECIES_MAP:
-            return SPECIES_MAP[field]
-
-    # If nothing matched, return the common name as-is (or "unknown")
-    if len(parts) > 6 and parts[6].strip():
-        return parts[6].strip().lower()
+    # Fallback: if it's a human label in any field
+    if "human" in (common, species, genus, family, order, cls):
+        return "human"
 
     return "unknown"
 
 
-def _norm_path(p: str) -> str:
-    return (p or "").replace("\\", "/").strip()
+def _read_manifest_index_by_local_name(manifest_path: Path) -> dict[str, dict]:
+    """
+    Returns a mapping of local_file_name -> manifest row dict.
+    """
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Manifest not found: {manifest_path}")
+
+    out: dict[str, dict] = {}
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        r = csv.DictReader(f)
+        for row in r:
+            local_name = (row.get("local_file_name") or "").strip()
+            if local_name:
+                out[local_name] = row
+    return out
 
 
-def load_manifest_index():
-    """Build indices to match SpeciesNet filepaths back to our file_id."""
-    by_local_path = {}
-    by_basename = {}
-
-    if not MANIFEST.exists():
-        return by_local_path, by_basename
-
-    with open(MANIFEST, "r", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            fid = (row.get("file_id") or "").strip()
-            lp = (row.get("local_path") or "").strip()
-            bn = Path(lp).name if lp else (row.get("local_file_name") or "").strip()
-            if fid:
-                if lp:
-                    lp_n = _norm_path(lp)
-                    by_local_path[lp_n] = fid
-                if bn:
-                    by_basename[bn] = fid
-    return by_local_path, by_basename
+def _safe_float(x, default=0.0) -> float:
+    try:
+        return float(x)
+    except Exception:
+        return default
 
 
-def find_file_id(filepath: str, by_local_path: dict, by_basename: dict) -> str:
-    """Match a SpeciesNet filepath to our file_id."""
-    if not filepath:
-        return ""
-    fp_n = _norm_path(filepath)
-    if fp_n in by_local_path:
-        return by_local_path[fp_n]
-    bn = Path(fp_n).name
-    return by_basename.get(bn, "")
+def _max_detection_conf(detections: list[dict], categories: set[str], threshold: float) -> float:
+    best = 0.0
+    for det in detections or []:
+        cat = str(det.get("category", "")).lower()
+        conf = _safe_float(det.get("conf", det.get("confidence", 0.0)), 0.0)
+        if cat in categories and conf >= threshold and conf > best:
+            best = conf
+    return best
 
 
-def main():
-    OUT_ML.parent.mkdir(parents=True, exist_ok=True)
+def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, threshold: float) -> None:
+    if not speciesnet_json.exists():
+        raise FileNotFoundError(f"SpeciesNet results not found: {speciesnet_json}")
 
-    fieldnames = ["file_id", "has_animal", "has_human", "species", "count", "model_certainty"]
+    manifest_by_local = _read_manifest_index_by_local_name(manifest_csv)
 
-    by_local_path, by_basename = load_manifest_index()
-
-    if not SPECIESNET_JSON.exists():
-        print(f"speciesnet_results.json not found -> writing empty {OUT_ML}")
-        print("Run SpeciesNet first: python scripts/ml/run_speciesnet.py")
-        with open(OUT_ML, "w", newline="", encoding="utf-8") as f:
-            csv.DictWriter(f, fieldnames=fieldnames).writeheader()
-        return
-
-    with open(SPECIESNET_JSON, "r", encoding="utf-8") as f:
+    with open(speciesnet_json, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    predictions = data.get("predictions", [])
-    rows = []
+    predictions = data.get("predictions", []) or []
 
+    rows = []
     for pred in predictions:
-        filepath = _norm_path(pred.get("filepath", ""))
-        fid = find_file_id(filepath, by_local_path, by_basename)
-        if not fid:
+        local_name = (pred.get("file") or pred.get("file_name") or "").strip()
+        if not local_name:
+            # SpeciesNet sometimes stores full path; take basename
+            local_name = Path(pred.get("filepath", "")).name if pred.get("filepath") else ""
+        local_name = Path(local_name).name
+
+        manifest_row = manifest_by_local.get(local_name)
+        if not manifest_row:
+            # Skip anything not in the manifest
             continue
 
-        # Parse detections (same format as MegaDetector: category 1/2/3)
-        detections = pred.get("detections", []) or []
+        detections = pred.get("detections") or []
+        has_animal_conf = _max_detection_conf(detections, ANIMAL_CATEGORY, threshold)
+        has_human_conf = _max_detection_conf(detections, PERSON_CATEGORY, threshold)
 
-        animal_confs = []
-        person_confs = []
-        animal_count = 0
-        person_count = 0
+        has_animal = 1 if has_animal_conf > 0 else 0
+        has_human = 1 if (has_human_conf > 0) else 0
 
-        for det in detections:
-            cat = det.get("category", "")
-            label = (det.get("label", "") or "").strip().lower()
-            conf = det.get("conf")
-            if conf is None:
-                conf = det.get("confidence")
-            if conf is None:
-                conf = det.get("score")
-            if conf is None:
-                continue
-            try:
-                conf_f = float(conf)
-            except (ValueError, TypeError):
-                continue
+        # Skip blanks/vehicles: keep only animal or human
+        if has_animal == 0 and has_human == 0:
+            continue
 
-            cat_s = str(cat).strip().lower()
-            if cat_s in ANIMAL_CATEGORY or label == "animal":
-                animal_confs.append(conf_f)
-                if conf_f >= DEFAULT_THRESHOLD:
-                    animal_count += 1
-            elif cat_s in PERSON_CATEGORY or label == "human" or label == "person":
-                person_confs.append(conf_f)
-                if conf_f >= DEFAULT_THRESHOLD:
-                    person_count += 1
-
-        max_animal_conf = max(animal_confs) if animal_confs else 0.0
-        max_person_conf = max(person_confs) if person_confs else 0.0
-        has_animal = 1 if max_animal_conf >= DEFAULT_THRESHOLD else 0
-        has_human = 1 if max_person_conf >= DEFAULT_THRESHOLD else 0
-
-        # Parse species from prediction string
         prediction_str = pred.get("prediction", "")
-        prediction_score = pred.get("prediction_score", 0.0)
-        try:
-            prediction_score_f = float(prediction_score)
-        except (ValueError, TypeError):
-            prediction_score_f = 0.0
+        species = parse_species_label(prediction_str)
 
-        # If detections are missing/empty, fall back to classifier label
-        if not detections:
-            species_guess = parse_species_label(prediction_str)
-            if species_guess in ("blank", "empty", ""):
-                continue
-            if species_guess == "human":
-                has_human = 1
-                has_animal = 0
-                count = 1
-                best_conf = prediction_score_f
-                species = "human"
-            else:
-                has_animal = 1
-                has_human = 0
-                count = 1
-                best_conf = prediction_score_f
-                species = species_guess if species_guess else "unknown"
-        else:
-            # Skip blank/vehicle-only images
-            if not has_animal and not has_human:
-                continue
+        # If it's human-only, force species=human (keeps consistency)
+        if has_animal == 0 and has_human == 1:
+            species = "human"
 
-            if has_human and not has_animal:
-                species = "human"
-                best_conf = max_person_conf
-                count = person_count
-            elif has_animal:
-                species = parse_species_label(prediction_str)
-                # Skip if SpeciesNet itself says blank
-                if species in ("blank", "empty", ""):
-                    species = "unknown"
-                best_conf = max_animal_conf
-                count = animal_count
-            else:
-                species = ""
-                best_conf = 0.0
-                count = 0
+        model_certainty = _safe_float(pred.get("prediction_score", pred.get("score", 0.0)), 0.0)
 
         rows.append({
-            "file_id": fid,
+            "file_id": manifest_row.get("file_id", ""),
+            "local_file_name": manifest_row.get("local_file_name", ""),
+            "local_path": manifest_row.get("local_path", ""),
             "has_animal": has_animal,
             "has_human": has_human,
             "species": species,
-            "count": count,
-            "model_certainty": round(float(best_conf), 4),
+            "model_certainty": model_certainty,
         })
 
-    # Deduplicate by file_id
-    dedup = {r["file_id"]: r for r in rows}
+    # Deduplicate by file_id (keep the best certainty)
+    dedup = {}
+    for row in rows:
+        fid = row.get("file_id", "")
+        if not fid:
+            continue
+        if fid not in dedup:
+            dedup[fid] = row
+        else:
+            if _safe_float(row.get("model_certainty", 0.0)) > _safe_float(dedup[fid].get("model_certainty", 0.0)):
+                dedup[fid] = row
 
-    with open(OUT_ML, "w", newline="", encoding="utf-8") as f:
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["file_id", "local_file_name", "local_path", "has_animal", "has_human", "species", "model_certainty"]
+    with open(out_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         w.writerows(dedup.values())
@@ -356,7 +275,7 @@ def main():
         if s:
             species_counts[s] = species_counts.get(s, 0) + 1
 
-    print(f"wrote {total_kept} rows -> {OUT_ML}")
+    print(f"wrote {total_kept} rows -> {out_csv}")
     print(f"\nSummary:")
     print(f"  Total images processed: {total_input}")
     print(f"  Kept (animal or human): {total_kept}")
@@ -367,6 +286,97 @@ def main():
     print(f"\n  Species breakdown:")
     for species, count in sorted(species_counts.items(), key=lambda x: -x[1]):
         print(f"    {species}: {count}")
+
+
+def run_megadetector(manifest_csv: Path, md_json: Path, out_csv: Path, threshold: float) -> None:
+    """
+    Convert MegaDetector results into the same per-image CSV schema.
+    Species is left blank/unknown because MegaDetector does not classify species.
+    """
+    if not md_json.exists():
+        raise FileNotFoundError(f"MegaDetector results not found: {md_json}")
+
+    manifest_by_local = _read_manifest_index_by_local_name(manifest_csv)
+
+    with open(md_json, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    images = data.get("images", data.get("predictions", [])) or []
+
+    rows = []
+    for img in images:
+        # MegaDetector typically uses "file"
+        file_field = (img.get("file") or img.get("file_name") or img.get("filepath") or "").strip()
+        local_name = Path(file_field).name if file_field else ""
+        if not local_name:
+            continue
+
+        manifest_row = manifest_by_local.get(local_name)
+        if not manifest_row:
+            continue
+
+        detections = img.get("detections") or []
+        animal_conf = _max_detection_conf(detections, ANIMAL_CATEGORY, threshold)
+        human_conf = _max_detection_conf(detections, PERSON_CATEGORY, threshold)
+
+        has_animal = 1 if animal_conf > 0 else 0
+        has_human = 1 if human_conf > 0 else 0
+
+        if has_animal == 0 and has_human == 0:
+            continue
+
+        model_certainty = max(animal_conf, human_conf)
+
+        rows.append({
+            "file_id": manifest_row.get("file_id", ""),
+            "local_file_name": manifest_row.get("local_file_name", ""),
+            "local_path": manifest_row.get("local_path", ""),
+            "has_animal": has_animal,
+            "has_human": has_human,
+            "species": "animal" if has_animal else "human",
+            "model_certainty": model_certainty,
+        })
+
+    # Deduplicate by file_id (keep the best certainty)
+    dedup = {}
+    for row in rows:
+        fid = row.get("file_id", "")
+        if not fid:
+            continue
+        if fid not in dedup:
+            dedup[fid] = row
+        else:
+            if _safe_float(row.get("model_certainty", 0.0)) > _safe_float(dedup[fid].get("model_certainty", 0.0)):
+                dedup[fid] = row
+
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["file_id", "local_file_name", "local_path", "has_animal", "has_human", "species", "model_certainty"]
+    with open(out_csv, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+        w.writerows(dedup.values())
+
+    print(f"wrote {len(dedup)} rows -> {out_csv}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Convert ML results into a per-image CSV keyed by file_id.")
+    parser.add_argument("--provider", default="speciesnet", choices=["speciesnet", "megadetector"],
+                        help="Which ML results format to parse.")
+    parser.add_argument("--manifest", default=str(MANIFEST), help="Path to manifest.csv.")
+    parser.add_argument("--speciesnet_json", default=str(SPECIESNET_JSON), help="Path to speciesnet_results.json.")
+    parser.add_argument("--megadetector_json", default=str(MEGADETECTOR_JSON), help="Path to md_results.json.")
+    parser.add_argument("--out", default=str(OUT_ML), help="Output ml_outputs.csv path.")
+    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help="Detection confidence threshold.")
+    args = parser.parse_args()
+
+    manifest_path = Path(args.manifest)
+    out_path = Path(args.out)
+
+    if args.provider == "speciesnet":
+        run_speciesnet(manifest_path, Path(args.speciesnet_json), out_path, args.threshold)
+    else:
+        run_megadetector(manifest_path, Path(args.megadetector_json), out_path, args.threshold)
 
 
 if __name__ == "__main__":
