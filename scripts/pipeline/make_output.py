@@ -122,13 +122,16 @@ def main():
     parser.add_argument("--metadata", default=str(META))
     parser.add_argument("--drive_index", default=str(DRIVE_INDEX))
     parser.add_argument("--out_dir", default=str(OUT_DIR))
-    parser.add_argument("--burst_seconds", type=int, default=5)
+    parser.add_argument("--burst_seconds", type=int, default=10)
     parser.add_argument("--burst_export", choices=["all", "first"], default="all")
     parser.add_argument("--start_date", default="")
     parser.add_argument("--end_date", default="")
     parser.add_argument("--start_time", default="")
     parser.add_argument("--end_time", default="")
+    parser.add_argument("--filter_mode", choices=["auto", "md", "speciesnet", "none"], default="auto")
     args = parser.parse_args()
+
+    args.burst_seconds = max(10, min(300, int(args.burst_seconds)))
 
     manifest_path = Path(args.manifest)
     meta_path = Path(args.metadata)
@@ -170,6 +173,41 @@ def main():
     total_processed = 0
     total_skipped_blank = 0
 
+    def _normalize_species(val: str) -> str:
+        return (val or "").strip().lower()
+
+    def _md_present(mrow: dict) -> bool:
+        ha = (mrow.get("has_animal", "") or "").strip()
+        hh = (mrow.get("has_human", "") or "").strip()
+        return ha in ("0", "1") or hh in ("0", "1")
+
+    def _sn_present(mrow: dict) -> bool:
+        sp = _normalize_species(mrow.get("species", "") or "")
+        return sp != ""
+
+    def _effective_mode(mrow: dict) -> str:
+        if args.filter_mode != "auto":
+            return args.filter_mode
+        if _md_present(mrow):
+            return "md"
+        if _sn_present(mrow):
+            return "speciesnet"
+        return "none"
+
+    def _keep_row(mrow: dict) -> bool:
+        mode = _effective_mode(mrow)
+        ha = (mrow.get("has_animal", "") or "").strip()
+        hh = (mrow.get("has_human", "") or "").strip()
+        sp = _normalize_species(mrow.get("species", "") or "")
+
+        if mode == "none":
+            return True
+        if mode == "md":
+            return ha == "1" or hh == "1"
+        if mode == "speciesnet":
+            return sp not in ("", "blank", "vehicle", "no cv result")
+        return True
+
     with open(manifest_path, "r", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             file_id = row["file_id"]
@@ -187,9 +225,14 @@ def main():
             count = (m.get("count", "") or "").strip()
             model_certainty = (m.get("model_certainty", "") or "").strip()
 
-            is_animal = has_animal == "1"
-            is_human = has_human == "1"
-            if not is_animal and not is_human:
+            sp_norm = species.strip().lower()
+            if sp_norm in ("animal", "mammal", "bird", "canis species", "canine family", "rodent", "carnivorous mammal"):
+                species = "unknown"
+
+            if not count and species and species.strip().lower() not in ("blank", "vehicle", "no cv result"):
+                count = "1"
+
+            if not _keep_row(m):
                 total_skipped_blank += 1
 
             # Extract metadata
@@ -321,11 +364,24 @@ def main():
                 burst_rows[0]["BurstCount"] = "1"
                 burst_rows[0]["BurstIndex"] = "1"
 
-                has_animal = (burst_rows[0].get("has_animal", "") or "").strip()
-                has_human = (burst_rows[0].get("has_human", "") or "").strip()
-                is_animal = has_animal == "1"
-                is_human = has_human == "1"
-                if is_animal or is_human:
+                mode = _effective_mode({
+                    "has_animal": burst_rows[0].get("has_animal", ""),
+                    "has_human": burst_rows[0].get("has_human", ""),
+                    "species": burst_rows[0].get("Species", ""),
+                })
+
+                keep_ok = True
+                if mode == "md":
+                    ha = (burst_rows[0].get("has_animal", "") or "").strip()
+                    hh = (burst_rows[0].get("has_human", "") or "").strip()
+                    keep_ok = (ha == "1" or hh == "1")
+                elif mode == "speciesnet":
+                    sp = _normalize_species(burst_rows[0].get("Species", "") or "")
+                    keep_ok = sp not in ("", "blank", "vehicle", "no cv result")
+                elif mode == "none":
+                    keep_ok = True
+
+                if keep_ok:
                     kept_rows.append(burst_rows[0])
 
                 i += 1
@@ -356,11 +412,24 @@ def main():
 
             first_kept_in_burst = None
             for r in burst_rows:
-                has_animal = (r.get("has_animal", "") or "").strip()
-                has_human = (r.get("has_human", "") or "").strip()
-                is_animal = has_animal == "1"
-                is_human = has_human == "1"
-                if is_animal or is_human:
+                mode = _effective_mode({
+                    "has_animal": r.get("has_animal", ""),
+                    "has_human": r.get("has_human", ""),
+                    "species": r.get("Species", ""),
+                })
+
+                keep_ok = True
+                if mode == "md":
+                    ha = (r.get("has_animal", "") or "").strip()
+                    hh = (r.get("has_human", "") or "").strip()
+                    keep_ok = (ha == "1" or hh == "1")
+                elif mode == "speciesnet":
+                    sp = _normalize_species(r.get("Species", "") or "")
+                    keep_ok = sp not in ("", "blank", "vehicle", "no cv result")
+                elif mode == "none":
+                    keep_ok = True
+
+                if keep_ok:
                     if first_kept_in_burst is None:
                         first_kept_in_burst = r
                     if args.burst_export == "all":
