@@ -82,42 +82,76 @@ def load_ml_data(metadata_csv: Path) -> dict:
 
 
 def main():
-    if not OUTPUT_CSV.exists():
-        raise FileNotFoundError(f"{OUTPUT_CSV} not found. Run make_output.py first.")
-    
     # Load ML data
     ml_data = load_ml_data(METADATA_CSV)
     
     # Group rows by camera
     by_camera = defaultdict(list)
     
-    with open(OUTPUT_CSV, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
+    if OUTPUT_CSV.exists():
+        with open(OUTPUT_CSV, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            
+            for row in reader:
+                file_id = row.get("file_id", "")
+                local_path = row.get("local_path", "")
+                
+                camera = extract_camera_from_path(local_path)
+                
+                # Get ML data for this image
+                ml = ml_data.get(file_id, {})
+                
+                # Build Julie's CSV format
+                julie_row = {
+                    "CameraName": camera,
+                    "DeploymentFolder": "",  # To be filled by Julie
+                    "Image#": row.get("file_name", ""),
+                    "Species": ml.get("species", ""),
+                    "# of Individuals": ml.get("count", ""),
+                    "Date": ml.get("date", ""),
+                    "Time": ml.get("time", ""),
+                    "has_animal": ml.get("has_animal", ""),
+                    "model_certainty": ml.get("model_certainty", ""),
+                    "Notes": "",
+                }
+                
+                by_camera[camera].append(julie_row)
+    else:
+        # Fallback: convert existing per-camera CSVs (e.g., ResPark.csv) into *_results.csv files
+        if not BY_LOCATION_DIR.exists():
+            raise FileNotFoundError(f"{OUTPUT_CSV} not found. Run make_output.py first.")
         
-        for row in reader:
-            file_id = row.get("file_id", "")
-            local_path = row.get("local_path", "")
+        input_csvs = sorted(BY_LOCATION_DIR.glob("*.csv"))
+        if not input_csvs:
+            raise FileNotFoundError(f"{OUTPUT_CSV} not found. Run make_output.py first.")
+        
+        for csv_path in input_csvs:
+            if csv_path.name.endswith("_results.csv"):
+                continue
             
-            camera = extract_camera_from_path(local_path)
-            
-            # Get ML data for this image
-            ml = ml_data.get(file_id, {})
-            
-            # Build Julie's CSV format
-            julie_row = {
-                "CameraName": camera,
-                "DeploymentFolder": "",  # To be filled by Julie
-                "Image#": row.get("file_name", ""),
-                "Species": ml.get("species", ""),
-                "# of Individuals": ml.get("count", ""),
-                "Date": ml.get("date", ""),
-                "Time": ml.get("time", ""),
-                "has_animal": ml.get("has_animal", ""),
-                "model_certainty": ml.get("model_certainty", ""),
-                "Notes": "",
-            }
-            
-            by_camera[camera].append(julie_row)
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                src_fields = reader.fieldnames or []
+                
+                base_name = csv_path.stem
+                base_lower = base_name.lower().replace("_", " ").replace("-", " ")
+                camera = CAMERA_MAPPING.get(base_lower, base_name.replace(" ", "_"))
+                
+                for row in reader:
+                    # Normalize/translate from existing format to the uploader's expected format
+                    julie_row = {
+                        "CameraName": row.get("CameraName", camera) or camera,
+                        "DeploymentFolder": row.get("DeploymentFolder", "") or "",
+                        "Image#": row.get("Image#", "") or row.get("Image", "") or row.get("file_name", "") or "",
+                        "Species": row.get("Species", "") or row.get("species", "") or "",
+                        "# of Individuals": row.get("# of Individuals", "") or row.get("count", "") or "",
+                        "Date": row.get("Date", "") or row.get("date", "") or "",
+                        "Time": row.get("Time", "") or row.get("time", "") or "",
+                        "has_animal": row.get("has_animal", "") or row.get("HasAnimal", "") or "",
+                        "model_certainty": row.get("model_certainty", "") or row.get("ModelCertainty", "") or "",
+                        "Notes": row.get("Notes", "") or "",
+                    }
+                    by_camera[camera].append(julie_row)
     
     # Write CSV for each camera
     BY_LOCATION_DIR.mkdir(parents=True, exist_ok=True)
