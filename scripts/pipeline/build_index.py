@@ -1,6 +1,8 @@
 ## makes a CSV index of everything inside the Drive folder (ids + basic metadata)
 # new: recursive + drive_path + parsed folder fields (site, deployment info)
 
+import argparse
+import sys
 import csv
 import re
 import time
@@ -9,8 +11,21 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+try:
+    from scripts.config import SERVICE_ACCOUNT_FILE as DEFAULT_SERVICE_ACCOUNT_FILE
+    from scripts.config import FOLDER_ID as DEFAULT_FOLDER_ID
+except Exception:
+    DEFAULT_SERVICE_ACCOUNT_FILE = SERVICE_ACCOUNT_FILE
+    DEFAULT_FOLDER_ID = FOLDER_ID
+
 SERVICE_ACCOUNT_FILE = "secrets/inf191a-uci-nature-sa.json"
+DEFAULT_SERVICE_ACCOUNT_FILE = "secrets/inf191a-uci-nature-sa.json"
 FOLDER_ID = "0ACQBvZlfUN2CUk9PVA"
+DEFAULT_FOLDER_ID = "0ACQBvZlfUN2CUk9PVA"
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
 OUT_CSV = Path("data/outputs/drive_index.csv")
@@ -31,6 +46,19 @@ MAX_RETRIES = 3         # NEW: retry API calls
 RETRY_DELAY = 2         # NEW: initial delay for retries
 
 
+def parse_id_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [s.strip() for s in value.split(",") if s.strip()]
+
+
+def make_run_tag(drive_root: str | None, start_folders: str | None) -> str:
+    ids = parse_id_list(start_folders)
+    if ids:
+        return "_".join(ids)
+    return drive_root or ""
+
+
 def parse_drive_path(drive_path: str):
     parts = drive_path.split("/")
     site = parts[0] if parts else ""
@@ -39,6 +67,7 @@ def parse_drive_path(drive_path: str):
     deployment_id = ""
     status = ""
 
+    # deployment folder looks like "123_DeploymentName_DONE" or "123_DeploymentName"
     m = re.match(r"^(\d{1,3})_", deployment_folder)
     if m:
         deployment_id = m.group(1)
@@ -50,72 +79,58 @@ def parse_drive_path(drive_path: str):
 
 
 def list_children_with_retry(drive, folder_id: str):
-    """List folder children with retry logic"""
-    query = f"'{folder_id}' in parents and trashed = false"
-    page_token = None
-
-    while True:
-        for attempt in range(MAX_RETRIES):
-            try:
+    """List children with retries for transient errors"""
+    delay = RETRY_DELAY
+    for attempt in range(MAX_RETRIES):
+        try:
+            items = []
+            page_token = None
+            while True:
                 resp = drive.files().list(
-                    q=query,
-                    fields="nextPageToken, files(id,name,mimeType,modifiedTime,size,parents)",
+                    q=f"'{folder_id}' in parents and trashed = false",
+                    fields="nextPageToken, files(id, name, mimeType, modifiedTime, size)",
                     pageSize=1000,
                     pageToken=page_token,
                     supportsAllDrives=True,
                     includeItemsFromAllDrives=True,
+                    corpora="drive",
+                    driveId=FOLDER_ID,
                 ).execute()
-                
-                # Success - break retry loop
-                break
-                
-            except HttpError as e:
-                if attempt < MAX_RETRIES - 1:
-                    delay = RETRY_DELAY * (2 ** attempt)
-                    print(f"  API error (attempt {attempt + 1}): {e.resp.status}")
-                    print(f"  Retrying in {delay}s...")
-                    time.sleep(delay)
-                else:
-                    print(f"  Failed after {MAX_RETRIES} attempts")
-                    raise
-            except Exception as e:
-                if attempt < MAX_RETRIES - 1:
-                    delay = RETRY_DELAY * (2 ** attempt)
-                    print(f"  Error (attempt {attempt + 1}): {repr(e)}")
-                    print(f"  Retrying in {delay}s...")
-                    time.sleep(delay)
-                else:
-                    raise
+                items.extend(resp.get("files", []))
+                page_token = resp.get("nextPageToken")
+                if not page_token:
+                    break
+            return items
+        except HttpError as e:
+            if attempt == MAX_RETRIES - 1:
+                raise
+            print(f"HttpError listing folder {folder_id}: {e}. retrying in {delay}s")
+            time.sleep(delay)
+            delay *= 2
+    return []
 
-        for item in resp.get("files", []):
-            yield item
-
-        page_token = resp.get("nextPageToken")
-        if not page_token:
-            break
 
 def load_checkpoint():
-    """Load existing progress from checkpoint file"""
+    """Load checkpoint rows and set of file_ids already indexed"""
     if not CHECKPOINT_FILE.exists():
         return [], set()
-    
+
     rows = []
-    seen = set()
-    
-    with open(CHECKPOINT_FILE, "r", encoding="utf-8") as f:
+    indexed_ids = set()
+    with open(CHECKPOINT_FILE, "r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            rows.append(row)
-            seen.add(row["file_id"])
-    
-    print(f"Resuming from checkpoint: {len(rows)} rows already indexed")
-    return rows, seen
+        for r in reader:
+            rows.append(r)
+            if r.get("file_id"):
+                indexed_ids.add(r["file_id"])
+    print(f"loaded checkpoint: {len(rows)} rows")
+    return rows, indexed_ids
 
 
 def save_checkpoint(rows):
     """Save current progress to checkpoint file"""
     CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    
+
     with open(CHECKPOINT_FILE, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDS)
         writer.writeheader()
@@ -125,13 +140,42 @@ def save_checkpoint(rows):
 def save_final_output(rows):
     """Save final CSV output"""
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
-    
+
     with open(OUT_CSV, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDS)
         writer.writeheader()
         writer.writerows(rows)
 
+
 def main():
+    global SERVICE_ACCOUNT_FILE, FOLDER_ID, OUT_CSV, CHECKPOINT_FILE, MAX_ROWS
+
+    ap = argparse.ArgumentParser(description="Build a CSV index of everything inside the Drive folder (recursive).")
+    ap.add_argument("--drive_root", default=DEFAULT_FOLDER_ID, help="Root Drive folder ID to index.")
+    ap.add_argument("--start_folders", default=None, help="Comma-separated folder IDs to start from (overrides drive_root).")
+    ap.add_argument("--out", default=None, help="Output CSV path.")
+    ap.add_argument("--per_folder", action="store_true", help="Name output using a run tag (drive_index_<id>.csv).")
+    ap.add_argument("--resume", action="store_true", help="Resume from checkpoint if present.")
+    ap.add_argument("--max_files", type=int, default=None, help="Stop after indexing this many files.")
+    ap.add_argument("--service_account_file", default=DEFAULT_SERVICE_ACCOUNT_FILE, help="Path to Google service account JSON.")
+    args = ap.parse_args()
+
+    SERVICE_ACCOUNT_FILE = args.service_account_file
+    FOLDER_ID = args.drive_root or DEFAULT_FOLDER_ID
+
+    if args.out:
+        OUT_CSV = Path(args.out)
+    elif args.per_folder:
+        tag = make_run_tag(args.drive_root, args.start_folders)
+        OUT_CSV = Path("data/outputs") / (f"drive_index_{tag}.csv" if tag else "drive_index.csv")
+    else:
+        OUT_CSV = Path("data/outputs/drive_index.csv")
+
+    CHECKPOINT_FILE = OUT_CSV.with_name(".index_checkpoint_" + OUT_CSV.name)
+
+    if args.max_files is not None:
+        MAX_ROWS = args.max_files
+
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
 
     creds = service_account.Credentials.from_service_account_file(
@@ -139,14 +183,20 @@ def main():
     )
     drive = build("drive", "v3", credentials=creds)
 
-    # Load checkpoint if exists
-    rows, indexed_ids = load_checkpoint()
+    if args.resume:
+        rows, indexed_ids = load_checkpoint()
+    else:
+        rows, indexed_ids = [], set()
 
-    stack = [(FOLDER_ID, "")]
+    start_ids = parse_id_list(args.start_folders) if args.start_folders else []
+    if not start_ids:
+        start_ids = [FOLDER_ID]
+
+    stack = [(fid, "") for fid in start_ids]
     seen = set()
     folders_done = 0
 
-    try: 
+    try:
         while stack:
             current_folder_id, prefix = stack.pop()
 
@@ -170,18 +220,16 @@ def main():
                     continue
 
                 file_id = item.get("id", "")
-                
-                # Skip if already indexed (for resume)
+
                 if file_id in indexed_ids:
                     continue
 
-                parents = item.get("parents") or [current_folder_id]
                 site, deployment_folder, deployment_id, status = parse_drive_path(drive_path)
 
                 rows.append({
                     "file_name": name,
                     "file_id": file_id,
-                    "drive_folder_id": parents[0],
+                    "drive_folder_id": current_folder_id,
                     "mimeType": item.get("mimeType", ""),
                     "modifiedTime": item.get("modifiedTime", ""),
                     "size": item.get("size", ""),
@@ -194,9 +242,8 @@ def main():
                 indexed_ids.add(file_id)
 
                 if len(rows) % PRINT_EVERY == 0:
-                    print(f"rows indexed: {len(rows)}")
+                    print(f" rows indexed: {len(rows)}")
 
-                # Periodic checkpoint
                 if len(rows) % CHECKPOINT_EVERY == 0:
                     save_checkpoint(rows)
 
@@ -217,15 +264,13 @@ def main():
         save_checkpoint(rows)
         raise
 
-    # Sort and save final output
     rows.sort(key=lambda r: r["drive_path"])
     save_final_output(rows)
 
     print(f"wrote {len(rows)} rows -> {OUT_CSV}")
     if rows:
         print("Example path:", rows[0]["drive_path"])
-    
-    # Clean up checkpoint file on success
+
     if CHECKPOINT_FILE.exists():
         CHECKPOINT_FILE.unlink()
         print("Checkpoint file removed (indexing complete)")
@@ -233,3 +278,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
