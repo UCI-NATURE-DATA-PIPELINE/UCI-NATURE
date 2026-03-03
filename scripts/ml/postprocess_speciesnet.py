@@ -1,3 +1,5 @@
+# scripts/ml/postprocess_speciesnet.py
+
 import json
 import csv
 from pathlib import Path, PurePosixPath
@@ -9,18 +11,15 @@ IN_JSON = Path("data/outputs/speciesnet_results.json")
 MANIFEST_CSV = Path("data/outputs/manifest.csv")
 METADATA_CSV = Path("data/outputs/metadata.csv")
 
-OUT_CSV = Path("data/outputs/speciesnet_postprocessed.csv")
+OUT_CSV = Path("data/outputs/speciesnet_results.csv")
 REVIEW_CSV = Path("data/outputs/speciesnet_review.csv")
 
-# if running in this environment, this file may exist
 MOUNTED_JSON = Path("/mnt/data/speciesnet_results.json")
 
-# thresholds
 THRESH_NORMAL = 0.90
 THRESH_GENERIC = 0.97
 MARGIN_MIN = 0.20
 
-# burst voting window (seconds)
 BURST_WINDOW_SECONDS = 300
 
 GENERIC_EXACT = {
@@ -28,7 +27,6 @@ GENERIC_EXACT = {
 }
 
 
-# helpers
 def normalize_path(p: str) -> str:
     p = (p or "").strip().replace("\\", "/")
     while "//" in p:
@@ -124,7 +122,6 @@ def parse_datetime_loose(s: str):
     return None
 
 
-# load csvs
 def load_manifest_localpath_by_fileid():
     if not MANIFEST_CSV.exists():
         raise FileNotFoundError(f"Missing {MANIFEST_CSV}")
@@ -203,7 +200,6 @@ def load_exif_dt_by_fileid():
         return out
 
 
-# review rules
 def decision_needs_review(label, score, margin):
     is_blank = (label == "blank")
     is_human = (label == "human")
@@ -242,7 +238,6 @@ def decision_needs_review(label, score, margin):
     return needs_review, final_label, ";".join(reason) if reason else "uncertain"
 
 
-# burst voting
 def burst_vote(items):
     for it in items:
         if it["label_raw"] == "human" and it["score"] >= 0.85:

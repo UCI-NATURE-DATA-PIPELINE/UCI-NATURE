@@ -1,4 +1,4 @@
-# Validates the per-location CSV outputs from make_output.py
+# scripts/pipeline/validate_output.py
 
 import csv
 import sys
@@ -22,7 +22,6 @@ REQUIRED_COLUMNS = [
 
 
 def validate_csv(csv_path: Path) -> dict:
-    """Validate a single output CSV and return stats."""
     stats = {
         "total": 0,
         "with_date": 0,

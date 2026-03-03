@@ -1,9 +1,4 @@
-# Merges manifest, metadata, and drive_index into final output CSVs
-# Creates one CSV per camera location (ResearchPark.csv, BonitaCanyon1.csv, etc.)
-#
-# IMPORTANT: Only includes rows where an animal OR human was detected.
-# Blank images (no detection) and vehicle-only images are excluded from output.
-# This matches Julie's existing spreadsheet format.
+# scripts/pipeline/make_output.py
 
 import csv
 import re
@@ -20,7 +15,6 @@ OUT_DIR = Path("data/outputs/by_location")
 
 
 def load_csv_by_key(path: Path, key: str) -> dict:
-    """Load CSV into dict keyed by specified column."""
     out = {}
     with open(path, "r", encoding="utf-8") as f:
         for row in csv.DictReader(f):
@@ -31,13 +25,6 @@ def load_csv_by_key(path: Path, key: str) -> dict:
 
 
 def extract_image_number(filename: str) -> str:
-    """
-    Extract image number from filename.
-    Examples:
-      RESPARK_20200429_IMG0001.JPG -> IMG_0001
-      IMG_0042.JPG -> IMG_0042
-      BonitaCanyon1_IMG0123.JPG -> IMG_0123
-    """
     match = re.search(r'(IMG)_?(\d+)', filename, re.IGNORECASE)
     if match:
         num = match.group(2).zfill(4)
@@ -46,35 +33,19 @@ def extract_image_number(filename: str) -> str:
 
 
 def get_camera_name(drive_row: dict) -> str:
-    """
-    Extract camera name from drive folder structure.
-    Examples:
-      Research Park/2020_05_01_ResPark/... -> ResearchPark
-      Bonita Canyon/BonitaCanyon1/... -> BonitaCanyon1
-      Bonita Canyon/2020_09_17_BonitaCanyon2/... -> BonitaCanyon2
-    """
     deployment_folder = (drive_row.get("deployment_folder") or "").strip()
     site = (drive_row.get("site") or "").strip()
 
-    # Try to extract camera name from deployment folder
     if deployment_folder:
-        # Remove date prefix like "2020_05_01_"
         name = re.sub(r'^\d{4}_\d{2}_\d{2}_', '', deployment_folder)
-        # Remove _DONE suffix
         name = re.sub(r'_DONE$', '', name)
         if name:
             return name.replace(" ", "")
 
-    # Fall back to site name, remove spaces
     return site.replace(" ", "") if site else "Unknown"
 
 
 def format_date(exif_datetime: str) -> str:
-    """
-    Convert EXIF datetime to YYYYMMDD format.
-    Input: "2020:05:01 11:55:28"
-    Output: "20200501"
-    """
     if not exif_datetime:
         return ""
     try:
@@ -85,11 +56,6 @@ def format_date(exif_datetime: str) -> str:
 
 
 def format_time(exif_datetime: str) -> str:
-    """
-    Convert EXIF datetime to HH:MM:SS format.
-    Input: "2020:05:01 11:55:28"
-    Output: "11:55:28"
-    """
     if not exif_datetime:
         return ""
     try:
@@ -102,7 +68,6 @@ def format_time(exif_datetime: str) -> str:
 
 
 def write_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
-    """Write rows to CSV file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
@@ -111,7 +76,6 @@ def write_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
 
 
 def safe_filename(name: str) -> str:
-    # keep it simple: remove characters that break filenames
     cleaned = re.sub(r'[\\/:*?"<>|]+', "_", name)
     cleaned = cleaned.strip().strip(".")
     return cleaned or "Unknown"
@@ -123,7 +87,7 @@ def main():
     parser.add_argument("--metadata", default=str(META))
     parser.add_argument("--drive_index", default=str(DRIVE_INDEX))
     parser.add_argument("--out_dir", default=str(OUT_DIR))
-    parser.add_argument("--burst_seconds", type=int, default=10)
+    parser.add_argument("--burst_seconds", type=int, default=300)
     parser.add_argument("--burst_export", choices=["all", "first"], default="all")
     parser.add_argument("--start_date", default="")
     parser.add_argument("--end_date", default="")
@@ -148,7 +112,6 @@ def main():
     drive_index_path = Path(args.drive_index)
     out_dir = Path(args.out_dir)
 
-    # Check required files exist
     if not manifest_path.exists():
         raise FileNotFoundError("manifest.csv not found. Run make_manifest.py first.")
     if not meta_path.exists():
@@ -156,7 +119,6 @@ def main():
     if not drive_index_path.exists():
         raise FileNotFoundError("drive_index.csv not found. Run build_index.py first.")
 
-    # Load data
     meta_by_id = load_csv_by_key(meta_path, "file_id")
     drive_by_id = load_csv_by_key(drive_index_path, "file_id")
 
@@ -191,7 +153,6 @@ def main():
     total_flagged_outside_interval = 0
     total_missing_datetime_for_interval = 0
 
-    # Group rows by camera location
     rows_by_camera = defaultdict(list)
 
     total_processed = 0
@@ -280,7 +241,6 @@ def main():
 
             total_processed += 1
 
-            # Get ML outputs
             has_animal = (m.get("has_animal", "") or "").strip()
             has_human = (m.get("has_human", "") or "").strip()
             species = (m.get("species", "") or "").strip()
@@ -296,13 +256,12 @@ def main():
 
             if not _keep_row(m):
                 total_skipped_blank += 1
+                continue
 
-            # Extract metadata
             camera_name = get_camera_name(d)
             deployment_folder = d.get("deployment_folder", "")
             image_num = extract_image_number(filename)
 
-            # Prefer metadata.csv date/time (already standardized), fallback to exif_datetime if needed
             date = (m.get("date", "") or "").strip()
             time_val = (m.get("time", "") or "").strip()
 
@@ -375,6 +334,14 @@ def main():
                             corrected_date = new_date_str
                             corrected_time = new_time_str
 
+                        if args.offset_apply_to == "date":
+                            date = corrected_date
+                        elif args.offset_apply_to == "time":
+                            time_val = corrected_time
+                        else:
+                            date = corrected_date
+                            time_val = corrected_time
+
                         if notes_val:
                             notes_val = notes_val + "; OFFSET_APPLIED"
                         else:
@@ -404,10 +371,8 @@ def main():
                 "Notes": notes_val,
             }
 
-            # Group by camera name
             rows_by_camera[camera_name].append(row_data)
 
-    # Define column order
     FINAL_FIELDS = [
         "CameraName",
         "DeploymentFolder",
@@ -432,14 +397,12 @@ def main():
         "Notes",
     ]
 
-    # Write one CSV per camera location
     out_dir.mkdir(parents=True, exist_ok=True)
 
     total_output = 0
     export_rows = []
 
     for camera_name, rows in sorted(rows_by_camera.items()):
-        # Sort rows by date, time
         rows.sort(key=lambda r: (r.get("Date", ""), r.get("Time", "")))
 
         obs_seq = 0
@@ -455,14 +418,14 @@ def main():
                 m = re.match(r"^(\d{2}):(\d{2}):(\d{2})$", t)
                 if not m:
                     return None
+                if not re.match(r"^\d{8}$", d):
+                    return None
                 try:
-                    y = int(d[0:4])
-                    mo = int(d[4:6])
-                    da = int(d[6:8])
-                    hh = int(m.group(1))
-                    mm = int(m.group(2))
-                    ss = int(m.group(3))
-                    return (((y * 12 + mo) * 31 + da) * 24 + hh) * 3600 + mm * 60 + ss
+                    dt = datetime(
+                        int(d[0:4]), int(d[4:6]), int(d[6:8]),
+                        int(m.group(1)), int(m.group(2)), int(m.group(3))
+                    )
+                    return int((dt - datetime(1970, 1, 1)).total_seconds())
                 except Exception:
                     return None
 
@@ -556,7 +519,6 @@ def main():
 
             i = j
 
-        # Write CSV for this camera
         csv_path = out_dir / f"{safe_filename(camera_name)}.csv"
         write_csv(csv_path, kept_rows, FINAL_FIELDS)
 
