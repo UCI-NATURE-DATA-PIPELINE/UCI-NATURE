@@ -10,6 +10,7 @@ import re
 import argparse
 from pathlib import Path
 from collections import defaultdict
+from datetime import datetime, timedelta
 
 MANIFEST = Path("data/outputs/manifest.csv")
 META = Path("data/outputs/metadata.csv")
@@ -129,6 +130,15 @@ def main():
     parser.add_argument("--start_time", default="")
     parser.add_argument("--end_time", default="")
     parser.add_argument("--filter_mode", choices=["auto", "md", "speciesnet", "none"], default="auto")
+    parser.add_argument("--offset_start_date", default="")
+    parser.add_argument("--offset_end_date", default="")
+    parser.add_argument("--offset_start_time", default="")
+    parser.add_argument("--offset_end_time", default="")
+    parser.add_argument("--shift_minutes", type=int, default=0)
+    parser.add_argument("--set_year", type=int, default=None)
+    parser.add_argument("--set_month", type=int, default=None)
+    parser.add_argument("--set_day", type=int, default=None)
+    parser.add_argument("--offset_apply_to", choices=["date", "time", "both"], default="both")
     args = parser.parse_args()
 
     args.burst_seconds = max(10, min(300, int(args.burst_seconds)))
@@ -163,6 +173,20 @@ def main():
         raise ValueError("--start_time must be HH:MM:SS (e.g., 13:45:19)")
     if end_time and not re.match(r"^\d{2}:\d{2}:\d{2}$", end_time):
         raise ValueError("--end_time must be HH:MM:SS (e.g., 13:45:19)")
+
+    offset_start_date = (args.offset_start_date or "").strip()
+    offset_end_date = (args.offset_end_date or "").strip()
+    offset_start_time = (args.offset_start_time or "").strip()
+    offset_end_time = (args.offset_end_time or "").strip()
+
+    if offset_start_date and not re.match(r"^\d{8}$", offset_start_date):
+        raise ValueError("--offset_start_date must be YYYYMMDD (e.g., 20200311)")
+    if offset_end_date and not re.match(r"^\d{8}$", offset_end_date):
+        raise ValueError("--offset_end_date must be YYYYMMDD (e.g., 20200311)")
+    if offset_start_time and not re.match(r"^\d{2}:\d{2}:\d{2}$", offset_start_time):
+        raise ValueError("--offset_start_time must be HH:MM:SS (e.g., 13:45:19)")
+    if offset_end_time and not re.match(r"^\d{2}:\d{2}:\d{2}$", offset_end_time):
+        raise ValueError("--offset_end_time must be HH:MM:SS (e.g., 13:45:19)")
 
     total_flagged_outside_interval = 0
     total_missing_datetime_for_interval = 0
@@ -207,6 +231,44 @@ def main():
         if mode == "speciesnet":
             return sp not in ("", "blank", "vehicle", "no cv result")
         return True
+
+    def _parse_row_dt(d: str, t: str):
+        d = (d or "").strip()
+        t = (t or "").strip()
+        if not d or not t:
+            return None
+        if not re.match(r"^\d{8}$", d):
+            return None
+        if not re.match(r"^\d{2}:\d{2}:\d{2}$", t):
+            return None
+        try:
+            return datetime(
+                int(d[0:4]), int(d[4:6]), int(d[6:8]),
+                int(t[0:2]), int(t[3:5]), int(t[6:8])
+            )
+        except Exception:
+            return None
+
+    offset_enabled = bool(offset_start_date and offset_end_date) and (
+        args.shift_minutes != 0 or args.set_year is not None or args.set_month is not None or args.set_day is not None
+    )
+
+    offset_start_dt = None
+    offset_end_dt = None
+    if offset_enabled:
+        try:
+            st = offset_start_time if offset_start_time else "00:00:00"
+            et = offset_end_time if offset_end_time else "23:59:59"
+            offset_start_dt = _parse_row_dt(offset_start_date, st)
+            offset_end_dt = _parse_row_dt(offset_end_date, et)
+        except Exception:
+            offset_start_dt = None
+            offset_end_dt = None
+        if offset_start_dt is None or offset_end_dt is None:
+            offset_enabled = False
+        else:
+            if offset_end_dt < offset_start_dt:
+                offset_enabled = False
 
     with open(manifest_path, "r", encoding="utf-8") as f:
         for row in csv.DictReader(f):
@@ -280,14 +342,59 @@ def main():
                         total_flagged_outside_interval += 1
                         notes_val = "WARNING: Date/time outside deployment interval"
 
+            corrected_date = ""
+            corrected_time = ""
+
+            if offset_enabled:
+                row_dt = _parse_row_dt(date, time_val)
+                if row_dt is not None and offset_start_dt is not None and offset_end_dt is not None:
+                    if offset_start_dt <= row_dt <= offset_end_dt:
+                        new_dt = row_dt
+                        try:
+                            y = args.set_year if args.set_year is not None else new_dt.year
+                            mo = args.set_month if args.set_month is not None else new_dt.month
+                            da = args.set_day if args.set_day is not None else new_dt.day
+                            new_dt = new_dt.replace(year=y, month=mo, day=da)
+                        except Exception:
+                            pass
+
+                        if args.shift_minutes != 0:
+                            try:
+                                new_dt = new_dt + timedelta(minutes=int(args.shift_minutes))
+                            except Exception:
+                                pass
+
+                        new_date_str = f"{new_dt.year:04d}{new_dt.month:02d}{new_dt.day:02d}"
+                        new_time_str = f"{new_dt.hour:02d}:{new_dt.minute:02d}:{new_dt.second:02d}"
+
+                        if args.offset_apply_to == "date":
+                            corrected_date = new_date_str
+                        elif args.offset_apply_to == "time":
+                            corrected_time = new_time_str
+                        else:
+                            corrected_date = new_date_str
+                            corrected_time = new_time_str
+
+                        if notes_val:
+                            notes_val = notes_val + "; OFFSET_APPLIED"
+                        else:
+                            notes_val = "OFFSET_APPLIED"
+
             row_data = {
                 "CameraName": camera_name,
                 "DeploymentFolder": deployment_folder,
                 "Image#": image_num,
                 "Species": species,
                 "# of Individuals": count,
+                "CorrectedSpecies": "",
+                "Corrected# of Individuals": "",
+                "HasMultipleSpecies": "",
+                "SecondarySpecies": "",
+                "Secondary# of Individuals": "",
                 "Date": date,
                 "Time": time_val,
+                "CorrectedDate": corrected_date,
+                "CorrectedTime": corrected_time,
                 "ObservationID": "",
                 "BurstCount": "",
                 "BurstIndex": "",
@@ -307,8 +414,15 @@ def main():
         "Image#",
         "Species",
         "# of Individuals",
+        "CorrectedSpecies",
+        "Corrected# of Individuals",
+        "HasMultipleSpecies",
+        "SecondarySpecies",
+        "Secondary# of Individuals",
         "Date",
         "Time",
+        "CorrectedDate",
+        "CorrectedTime",
         "ObservationID",
         "BurstCount",
         "BurstIndex",
@@ -430,6 +544,8 @@ def main():
                     keep_ok = True
 
                 if keep_ok:
+                    if first_kept_in_burst is not None and args.burst_export != "all":
+                        pass
                     if first_kept_in_burst is None:
                         first_kept_in_burst = r
                     if args.burst_export == "all":
