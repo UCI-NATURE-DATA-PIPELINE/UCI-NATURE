@@ -3,6 +3,7 @@ import csv
 from pathlib import Path, PurePosixPath
 from datetime import datetime, timedelta
 from collections import defaultdict
+import argparse
 
 IN_JSON = Path("data/outputs/speciesnet_results.json")
 MANIFEST_CSV = Path("data/outputs/manifest.csv")
@@ -20,7 +21,7 @@ THRESH_GENERIC = 0.97
 MARGIN_MIN = 0.20
 
 # burst voting window (seconds)
-BURST_WINDOW_SECONDS = 45
+BURST_WINDOW_SECONDS = 300
 
 GENERIC_EXACT = {
     "no cv result", "animal", "mammal", "rodent", "carnivorous mammal", "canis species"
@@ -223,8 +224,6 @@ def decision_needs_review(label, score, margin):
             needs_review = True
 
     final_label = label
-    if needs_review and not (is_blank or is_human):
-        final_label = "unknown"
 
     reason = []
     if is_blank or is_human:
@@ -319,6 +318,14 @@ def make_bursts(pred_rows):
 
 
 def main():
+    global BURST_WINDOW_SECONDS
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--burst_window", type=int, default=300)
+    args = parser.parse_args()
+
+    BURST_WINDOW_SECONDS = max(10, min(300, int(args.burst_window)))
+
     in_path = IN_JSON
     if not in_path.exists() and MOUNTED_JSON.exists():
         in_path = MOUNTED_JSON

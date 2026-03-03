@@ -6,6 +6,7 @@ Duplicate detection by Image# is deferred for future implementation.
 
 import csv
 import io
+import argparse
 from pathlib import Path
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -20,7 +21,7 @@ SCOPES = ["https://www.googleapis.com/auth/drive"]
 BY_LOCATION_DIR = Path("data/outputs/by_location")
 
 # CSV filename in Drive (same for all cameras)
-DRIVE_CSV_NAME = "TEST_DO_NOT_USE_wildlife_results.csv" #"wildlife_results.csv"
+DRIVE_CSV_NAME = "wildlife_results.csv"  # "TEST_DO_NOT_USE_wildlife_results.csv"
 
 # Camera folder IDs in Google Drive (Julie's Shared Drive)
 CAMERA_FOLDERS = {
@@ -32,8 +33,10 @@ CAMERA_FOLDERS = {
 
 FIELDNAMES = [
     "CameraName", "DeploymentFolder", "Image#", "Species",
-    "# of Individuals", "Date", "Time", "has_animal",
-    "model_certainty", "Notes"
+    "# of Individuals", "CorrectedSpecies", "Corrected# of Individuals",
+    "HasMultipleSpecies", "SecondarySpecies", "Secondary# of Individuals",
+    "Date", "Time", "CorrectedDate", "CorrectedTime",
+    "has_animal", "model_certainty", "Notes"
 ]
 
 
@@ -53,7 +56,7 @@ def find_file_in_folder(drive, folder_id: str, filename: str):
 def rows_to_csv_bytes(rows: list[dict], include_header: bool) -> bytes:
     """Convert rows to CSV bytes for upload"""
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=FIELDNAMES)
+    writer = csv.DictWriter(buf, fieldnames=FIELDNAMES, extrasaction="ignore")
     if include_header:
         writer.writeheader()
     writer.writerows(rows)
@@ -83,13 +86,42 @@ def create_csv_in_drive(drive, folder_id: str, filename: str, rows: list[dict]):
     return file
 
 
+def overwrite_csv_in_drive(drive, file_id: str, rows: list[dict]):
+    content = rows_to_csv_bytes(rows, include_header=True)
+    media = MediaIoBaseUpload(
+        io.BytesIO(content),
+        mimetype="text/csv",
+        resumable=False
+    )
+    drive.files().update(
+        fileId=file_id,
+        media_body=media,
+        supportsAllDrives=True
+    ).execute()
+
+
 def append_rows_to_drive_csv(drive, file_id: str, new_rows: list[dict]):
     """
     Append new rows to existing CSV in Drive.
     Downloads only the existing file's content to check for duplicates by Image#.
     NOTE: Full duplicate detection deferred - currently appends all new rows.
     """
-    # Download existing file to get current Image# values
+    def _row_key(row: dict) -> str:
+        dep = (row.get("DeploymentFolder") or "").strip()
+        img = (row.get("Image#") or "").strip()
+        cam = (row.get("CameraName") or "").strip()
+        date = (row.get("Date") or "").strip()
+        time_val = (row.get("Time") or "").strip()
+
+        if dep and img:
+            return f"{dep}|{img}"
+        if cam and date and time_val and img:
+            return f"{cam}|{date}|{time_val}|{img}"
+        if img:
+            return img
+        return ""
+
+    # Download existing file to get current Image# values to skip duplicates by key
     request = drive.files().get_media(fileId=file_id, supportsAllDrives=True)
     buf = io.BytesIO()
     from googleapiclient.http import MediaIoBaseDownload
@@ -101,23 +133,27 @@ def append_rows_to_drive_csv(drive, file_id: str, new_rows: list[dict]):
     buf.seek(0)
     existing_content = buf.read().decode("utf-8")
 
-    # Get existing Image# values to skip duplicates
-    existing_image_nums = set()
+    # Get existing keys to skip duplicates
+    existing_keys = set()
     reader = csv.DictReader(io.StringIO(existing_content))
     for row in reader:
-        img = (row.get("Image#") or "").strip()
-        if img:
-            existing_image_nums.add(img)
+        k = _row_key(row)
+        if k:
+            existing_keys.add(k)
 
     # Filter out duplicates
-    rows_to_append = [
-        r for r in new_rows
-        if (r.get("Image#") or "").strip() not in existing_image_nums
-    ]
+    rows_to_append = []
+    for r in new_rows:
+        k = _row_key(r)
+        if k and k in existing_keys:
+            continue
+        rows_to_append.append(r)
+        if k:
+            existing_keys.add(k)
 
     skipped = len(new_rows) - len(rows_to_append)
     if skipped:
-        print(f"  Skipped {skipped} duplicate rows (by Image#)")
+        print(f"  Skipped {skipped} duplicate rows (by DeploymentFolder|Image#)")
 
     if not rows_to_append:
         print(f"  No new rows to append - all already exist")
@@ -141,7 +177,7 @@ def append_rows_to_drive_csv(drive, file_id: str, new_rows: list[dict]):
     print(f"  Appended {len(rows_to_append)} new rows")
 
 
-def process_camera(drive, camera_name: str, folder_id: str, local_csv: Path):
+def process_camera(drive, camera_name: str, folder_id: str, local_csv: Path, overwrite: bool):
     """Process one camera: create new CSV or append to existing"""
     print(f"\nProcessing {camera_name}...")
 
@@ -157,8 +193,12 @@ def process_camera(drive, camera_name: str, folder_id: str, local_csv: Path):
 
     if existing_file:
         print(f"  Found existing CSV in Drive (ID: {existing_file['id']})")
-        append_rows_to_drive_csv(drive, existing_file['id'], new_rows)
-        print(f"  ✓ Done - appended to existing file")
+        if overwrite:
+            overwrite_csv_in_drive(drive, existing_file['id'], new_rows)
+            print(f"  ✓ Overwrote existing file")
+        else:
+            append_rows_to_drive_csv(drive, existing_file['id'], new_rows)
+            print(f"  ✓ Done - appended to existing file")
     else:
         print(f"  No existing CSV found - creating new file...")
         created = create_csv_in_drive(drive, folder_id, DRIVE_CSV_NAME, new_rows)
@@ -166,6 +206,10 @@ def process_camera(drive, camera_name: str, folder_id: str, local_csv: Path):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--overwrite", action="store_true")
+    args = parser.parse_args()
+
     if not BY_LOCATION_DIR.exists():
         raise FileNotFoundError(
             f"{BY_LOCATION_DIR} not found. Run make_output.py first."
@@ -189,7 +233,7 @@ def main():
             continue
 
         try:
-            process_camera(drive, camera_name, folder_id, local_csv)
+            process_camera(drive, camera_name, folder_id, local_csv, args.overwrite)
         except HttpError as e:
             print(f"\nError processing {camera_name}: {e}")
             continue

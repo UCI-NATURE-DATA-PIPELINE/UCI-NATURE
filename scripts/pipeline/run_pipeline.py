@@ -210,13 +210,18 @@ def build_steps(args: argparse.Namespace, manifest_to_process: str) -> list[tupl
             [PYTHON, "scripts/pipeline/make_manifest.py",
              "--cache", args.cache,
              "--new_out", args.new_manifest,
-             "--write_new_only"]
+             "--write_new_only",
+             "--batch_size", str(args.batch_size)]
         ))
     else:
-        steps.append(("Create Manifest", [PYTHON, "scripts/pipeline/make_manifest.py"]))
+        steps.append(("Create Manifest", [
+            PYTHON, "scripts/pipeline/make_manifest.py",
+            "--batch_size", str(args.batch_size)
+        ]))
 
     # SpeciesNet + parse results
     steps.append(("Run SpeciesNet", [PYTHON, "scripts/ml/run_speciesnet.py"]))
+    steps.append(("Postprocess SpeciesNet", [PYTHON, "scripts/ml/postprocess_speciesnet.py", "--burst_window", str(args.ml_burst_window)]))
     steps.append(("Parse ML Results", [PYTHON, "scripts/ml/run_inference.py", "--provider", "speciesnet"]))
 
     # Remaining pipeline steps (use the manifest we chose)
@@ -259,11 +264,24 @@ def main() -> None:
     parser.add_argument("--cache", default="data/outputs/cache/processed_file_ids.txt")
     parser.add_argument("--new_manifest", default="data/outputs/manifest_new.csv")
 
+    # batch sizing
+    parser.add_argument("--batch_size", type=int, default=0)
+
     # burst output controls
-    parser.add_argument("--burst_seconds", type=int, default=5)
+    parser.add_argument("--burst_seconds", type=int, default=10)
     parser.add_argument("--burst_export", choices=["all", "first"], default="first")
 
+    # burst voting controls for SpeciesNet postprocess
+    parser.add_argument("--ml_burst_window", type=int, default=300)
+
     args = parser.parse_args()
+
+    args.burst_seconds = max(10, min(300, int(args.burst_seconds)))
+    args.ml_burst_window = max(10, min(300, int(args.ml_burst_window)))
+    if args.batch_size is None:
+        args.batch_size = 0
+    if args.batch_size < 0:
+        args.batch_size = 0
 
     print(f"Repo root: {REPO_ROOT}")
     print(f"Using Python: {PYTHON}")
@@ -347,6 +365,7 @@ def main() -> None:
                 "--new_out", args.new_manifest,
                 "--write_new_only",
                 "--update_cache",
+                "--batch_size", str(args.batch_size)
             ]
             print("\nUpdating cache...")
             subprocess.run(update_cmd, env=env)
