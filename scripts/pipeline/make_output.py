@@ -122,7 +122,7 @@ def main():
     parser.add_argument("--metadata", default=str(META))
     parser.add_argument("--drive_index", default=str(DRIVE_INDEX))
     parser.add_argument("--out_dir", default=str(OUT_DIR))
-    parser.add_argument("--burst_seconds", type=int, default=5)
+    parser.add_argument("--burst_seconds", type=int, default=10)
     parser.add_argument("--burst_export", choices=["all", "first"], default="all")
     parser.add_argument("--start_date", default="")
     parser.add_argument("--end_date", default="")
@@ -130,6 +130,8 @@ def main():
     parser.add_argument("--end_time", default="")
     parser.add_argument("--filter_mode", choices=["auto", "md", "speciesnet", "none"], default="auto")
     args = parser.parse_args()
+
+    args.burst_seconds = max(10, min(300, int(args.burst_seconds)))
 
     manifest_path = Path(args.manifest)
     meta_path = Path(args.metadata)
@@ -203,7 +205,7 @@ def main():
         if mode == "md":
             return ha == "1" or hh == "1"
         if mode == "speciesnet":
-            return sp not in ("", "blank", "vehicle")
+            return sp not in ("", "blank", "vehicle", "no cv result")
         return True
 
     with open(manifest_path, "r", encoding="utf-8") as f:
@@ -222,6 +224,13 @@ def main():
             species = (m.get("species", "") or "").strip()
             count = (m.get("count", "") or "").strip()
             model_certainty = (m.get("model_certainty", "") or "").strip()
+
+            sp_norm = species.strip().lower()
+            if sp_norm in ("animal", "mammal", "bird", "canis species", "canine family", "rodent", "carnivorous mammal"):
+                species = "unknown"
+
+            if not count and species and species.strip().lower() not in ("blank", "vehicle", "no cv result"):
+                count = "1"
 
             if not _keep_row(m):
                 total_skipped_blank += 1
@@ -368,7 +377,7 @@ def main():
                     keep_ok = (ha == "1" or hh == "1")
                 elif mode == "speciesnet":
                     sp = _normalize_species(burst_rows[0].get("Species", "") or "")
-                    keep_ok = sp not in ("", "blank", "vehicle")
+                    keep_ok = sp not in ("", "blank", "vehicle", "no cv result")
                 elif mode == "none":
                     keep_ok = True
 
@@ -416,7 +425,7 @@ def main():
                     keep_ok = (ha == "1" or hh == "1")
                 elif mode == "speciesnet":
                     sp = _normalize_species(r.get("Species", "") or "")
-                    keep_ok = sp not in ("", "blank", "vehicle")
+                    keep_ok = sp not in ("", "blank", "vehicle", "no cv result")
                 elif mode == "none":
                     keep_ok = True
 
