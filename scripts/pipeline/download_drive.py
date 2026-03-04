@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -257,19 +258,29 @@ def main() -> None:
                         for (file_id, original_name, out_path) in to_download
                     }
 
-                    for fut in as_completed(future_map):
-                        out_path, original_name = future_map[fut]
-                        ok = fut.result()
-                        if ok:
-                            downloaded += 1
-                            rel_path = out_path.relative_to(OUT_DIR)
-                            print(f"Downloaded {downloaded}/{limit_str}: {rel_path}")
-                        else:
-                            failed += 1
-                            print(f"Failed to download: {original_name}")
+                    # Testing bar
+                    with tqdm(total=len(to_download), desc="Downloading", unit="img", ncols = 149,
+                            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}') as pbar:
 
-                        if MAX_DOWNLOADS is not None and downloaded >= MAX_DOWNLOADS:
-                            break
+                        for fut in as_completed(future_map):
+                            out_path, original_name = future_map[fut]
+                            ok = fut.result()
+                            
+                            # Show current file being processed
+                            rel_path = out_path.relative_to(OUT_DIR)
+                            short_path = str(rel_path)[:60] + "..." if len(str(rel_path)) > 60 else str(rel_path)
+                            
+                            if ok:
+                                downloaded += 1
+                                pbar.update(1)
+                                pbar.set_postfix_str(f"✓{downloaded} ✗{failed} | {short_path}", refresh=True)
+                            else:
+                                failed += 1
+                                pbar.update(1)
+                                pbar.set_postfix_str(f"✓{downloaded} ✗{failed} | FAILED: {short_path}", refresh=True)
+
+                            if MAX_DOWNLOADS is not None and downloaded >= MAX_DOWNLOADS:
+                                break
 
             except KeyboardInterrupt:
                 print("\nInterrupted.")
