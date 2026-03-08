@@ -4,6 +4,7 @@
 
 import csv
 import io
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -16,8 +17,11 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from googleapiclient.errors import HttpError
 
-# config
-SERVICE_ACCOUNT_FILE = "secrets/inf191a-uci-nature-sa.json"   # key file for service account auth
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.config import SERVICE_ACCOUNT_FILE, MAX_DOWNLOADS
 
 # CHANGE: now reads from drive_index.csv instead of querying Drive directly
 DRIVE_INDEX = Path("data/outputs/drive_index.csv")            # source of file IDs to download
@@ -25,8 +29,6 @@ DRIVE_INDEX = Path("data/outputs/drive_index.csv")            # source of file I
 OUT_DIR = Path("data/staging")                                # where images get downloaded locally
 LOG_CSV = Path("data/outputs/download_log.csv")               # download log
 PROGRESS_FILE = Path("data/outputs/.download_progress.csv")   # NEW: tracks download state
-
-MAX_DOWNLOADS = 2000
 MAX_RETRIES = 3           # NEW: retry failed downloads up to 3 times
 RETRY_DELAY = 2           # NEW: initial delay in seconds (exponential backoff)
 
@@ -302,4 +304,16 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="Download images from Google Drive using drive_index.csv.")
+    ap.add_argument("--index", default=None, help="Path to drive_index.csv (default: data/outputs/drive_index.csv).")
+    ap.add_argument("--resume", action="store_true", help="Resume from progress checkpoint.")
+    ap.add_argument("--max_downloads", type=int, default=None, help="Override MAX_DOWNLOADS from config.")
+    args = ap.parse_args()
+
+    if args.index:
+        DRIVE_INDEX = Path(args.index)
+    if args.max_downloads is not None:
+        MAX_DOWNLOADS = args.max_downloads
+
     main()

@@ -83,6 +83,7 @@ SPECIES_MAP = {
     "raccoon": "raccoon",
     "procyon": "raccoon",
     "procyon lotor": "raccoon",
+    "northern raccoon": "raccoon",
 
     # Opossums
     "opossum": "opossum",
