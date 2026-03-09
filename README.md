@@ -251,8 +251,14 @@ The pipeline generates detailed logs:
 The pipeline supports resuming interrupted runs:
 
 - **Indexing:** Saves checkpoint every 100 files
-- **Downloads:** Tracks successfully downloaded files
+- **Downloads:** Tracks successfully downloaded files in `data/outputs/.download_progress.csv`
 - **Re-run:** Simply run the same command again to resume
+
+### Staging Cleanup
+
+After a successful **auto mode** run, `data/staging/` is automatically deleted to free disk space. Re-downloads on the next run are prevented by `data/outputs/.download_progress.csv` — as long as that file exists, already-fetched images are skipped.
+
+**Manual mode** is unaffected: staging is backed up before the run and restored afterward, so your existing images are never lost.
 
 ## Project Structure
 
@@ -275,7 +281,7 @@ project/
 │   └── drive_upload/
 │       └── upload_to_drive.py           # Upload by_location/ CSVs to Julie's Drive (production)
 ├── data/
-│   ├── staging/                         # Downloaded images (gitignored)
+│   ├── staging/                         # Downloaded images (gitignored, cleared after each successful auto run)
 │   └── outputs/                         # All pipeline CSVs, JSON, logs (gitignored)
 │       └── by_location/                 # Final output: one CSV per camera
 ├── secrets/

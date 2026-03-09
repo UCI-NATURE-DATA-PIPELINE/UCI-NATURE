@@ -138,15 +138,22 @@ def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
             "--batch_size", str(args.batch_size)
         ]))
 
-    steps.append(("Run SpeciesNet", [PYTHON, "scripts/ml/run_speciesnet.py"]))
-    steps.append(("Postprocess SpeciesNet", [PYTHON, "scripts/ml/postprocess_speciesnet.py", "--burst_window", str(args.ml_burst_window)]))
-    steps.append(("Parse ML Results", [PYTHON, "scripts/ml/run_inference.py", "--provider", "speciesnet"]))
-
     manifest_to_process = args.new_manifest if (args.mode == "auto" and args.use_new_manifest_for_outputs) else "data/outputs/manifest.csv"
     if args.mode == "auto" and args.use_new_manifest_for_outputs and not manifest_has_rows(manifest_to_process):
         manifest_to_process = "data/outputs/manifest.csv"
 
-    steps.append(("Extract Metadata", [PYTHON, "scripts/pipeline/extract_metadata.py", "--manifest", manifest_to_process]))
+    # Extract EXIF metadata before SpeciesNet postprocessing so that
+    # postprocess_speciesnet.py has metadata.csv available for burst timestamp grouping.
+    steps.append(("Extract Metadata (EXIF)", [PYTHON, "scripts/pipeline/extract_metadata.py", "--manifest", manifest_to_process]))
+
+    steps.append(("Run SpeciesNet", [PYTHON, "scripts/ml/run_speciesnet.py"]))
+    steps.append(("Postprocess SpeciesNet", [PYTHON, "scripts/ml/postprocess_speciesnet.py", "--burst_window", str(args.ml_burst_window)]))
+    steps.append(("Parse ML Results", [PYTHON, "scripts/ml/run_inference.py", "--provider", "speciesnet"]))
+
+    # Re-run extract_metadata now that ml_outputs.csv exists so the final
+    # metadata.csv has ML columns (species, has_animal, model_certainty) merged in.
+    steps.append(("Extract Metadata (merge ML)", [PYTHON, "scripts/pipeline/extract_metadata.py", "--manifest", manifest_to_process]))
+
     steps.append(("Generate Output CSVs", [
         PYTHON, "scripts/pipeline/make_output.py",
         "--manifest", manifest_to_process,
@@ -202,7 +209,8 @@ def main() -> None:
             if p.is_file():
                 shutil.copy2(p, STAGING_DIR / p.name)
 
-    copy_staging_backup()
+    if args.mode == "manual":
+        copy_staging_backup()
 
     steps = build_steps(args)
     start = time.time()
@@ -211,7 +219,14 @@ def main() -> None:
     elapsed = time.time() - start
     print(f"\nDONE in {elapsed/60:.1f} minutes")
 
-    restore_staging_backup()
+    if args.mode == "manual":
+        restore_staging_backup()
+    else:
+        # Auto mode: clear staging after a successful run to free disk space.
+        # Re-downloads are prevented by data/outputs/.download_progress.csv.
+        if STAGING_DIR.exists():
+            shutil.rmtree(STAGING_DIR)
+            print(f"Cleared {STAGING_DIR} (outputs preserved in data/outputs/)")
 
 
 if __name__ == "__main__":
