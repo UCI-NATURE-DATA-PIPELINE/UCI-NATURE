@@ -1,20 +1,17 @@
-# secrets
+# secrets — service account key must never be committed
 secrets/
-*.json
 
-# data
+# data — large/transient directories
 data/staging/
+data/staging_full_backup/
 data/downloads/
 data/tmp/
 data/cache/
 data/test_runs/
 data/staging_all/
 
-# ignore outputs except a few small csvs
+# pipeline outputs are transient — ignore everything except sample data
 data/outputs/*
-!data/outputs/animals_only.csv
-!data/outputs/output.csv
-!data/outputs/final_output.csv
 
 # allow small sample data to be committed
 !data/sample/
@@ -32,7 +29,6 @@ __pycache__/
 # mac
 .DS_Store
 .claude/
-CLAUDE.md
 
 # envs / venvs
 .env

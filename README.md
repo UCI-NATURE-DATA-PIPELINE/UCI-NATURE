@@ -103,11 +103,12 @@ This runs all steps in order:
 1. Index Drive files
 2. Download images
 3. Create manifest
-4. Run SpeciesNet (ML classification)
-5. Postprocess SpeciesNet (burst voting)
-6. Parse ML results
-7. Extract metadata
-8. Generate final output CSVs (per camera)
+4. Extract EXIF metadata (timestamps needed for burst grouping)
+5. Run SpeciesNet (ML classification)
+6. Postprocess SpeciesNet (burst voting)
+7. Parse ML results
+8. Extract metadata again (merge ML results into metadata.csv)
+9. Generate final output CSVs (per camera)
 
 ### Run Individual Steps
 
@@ -121,19 +122,22 @@ python scripts/pipeline/download_drive.py
 # Step 3: Create local manifest
 python scripts/pipeline/make_manifest.py
 
-# Step 4a: Run SpeciesNet ML model
-python scripts/ml/run_speciesnet.py
-
-# Step 4b: Postprocess SpeciesNet (burst grouping + voting)
-python scripts/ml/postprocess_speciesnet.py
-
-# Step 4c: Parse ML results into per-image CSV
-python scripts/ml/run_inference.py --provider speciesnet
-
-# Step 5: Extract EXIF metadata
+# Step 4: Extract EXIF metadata 
 python scripts/pipeline/extract_metadata.py --manifest data/outputs/manifest.csv
 
-# Step 6: Generate per-camera output CSVs
+# Step 5: Run SpeciesNet ML model
+python scripts/ml/run_speciesnet.py
+
+# Step 6: Postprocess SpeciesNet (burst grouping + voting)
+python scripts/ml/postprocess_speciesnet.py
+
+# Step 7: Parse ML results into per-image CSV
+python scripts/ml/run_inference.py --provider speciesnet
+
+# Step 8: Extract metadata again (merges ml_outputs.csv into metadata.csv)
+python scripts/pipeline/extract_metadata.py --manifest data/outputs/manifest.csv
+
+# Step 9: Generate per-camera output CSVs
 python scripts/pipeline/make_output.py
 
 # (Optional) Validate output
