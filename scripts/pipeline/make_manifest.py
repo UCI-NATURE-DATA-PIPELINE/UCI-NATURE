@@ -61,6 +61,9 @@ def main():
     for p in sorted(staging.rglob("*")):
         if not p.is_file():
             continue
+        # Skip macOS metadata files (.DS_Store, ._* resource forks, other hidden files)
+        if p.name.startswith("."):
+            continue
         if p.suffix not in IMAGE_EXTENSIONS:
             continue
 
