@@ -61,12 +61,12 @@ Automated pipeline that retrieves images from Google Drive, extracts metadata, d
 
 ```bash
 # Create virtual environment (recommended)
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
+python3.11 -m venv .venv311
+source .venv311/bin/activate  # Linux/Mac
 # or: .venv\Scripts\activate  # Windows
 
 # Install dependencies
-pip install -r requirements.txt
+pip install -r requirements/requirements.lock
 ```
 
 ### Requirements
@@ -92,7 +92,7 @@ exifread
 ### Run Full Pipeline
 
 ```bash
-python scripts/run_pipeline.py
+python scripts/pipeline/run_pipeline.py
 ```
 
 This runs all steps in order:
