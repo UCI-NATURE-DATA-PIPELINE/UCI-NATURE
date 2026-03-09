@@ -67,6 +67,7 @@ source .venv311/bin/activate  # Linux/Mac
 
 # Install dependencies
 pip install -r requirements/requirements.lock
+pip install -r requirements/requirements.txt
 ```
 
 ### Requirements
