@@ -230,9 +230,19 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
         has_animal = 1 if has_animal_conf > 0 else 0
         has_human = 1 if (has_human_conf > 0) else 0
 
-        # Skip blanks/vehicles: keep only animal or human
+        # Write blanks/vehicles to ml_outputs.csv so extract_metadata can propagate
+        # has_animal=0 into metadata.csv, allowing make_output.py to filter them out.
         if has_animal == 0 and has_human == 0:
             blank_or_vehicle += 1
+            rows.append({
+                "file_id": manifest_row.get("file_id", ""),
+                "local_file_name": manifest_row.get("local_file_name", ""),
+                "local_path": manifest_row.get("local_path", ""),
+                "has_animal": 0,
+                "has_human": 0,
+                "species": "blank",
+                "model_certainty": "",
+            })
             continue
 
         prediction_str = pred.get("prediction", "")
@@ -284,8 +294,8 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
         "total_predictions_in_json": len(predictions),
         "matched_to_manifest": len(predictions) - len(unmatched),
         "unmatched_to_manifest": len(unmatched),
-        "kept_animal_or_human": len(dedup),
-        "filtered_blank_or_vehicle": blank_or_vehicle,
+        "with_animal_or_human": animal_rows + human_rows,
+        "blank_or_vehicle": blank_or_vehicle,
         "threshold": threshold,
         "out_csv": str(out_csv),
         "unmatched_csv": str(UNMATCHED_CSV),
@@ -296,10 +306,9 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
     # Summary
     total_input = len(predictions)
     total_kept = len(dedup)
-    total_skipped = total_input - total_kept
     animal_rows = sum(1 for r in dedup.values() if r["has_animal"] == 1)
     human_rows = sum(1 for r in dedup.values() if r["has_human"] == 1 and r["has_animal"] == 0)
-    species_filled = sum(1 for r in dedup.values() if r["species"] and r["species"] != "unknown")
+    species_filled = sum(1 for r in dedup.values() if r["species"] and r["species"] not in ("", "unknown", "blank"))
 
     species_counts = {}
     for r in dedup.values():
@@ -312,11 +321,11 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
     print(f"summary: {SUMMARY_JSON}")
     print(f"\nSummary:")
     print(f"  Total images processed: {total_input}")
-    print(f"  Kept (animal or human): {total_kept}")
+    print(f"  With animal or human: {animal_rows + human_rows}")
     print(f"    Animals: {animal_rows}")
     print(f"    Humans only: {human_rows}")
-    print(f"  Skipped (blank/vehicle): {total_skipped}")
-    print(f"  Species identified: {species_filled}/{total_kept}")
+    print(f"  Blank/vehicle (will be excluded from final output): {blank_or_vehicle}")
+    print(f"  Species identified: {species_filled}/{animal_rows + human_rows}")
     print(f"\n  Species breakdown:")
     for species, count in sorted(species_counts.items(), key=lambda x: -x[1]):
         print(f"    {species}: {count}")

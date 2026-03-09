@@ -185,7 +185,7 @@ python scripts/pipeline/validate_output.py
 
 - Converts SpeciesNet JSON into a clean per-image CSV keyed by file_id
 - Maps taxonomy strings to simplified labels (e.g., `canis_latrans` → `coyote`)
-- Filters out blank images and vehicles
+- Writes ALL predictions including blanks (`has_animal=0, species=blank`) so downstream steps can filter correctly
 - **Output:** `data/outputs/ml_outputs.csv`
 
 ### 5. scripts/pipeline/extract_metadata.py
@@ -198,7 +198,8 @@ python scripts/pipeline/validate_output.py
 
 - Assembles one CSV per camera location in Julie's spreadsheet format
 - Groups images into observation bursts, assigns ObservationID, BurstCount, BurstIndex
-- Filters blank/vehicle images; normalizes vague species labels to "unknown"
+- **Excludes blank/vehicle images** — only rows with `has_animal=1` or `has_human=1` appear in the final output
+- Normalizes vague species labels to "unknown"
 - **Output:** `data/outputs/by_location/<CameraName>.csv` (one file per deployment)
 
 ### validate_output.py (optional, not part of run_pipeline.py)
@@ -380,9 +381,11 @@ Run `python scripts/pipeline/build_index.py` first.
 
 Run `python scripts/pipeline/download_drive.py` and `python scripts/pipeline/make_manifest.py`.
 
-### ML columns are empty
+### ML columns are empty / final output has no rows
 
-SpeciesNet output (`speciesnet_results.json`) is missing. Run `python scripts/ml/run_speciesnet.py` first.
+Two possible causes:
+1. SpeciesNet hasn't been run yet — run `python scripts/ml/run_speciesnet.py` first.
+2. All images were classified as blank (no animals detected above the 0.5 confidence threshold) — the final output CSVs will be empty because blank images are excluded. This is expected behavior if the images genuinely contain no wildlife.
 
 ### API quota errors
 

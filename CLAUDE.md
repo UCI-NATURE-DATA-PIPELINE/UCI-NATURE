@@ -85,6 +85,7 @@ All intermediate data flows through CSV/JSON files in `data/outputs/`. The `file
 - **Burst detection:** Images from the same camera folder within 300 seconds are grouped into observation bursts with shared `ObservationID`
 - **SpeciesNet geofencing:** Hardcoded to `country=USA, admin1_region=CA` in `run_speciesnet.py`
 - **Species mapping:** `run_inference.py` maps SpeciesNet taxonomy strings (e.g., `mammalia;carnivora;canidae;canis;canis_latrans`) to simplified labels (e.g., `coyote`)
+- **Blank filtering:** `run_inference.py` writes ALL predictions to `ml_outputs.csv`, including blanks (`has_animal=0, species=blank`). This lets `extract_metadata.py` propagate the blank signal into `metadata.csv`, so `make_output.py` can filter them out of the final per-camera CSVs. The final output only contains images with confirmed animal or human detections.
 - **Drive upload deduplication:** Uses compound key `DeploymentFolder|Image#` to skip duplicate rows
 - **Resume support:** `build_index.py` and `download_drive.py` support `--resume` for checkpoint-based continuation
 - **Drive upload is production:** `scripts/drive_upload/` writes directly to Julie's Drive — do not test without permission
