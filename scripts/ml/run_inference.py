@@ -289,10 +289,16 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
         w.writeheader()
         w.writerows(unmatched)
 
+    total_input = len(predictions)
+    total_kept = len(dedup)
+    animal_rows = sum(1 for r in dedup.values() if r["has_animal"] == 1)
+    human_rows = sum(1 for r in dedup.values() if r["has_human"] == 1 and r["has_animal"] == 0)
+    species_filled = sum(1 for r in dedup.values() if r["species"] and r["species"] not in ("", "unknown", "blank"))
+
     summary = {
         "provider": "speciesnet",
-        "total_predictions_in_json": len(predictions),
-        "matched_to_manifest": len(predictions) - len(unmatched),
+        "total_predictions_in_json": total_input,
+        "matched_to_manifest": total_input - len(unmatched),
         "unmatched_to_manifest": len(unmatched),
         "with_animal_or_human": animal_rows + human_rows,
         "blank_or_vehicle": blank_or_vehicle,
@@ -302,13 +308,6 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
     }
     with open(SUMMARY_JSON, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
-
-    # Summary
-    total_input = len(predictions)
-    total_kept = len(dedup)
-    animal_rows = sum(1 for r in dedup.values() if r["has_animal"] == 1)
-    human_rows = sum(1 for r in dedup.values() if r["has_human"] == 1 and r["has_animal"] == 0)
-    species_filled = sum(1 for r in dedup.values() if r["species"] and r["species"] not in ("", "unknown", "blank"))
 
     species_counts = {}
     for r in dedup.values():
