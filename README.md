@@ -108,7 +108,19 @@ This runs all steps in order:
 6. Postprocess SpeciesNet (burst voting)
 7. Parse ML results
 8. Extract metadata again (merge ML results into metadata.csv)
-9. Generate final output CSVs (per camera)
+9. Generate final output CSVs (per camera, saved to `data/outputs/by_location/`)
+
+### Upload Results to Google Drive
+
+To also upload the output CSVs to the Google Drive database at the end of the pipeline, add ` --upload`:
+
+```bash
+python scripts/pipeline/run_pipeline.py --upload
+```
+
+This appends new rows to the existing Drive CSVs (duplicates are skipped automatically). *Add ` --overwrite` to rewrite the entire uploaded CSV to match your local version.
+
+> **Note:** `--upload` writes directly to the production Google Drive shared with Julie. Omit it during testing.
 
 ### Run Individual Steps
 

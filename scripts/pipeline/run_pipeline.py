@@ -161,6 +161,12 @@ def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
         "--burst_export", args.burst_export
     ]))
 
+    if args.upload:
+        upload_cmd = [PYTHON, "scripts/drive_upload/upload_to_drive.py"]
+        if args.overwrite:
+            upload_cmd += ["--overwrite"]
+        steps.append(("Upload Results to Drive", upload_cmd))
+
     return steps
 
 
@@ -191,6 +197,11 @@ def main() -> None:
     parser.add_argument("--burst_seconds", type=int, default=300, help="Burst duration seconds for output.")
     parser.add_argument("--burst_export", default="all", choices=["all", "first", "middle", "last"],
                         help="Which burst images to export in output.")
+
+    parser.add_argument("--upload", action="store_true",
+                        help="Upload output CSVs to Google Drive after pipeline completes (production).")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Overwrite existing Drive CSVs instead of appending (used with --upload).")
 
     args = parser.parse_args()
 
