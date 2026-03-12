@@ -67,8 +67,8 @@ source .venv311/bin/activate  # Linux/Mac
 # or: .venv\Scripts\activate  # Windows
 
 # Install dependencies
-pip install --no-deps -r requirements/requirements.lock
-pip install speciesnet==5.0.3 --use-pep517
+pip install -r requirements/requirements.lock
+pip install -r requirements/requirements.txt
 ```
 
 ### Requirements

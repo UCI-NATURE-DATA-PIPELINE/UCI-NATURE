@@ -251,7 +251,7 @@ def main() -> None:
                 to_download = to_download[:MAX_DOWNLOADS]
 
             limit_str = "∞" if MAX_DOWNLOADS is None else str(MAX_DOWNLOADS)
-            max_workers = 12
+            max_workers = 16
 
             try:
                 with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -261,7 +261,7 @@ def main() -> None:
                     }
 
                     # Testing bar
-                    with tqdm(total=len(to_download), desc="Downloading", unit="img", ncols = 149,
+                    with tqdm(total=len(to_download), desc="Downloading", unit="img", 
                             bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}') as pbar:
 
                         for fut in as_completed(future_map):
