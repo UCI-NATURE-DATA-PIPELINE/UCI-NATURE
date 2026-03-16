@@ -55,9 +55,16 @@ def main():
     if not staging.exists():
         raise FileNotFoundError(f"{staging} not found. Run download_drive.py first.")
 
+    IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG"}
+
     rows = []
     for p in sorted(staging.rglob("*")):
         if not p.is_file():
+            continue
+        # Skip macOS metadata files (.DS_Store, ._* resource forks, other hidden files)
+        if p.name.startswith("."):
+            continue
+        if p.suffix not in IMAGE_EXTENSIONS:
             continue
 
         file_id, original_name = split_local_name(p.name)

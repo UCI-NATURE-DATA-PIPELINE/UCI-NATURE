@@ -20,7 +20,7 @@ def count_images(directory: Path) -> int:
     extensions = {".jpg", ".jpeg", ".png"}
     count = 0
     for f in directory.rglob("*"):
-        if f.is_file() and f.suffix.lower() in extensions:
+        if f.is_file() and not f.name.startswith(".") and f.suffix.lower() in extensions:
             count += 1
     return count
 

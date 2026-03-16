@@ -18,9 +18,11 @@ if str(REPO_ROOT) not in sys.path:
 try:
     from scripts.config import SERVICE_ACCOUNT_FILE as DEFAULT_SERVICE_ACCOUNT_FILE
     from scripts.config import FOLDER_ID as DEFAULT_FOLDER_ID
+    from scripts.config import MAX_DOWNLOADS as DEFAULT_MAX_ROWS
 except Exception:
     DEFAULT_SERVICE_ACCOUNT_FILE = SERVICE_ACCOUNT_FILE
     DEFAULT_FOLDER_ID = FOLDER_ID
+    DEFAULT_MAX_ROWS = 2000
 
 SERVICE_ACCOUNT_FILE = "secrets/inf191a-uci-nature-sa.json"
 DEFAULT_SERVICE_ACCOUNT_FILE = "secrets/inf191a-uci-nature-sa.json"
@@ -40,7 +42,7 @@ FIELDS = [
 FOLDER_MIMETYPE = "application/vnd.google-apps.folder"      # crawl folders
 
 PRINT_EVERY = 500
-MAX_ROWS = 2000
+MAX_ROWS = DEFAULT_MAX_ROWS
 CHECKPOINT_EVERY = 100  # NEW: save checkpoint every N rows
 MAX_RETRIES = 3         # NEW: retry API calls
 RETRY_DELAY = 2         # NEW: initial delay for retries

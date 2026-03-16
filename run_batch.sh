@@ -11,6 +11,10 @@ fi
 
 cp "data/outputs/batches/$BATCH" data/outputs/manifest.csv
 
-python scripts/pipeline/extract_metadata.py
+python scripts/pipeline/extract_metadata.py --manifest data/outputs/manifest.csv
+python scripts/ml/run_speciesnet.py
+python scripts/ml/postprocess_speciesnet.py
+python scripts/ml/run_inference.py --provider speciesnet
+python scripts/pipeline/extract_metadata.py --manifest data/outputs/manifest.csv
 python scripts/pipeline/make_output.py
 python scripts/pipeline/validate_output.py
