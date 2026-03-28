@@ -581,10 +581,12 @@ async function simulateOAuth() {
 
   try {
     const response = await loginUser(currentDriveProfile.driveEmail, selectedProject);
-    if (response?.access_token) {
-      localStorage.setItem("token", response.access_token);
+    const sessionToken = String(response?.access_token || "").trim();
+  if (sessionToken) {
+  localStorage.setItem("token", sessionToken);
     }
-    const authUrl = await getGoogleAuthStartUrl();
+    const authUrl = await getGoogleAuthStartUrl(sessionToken);
+    
     signedInUser = response?.user || null;
     googleAuthActive = false;
     googleAuthUser = null;
