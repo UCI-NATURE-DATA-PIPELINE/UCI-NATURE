@@ -1,3 +1,4 @@
+from typing import Optional
 ## makes a CSV index of everything inside the Drive folder (ids + basic metadata)
 # new: recursive + drive_path + parsed folder fields (site, deployment info)
 
@@ -18,9 +19,11 @@ if str(REPO_ROOT) not in sys.path:
 try:
     from scripts.config import SERVICE_ACCOUNT_FILE as DEFAULT_SERVICE_ACCOUNT_FILE
     from scripts.config import FOLDER_ID as DEFAULT_FOLDER_ID
+    from scripts.config import MAX_DOWNLOADS as DEFAULT_MAX_ROWS
 except Exception:
     DEFAULT_SERVICE_ACCOUNT_FILE = SERVICE_ACCOUNT_FILE
     DEFAULT_FOLDER_ID = FOLDER_ID
+    DEFAULT_MAX_ROWS = 2000
 
 SERVICE_ACCOUNT_FILE = "secrets/inf191a-uci-nature-sa.json"
 DEFAULT_SERVICE_ACCOUNT_FILE = "secrets/inf191a-uci-nature-sa.json"
@@ -40,19 +43,19 @@ FIELDS = [
 FOLDER_MIMETYPE = "application/vnd.google-apps.folder"      # crawl folders
 
 PRINT_EVERY = 500
-MAX_ROWS = 2000
+MAX_ROWS = DEFAULT_MAX_ROWS
 CHECKPOINT_EVERY = 100  # NEW: save checkpoint every N rows
 MAX_RETRIES = 3         # NEW: retry API calls
 RETRY_DELAY = 2         # NEW: initial delay for retries
 
 
-def parse_id_list(value: str | None) -> list[str]:
+def parse_id_list(value: Optional[str]) -> list[str]:
     if not value:
         return []
     return [s.strip() for s in value.split(",") if s.strip()]
 
 
-def make_run_tag(drive_root: str | None, start_folders: str | None) -> str:
+def make_run_tag(drive_root: Optional[str], start_folders: Optional[str]) -> str:
     ids = parse_id_list(start_folders)
     if ids:
         return "_".join(ids)

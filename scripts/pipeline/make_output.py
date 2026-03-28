@@ -1,3 +1,4 @@
+from typing import Optional
 # scripts/pipeline/make_output.py
 
 import csv
@@ -81,29 +82,50 @@ def safe_filename(name: str) -> str:
     return cleaned or "Unknown"
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--manifest", default=str(MANIFEST))
-    parser.add_argument("--metadata", default=str(META))
-    parser.add_argument("--drive_index", default=str(DRIVE_INDEX))
-    parser.add_argument("--out_dir", default=str(OUT_DIR))
-    parser.add_argument("--burst_seconds", type=int, default=300)
-    parser.add_argument("--burst_export", choices=["all", "first"], default="all")
-    parser.add_argument("--start_date", default="")
-    parser.add_argument("--end_date", default="")
-    parser.add_argument("--start_time", default="")
-    parser.add_argument("--end_time", default="")
-    parser.add_argument("--filter_mode", choices=["auto", "md", "speciesnet", "none"], default="auto")
-    parser.add_argument("--offset_start_date", default="")
-    parser.add_argument("--offset_end_date", default="")
-    parser.add_argument("--offset_start_time", default="")
-    parser.add_argument("--offset_end_time", default="")
-    parser.add_argument("--shift_minutes", type=int, default=0)
-    parser.add_argument("--set_year", type=int, default=None)
-    parser.add_argument("--set_month", type=int, default=None)
-    parser.add_argument("--set_day", type=int, default=None)
-    parser.add_argument("--offset_apply_to", choices=["date", "time", "both"], default="both")
-    args = parser.parse_args()
+def generate_output_csvs(
+    manifest: Path = MANIFEST,
+    metadata: Path = META,
+    drive_index: Path = DRIVE_INDEX,
+    out_dir: Path = OUT_DIR,
+    burst_seconds: int = 300,
+    burst_export: str = "all",
+    start_date: str = "",
+    end_date: str = "",
+    start_time: str = "",
+    end_time: str = "",
+    filter_mode: str = "auto",
+    offset_start_date: str = "",
+    offset_end_date: str = "",
+    offset_start_time: str = "",
+    offset_end_time: str = "",
+    shift_minutes: int = 0,
+    set_year: Optional[int] = None,
+    set_month: Optional[int] = None,
+    set_day: Optional[int] = None,
+    offset_apply_to: str = "both",
+) -> dict:
+    args = argparse.Namespace(
+        manifest=str(manifest),
+        metadata=str(metadata),
+        drive_index=str(drive_index),
+        out_dir=str(out_dir),
+        burst_seconds=burst_seconds,
+        burst_export=burst_export,
+        start_date=start_date,
+        end_date=end_date,
+        start_time=start_time,
+        end_time=end_time,
+        filter_mode=filter_mode,
+        offset_start_date=offset_start_date,
+        offset_end_date=offset_end_date,
+        offset_start_time=offset_start_time,
+        offset_end_time=offset_end_time,
+        shift_minutes=shift_minutes,
+        set_year=set_year,
+        set_month=set_month,
+        set_day=set_day,
+        offset_apply_to=offset_apply_to,
+    )
 
     args.burst_seconds = max(10, min(300, int(args.burst_seconds)))
 
@@ -116,11 +138,9 @@ def main():
         raise FileNotFoundError("manifest.csv not found. Run make_manifest.py first.")
     if not meta_path.exists():
         raise FileNotFoundError("metadata.csv not found. Run extract_metadata.py first.")
-    if not drive_index_path.exists():
-        raise FileNotFoundError("drive_index.csv not found. Run build_index.py first.")
 
     meta_by_id = load_csv_by_key(meta_path, "file_id")
-    drive_by_id = load_csv_by_key(drive_index_path, "file_id")
+    drive_by_id = load_csv_by_key(drive_index_path, "file_id") if drive_index_path.exists() else {}
 
     start_date = (args.start_date or "").strip()
     end_date = (args.end_date or "").strip()
@@ -410,7 +430,7 @@ def main():
         kept_rows = []
 
         while i < len(rows):
-            def _to_seconds(r: dict) -> int | None:
+            def _to_seconds(r: dict) -> Optional[int]:
                 d = (r.get("Date", "") or "").strip()
                 t = (r.get("Time", "") or "").strip()
                 if not d or not t:
@@ -566,6 +586,68 @@ def main():
 
     print(f"\nManual columns:")
     print("  ○ Notes (human review)")
+
+    return {
+        "manifest_path": str(manifest_path),
+        "metadata_path": str(meta_path),
+        "drive_index_path": str(drive_index_path),
+        "drive_index_present": drive_index_path.exists(),
+        "out_dir": str(out_dir),
+        "camera_count": len(rows_by_camera),
+        "rows_written": total_output,
+        "animals": animal_count,
+        "humans": human_only_count,
+        "species_filled": species_filled,
+        "skipped_blank": total_skipped_blank,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--manifest", default=str(MANIFEST))
+    parser.add_argument("--metadata", default=str(META))
+    parser.add_argument("--drive_index", default=str(DRIVE_INDEX))
+    parser.add_argument("--out_dir", default=str(OUT_DIR))
+    parser.add_argument("--burst_seconds", type=int, default=300)
+    parser.add_argument("--burst_export", choices=["all", "first"], default="all")
+    parser.add_argument("--start_date", default="")
+    parser.add_argument("--end_date", default="")
+    parser.add_argument("--start_time", default="")
+    parser.add_argument("--end_time", default="")
+    parser.add_argument("--filter_mode", choices=["auto", "md", "speciesnet", "none"], default="auto")
+    parser.add_argument("--offset_start_date", default="")
+    parser.add_argument("--offset_end_date", default="")
+    parser.add_argument("--offset_start_time", default="")
+    parser.add_argument("--offset_end_time", default="")
+    parser.add_argument("--shift_minutes", type=int, default=0)
+    parser.add_argument("--set_year", type=int, default=None)
+    parser.add_argument("--set_month", type=int, default=None)
+    parser.add_argument("--set_day", type=int, default=None)
+    parser.add_argument("--offset_apply_to", choices=["date", "time", "both"], default="both")
+    args = parser.parse_args()
+
+    generate_output_csvs(
+        manifest=Path(args.manifest),
+        metadata=Path(args.metadata),
+        drive_index=Path(args.drive_index),
+        out_dir=Path(args.out_dir),
+        burst_seconds=args.burst_seconds,
+        burst_export=args.burst_export,
+        start_date=args.start_date,
+        end_date=args.end_date,
+        start_time=args.start_time,
+        end_time=args.end_time,
+        filter_mode=args.filter_mode,
+        offset_start_date=args.offset_start_date,
+        offset_end_date=args.offset_end_date,
+        offset_start_time=args.offset_start_time,
+        offset_end_time=args.offset_end_time,
+        shift_minutes=args.shift_minutes,
+        set_year=args.set_year,
+        set_month=args.set_month,
+        set_day=args.set_day,
+        offset_apply_to=args.offset_apply_to,
+    )
 
 
 if __name__ == "__main__":

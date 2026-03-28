@@ -122,11 +122,12 @@ def parse_datetime_loose(s: str):
     return None
 
 
-def load_manifest_localpath_by_fileid():
-    if not MANIFEST_CSV.exists():
-        raise FileNotFoundError(f"Missing {MANIFEST_CSV}")
+def load_manifest_localpath_by_fileid(manifest_csv: Path = MANIFEST_CSV):
+    manifest_csv = Path(manifest_csv)
+    if not manifest_csv.exists():
+        raise FileNotFoundError(f"Missing {manifest_csv}")
 
-    with open(MANIFEST_CSV, newline="", encoding="utf-8") as f:
+    with open(manifest_csv, newline="", encoding="utf-8") as f:
         r = csv.DictReader(f)
         fieldnames = [x.strip() for x in (r.fieldnames or [])]
 
@@ -153,11 +154,12 @@ def load_manifest_localpath_by_fileid():
         return out
 
 
-def load_exif_dt_by_fileid():
-    if not METADATA_CSV.exists():
-        raise FileNotFoundError(f"Missing {METADATA_CSV}")
+def load_exif_dt_by_fileid(metadata_csv: Path = METADATA_CSV):
+    metadata_csv = Path(metadata_csv)
+    if not metadata_csv.exists():
+        raise FileNotFoundError(f"Missing {metadata_csv}")
 
-    with open(METADATA_CSV, newline="", encoding="utf-8") as f:
+    with open(metadata_csv, newline="", encoding="utf-8") as f:
         r = csv.DictReader(f)
         fieldnames = [x.strip() for x in (r.fieldnames or [])]
 
@@ -269,7 +271,7 @@ def burst_vote(items):
     return best_label
 
 
-def make_bursts(pred_rows):
+def make_bursts(pred_rows, burst_window_seconds: int = BURST_WINDOW_SECONDS):
     by_folder = defaultdict(list)
     for i, pr in enumerate(pred_rows):
         fp = pr["filepath"]
@@ -280,7 +282,7 @@ def make_bursts(pred_rows):
             by_folder[folder_key_from_filepath(fp)].append((dt, i))
 
     bursts = []
-    win = timedelta(seconds=BURST_WINDOW_SECONDS)
+    win = timedelta(seconds=burst_window_seconds)
 
     for key, arr in by_folder.items():
         if isinstance(key, tuple) and key[1] == "NO_DT":
@@ -312,16 +314,21 @@ def make_bursts(pred_rows):
     return bursts
 
 
-def main():
-    global BURST_WINDOW_SECONDS
+def postprocess_speciesnet_results(
+    in_path: Path = IN_JSON,
+    manifest_csv: Path = MANIFEST_CSV,
+    metadata_csv: Path = METADATA_CSV,
+    out_csv: Path = OUT_CSV,
+    review_csv: Path = REVIEW_CSV,
+    burst_window_seconds: int = BURST_WINDOW_SECONDS,
+) -> dict:
+    burst_window_seconds = max(10, min(300, int(burst_window_seconds)))
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--burst_window", type=int, default=300)
-    args = parser.parse_args()
-
-    BURST_WINDOW_SECONDS = max(10, min(300, int(args.burst_window)))
-
-    in_path = IN_JSON
+    in_path = Path(in_path)
+    manifest_csv = Path(manifest_csv)
+    metadata_csv = Path(metadata_csv)
+    out_csv = Path(out_csv)
+    review_csv = Path(review_csv)
     if not in_path.exists() and MOUNTED_JSON.exists():
         in_path = MOUNTED_JSON
     if not in_path.exists():
@@ -332,8 +339,8 @@ def main():
 
     preds = data if isinstance(data, list) else data.get("predictions", [])
 
-    fileid_to_path = load_manifest_localpath_by_fileid()
-    fileid_to_dt = load_exif_dt_by_fileid()
+    fileid_to_path = load_manifest_localpath_by_fileid(manifest_csv)
+    fileid_to_dt = load_exif_dt_by_fileid(metadata_csv)
 
     exact_path_to_dt = {}
     basename_to_candidates = defaultdict(list)
@@ -401,7 +408,7 @@ def main():
             "dt": lookup_dt(fp),
         })
 
-    bursts = make_bursts(pred_rows)
+    bursts = make_bursts(pred_rows, burst_window_seconds=burst_window_seconds)
 
     voted_label_by_idx = {}
     for burst in bursts:
@@ -410,10 +417,11 @@ def main():
         for idx in burst:
             voted_label_by_idx[idx] = voted
 
-    OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(OUT_CSV, "w", newline="", encoding="utf-8") as f_out, \
-         open(REVIEW_CSV, "w", newline="", encoding="utf-8") as f_rev:
+    review_count = 0
+    with open(out_csv, "w", newline="", encoding="utf-8") as f_out, \
+         open(review_csv, "w", newline="", encoding="utf-8") as f_rev:
 
         out_w = csv.DictWriter(
             f_out,
@@ -453,6 +461,7 @@ def main():
             })
 
             if needs_review:
+                review_count += 1
                 rev_w.writerow({
                     "filepath": r["filepath"],
                     "label_raw": label,
@@ -462,11 +471,28 @@ def main():
                     "reason": reason,
                 })
 
-    print(f"Wrote: {OUT_CSV}")
-    print(f"Wrote: {REVIEW_CSV}")
-    print(f"Burst window: {BURST_WINDOW_SECONDS}s")
+    print(f"Wrote: {out_csv}")
+    print(f"Wrote: {review_csv}")
+    print(f"Burst window: {burst_window_seconds}s")
     print(f"Total predictions: {len(pred_rows)}")
     print(f"Total bursts: {len(bursts)}")
+
+    return {
+        "results_csv": str(out_csv),
+        "review_csv": str(review_csv),
+        "total_predictions": len(pred_rows),
+        "total_bursts": len(bursts),
+        "review_items": review_count,
+        "burst_window_seconds": burst_window_seconds,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--burst_window", type=int, default=300)
+    args = parser.parse_args()
+
+    postprocess_speciesnet_results(burst_window_seconds=args.burst_window)
 
 
 if __name__ == "__main__":

@@ -30,34 +30,35 @@ def write_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
         w.writerows(rows)
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--staging", default=str(STAGING))
-    parser.add_argument("--out", default=str(OUT))
-    parser.add_argument("--batch_size", type=int, default=0, help="0 = no batch manifests")
-    parser.add_argument("--batch_dir", default=str(BATCH_DIR))
-
-    # Auto-mode caching helpers
-    parser.add_argument("--cache", default=str(CACHE), help="file with processed file_ids (one per line)")
-    parser.add_argument("--new_out", default=str(NEW_OUT), help="where to write manifest of only new/unprocessed ids")
-    parser.add_argument("--write_new_only", action="store_true", help="also write a filtered manifest containing only new/unprocessed file_ids")
-    parser.add_argument("--update_cache", action="store_true", help="append new_out file_ids to cache (run only AFTER a successful pipeline run)")
-    args = parser.parse_args()
-
-    staging = Path(args.staging)
-    out = Path(args.out)
-    batch_size = args.batch_size
-    batch_dir = Path(args.batch_dir)
-
-    cache_path = Path(args.cache)
-    new_out = Path(args.new_out)
+def build_manifest(
+    staging: Path = STAGING,
+    out: Path = OUT,
+    batch_size: int = 0,
+    batch_dir: Path = BATCH_DIR,
+    cache_path: Path = CACHE,
+    new_out: Path = NEW_OUT,
+    write_new_only: bool = False,
+    update_cache: bool = False,
+) -> dict:
+    staging = Path(staging)
+    out = Path(out)
+    batch_dir = Path(batch_dir)
+    cache_path = Path(cache_path)
+    new_out = Path(new_out)
 
     if not staging.exists():
         raise FileNotFoundError(f"{staging} not found. Run download_drive.py first.")
 
+    IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG"}
+
     rows = []
     for p in sorted(staging.rglob("*")):
         if not p.is_file():
+            continue
+        # Skip macOS metadata files (.DS_Store, ._* resource forks, other hidden files)
+        if p.name.startswith("."):
+            continue
+        if p.suffix not in IMAGE_EXTENSIONS:
             continue
 
         file_id, original_name = split_local_name(p.name)
@@ -79,6 +80,12 @@ def main():
     fieldnames = ["file_id", "file_name", "local_file_name", "local_path", "size_bytes", "modified_time"]
     write_csv(out, rows, fieldnames)
     print(f"wrote {len(rows)} rows -> {out}")
+    result = {
+        "manifest_path": str(out),
+        "rows_written": len(rows),
+        "new_manifest_path": None,
+        "new_rows_written": None,
+    }
 
     # batch manifests
     if batch_size and batch_size > 0:
@@ -94,7 +101,7 @@ def main():
             write_csv(batch_path, batch_rows, fieldnames)
             print(f"  batch {i+1:04d}: {len(batch_rows)} rows -> {batch_path}")
 
-    if args.write_new_only:
+    if write_new_only:
         processed = set()
         if cache_path.exists():
             with open(cache_path, "r", encoding="utf-8") as f:
@@ -119,8 +126,10 @@ def main():
         print(f"cache: {cache_path} ({len(processed)} ids)")
         print(f"wrote {len(new_rows)} rows -> {new_out}")
         print(f"skipped {skipped} rows (already processed or missing file_id)")
+        result["new_manifest_path"] = str(new_out)
+        result["new_rows_written"] = len(new_rows)
 
-        if args.update_cache:
+        if update_cache:
             # SAFE cache update: append ONLY ids from new_out, and dedupe
             cache_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -135,6 +144,34 @@ def main():
                         appended += 1
 
             print(f"updated cache: appended {appended} ids -> {cache_path}")
+
+    return result
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--staging", default=str(STAGING))
+    parser.add_argument("--out", default=str(OUT))
+    parser.add_argument("--batch_size", type=int, default=0, help="0 = no batch manifests")
+    parser.add_argument("--batch_dir", default=str(BATCH_DIR))
+
+    # Auto-mode caching helpers
+    parser.add_argument("--cache", default=str(CACHE), help="file with processed file_ids (one per line)")
+    parser.add_argument("--new_out", default=str(NEW_OUT), help="where to write manifest of only new/unprocessed ids")
+    parser.add_argument("--write_new_only", action="store_true", help="also write a filtered manifest containing only new/unprocessed file_ids")
+    parser.add_argument("--update_cache", action="store_true", help="append new_out file_ids to cache (run only AFTER a successful pipeline run)")
+    args = parser.parse_args()
+
+    build_manifest(
+        staging=Path(args.staging),
+        out=Path(args.out),
+        batch_size=args.batch_size,
+        batch_dir=Path(args.batch_dir),
+        cache_path=Path(args.cache),
+        new_out=Path(args.new_out),
+        write_new_only=args.write_new_only,
+        update_cache=args.update_cache,
+    )
 
 
 if __name__ == "__main__":

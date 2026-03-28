@@ -85,16 +85,14 @@ def load_ml_outputs(path: Path) -> tuple[dict[str, dict[str, str]], list[str]]:
     return out, fields
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description="Extract EXIF datetime and image dimensions for each manifest row.")
-    ap.add_argument("--manifest", required=True, help="Path to manifest.csv")
-    ap.add_argument("--out", default=str(OUT_CSV_DEFAULT), help="Output metadata CSV path")
-    ap.add_argument("--ml_outputs", default=str(ML_OUT_DEFAULT), help="Optional ML outputs CSV to merge (keyed by file_id)")
-    args = ap.parse_args()
-
-    manifest_path = Path(args.manifest)
-    out_path = Path(args.out)
-    ml_path = Path(args.ml_outputs)
+def extract_metadata_from_manifest(
+    manifest_path: Path,
+    out_path: Path = OUT_CSV_DEFAULT,
+    ml_path: Path = ML_OUT_DEFAULT,
+) -> dict[str, Any]:
+    manifest_path = Path(manifest_path)
+    out_path = Path(out_path)
+    ml_path = Path(ml_path)
 
     manifest_rows = read_csv(manifest_path)
     ml_map, ml_fields = load_ml_outputs(ml_path)
@@ -152,6 +150,26 @@ def main() -> None:
         out_rows.append(row_out)
 
     write_csv(out_path, out_rows, out_fields)
+    return {
+        "manifest_path": str(manifest_path),
+        "metadata_path": str(out_path),
+        "rows_written": len(out_rows),
+        "ml_fields_merged": len(ml_fields),
+    }
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Extract EXIF datetime and image dimensions for each manifest row.")
+    ap.add_argument("--manifest", required=True, help="Path to manifest.csv")
+    ap.add_argument("--out", default=str(OUT_CSV_DEFAULT), help="Output metadata CSV path")
+    ap.add_argument("--ml_outputs", default=str(ML_OUT_DEFAULT), help="Optional ML outputs CSV to merge (keyed by file_id)")
+    args = ap.parse_args()
+
+    extract_metadata_from_manifest(
+        manifest_path=Path(args.manifest),
+        out_path=Path(args.out),
+        ml_path=Path(args.ml_outputs),
+    )
 
 
 if __name__ == "__main__":

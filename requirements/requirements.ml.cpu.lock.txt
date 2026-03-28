@@ -1,3 +1,5 @@
+# CPU-only ML lock for EC2 / Docker deployment.
+# torch and torchvision are installed separately from the official PyTorch CPU index.
 absl-py==2.4.0
 annotated-doc==0.0.4
 anyio==4.12.1

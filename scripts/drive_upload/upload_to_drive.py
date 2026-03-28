@@ -1,3 +1,4 @@
+from typing import Optional
 """
 Upload camera-specific CSV files to Google Drive with append logic.
 IMPROVED: Appends new rows only - no need to download the entire existing CSV.
@@ -6,6 +7,7 @@ Duplicate detection by Image# is deferred for future implementation.
 
 import csv
 import io
+import re
 import argparse
 from pathlib import Path
 from google.oauth2 import service_account
@@ -19,17 +21,10 @@ SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 # Local CSVs directory
 BY_LOCATION_DIR = Path("data/outputs/by_location")
+DRIVE_INDEX = Path("data/outputs/drive_index.csv")
 
 # CSV filename in Drive (same for all cameras)
 DRIVE_CSV_NAME = "wildlife_results.csv"  # "TEST_DO_NOT_USE_wildlife_results.csv"
-
-# Camera folder IDs in Google Drive (Julie's Shared Drive)
-CAMERA_FOLDERS = {
-    "Research_Park": "1rzbNvk_a9rtYMYBGdL-XYtdvKNpOmoqE",
-    "Bonita_Canyon1": "1dPUQx1j7WaA1iKA0HUxWTju-aacfRbZz",
-    "Bonita_Canyon2": "1nsuuDXHyeV5gdjgS3_MV7FyIdfbLEiEQ",
-    "Marshtrail": "1CjxfyveXI-ZS-G8G3rcyQMY--MVvFiY2",
-}
 
 FIELDNAMES = [
     "CameraName", "DeploymentFolder", "Image#", "Species",
@@ -40,12 +35,49 @@ FIELDNAMES = [
 ]
 
 
+SHEETS_MIME = "application/vnd.google-apps.spreadsheet"
+
+
+def build_camera_deployment_map(drive_index_path: Path) -> dict[str, str]:
+    """Build camera_name -> deployment_folder_id from drive_index.csv using the
+    same naming logic as make_output.py (strip date prefix + _DONE suffix)."""
+    mapping: dict[str, str] = {}
+    if not drive_index_path.exists():
+        return mapping
+    with open(drive_index_path, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            deployment = (row.get("deployment_folder") or "").strip()
+            folder_id = (row.get("drive_folder_id") or "").strip()
+            if not deployment or not folder_id:
+                continue
+            name = re.sub(r'^\d{4}_\d{2}_\d{2}_', '', deployment)
+            name = re.sub(r'_DONE$', '', name, flags=re.IGNORECASE)
+            name = name.replace(" ", "")
+            if name and name not in mapping:
+                mapping[name] = folder_id
+    return mapping
+
+
+def get_parent_folder_id(drive, folder_id: str) -> Optional[str]:
+    """Return the parent folder ID of a given Drive folder."""
+    try:
+        result = drive.files().get(
+            fileId=folder_id,
+            fields="parents",
+            supportsAllDrives=True
+        ).execute()
+        parents = result.get("parents", [])
+        return parents[0] if parents else None
+    except HttpError:
+        return None
+
+
 def find_file_in_folder(drive, folder_id: str, filename: str):
     """Check if file exists in Drive folder, return file metadata or None"""
     query = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
     results = drive.files().list(
         q=query,
-        fields="files(id, name)",
+        fields="files(id, name, mimeType)",
         supportsAllDrives=True,
         includeItemsFromAllDrives=True
     ).execute()
@@ -69,8 +101,8 @@ def create_csv_in_drive(drive, folder_id: str, filename: str, rows: list[dict]):
 
     file_metadata = {
         "name": filename,
-        "parents": [folder_id]
-        # "mimeType": "application/vnd.google-apps.spreadsheet"
+        "parents": [folder_id],
+        "mimeType": SHEETS_MIME,
     }
     media = MediaIoBaseUpload(
         io.BytesIO(content),
@@ -100,7 +132,7 @@ def overwrite_csv_in_drive(drive, file_id: str, rows: list[dict]):
     ).execute()
 
 
-def append_rows_to_drive_csv(drive, file_id: str, new_rows: list[dict]):
+def append_rows_to_drive_csv(drive, file_id: str, new_rows: list[dict], file_mime: str = "text/csv"):
     """
     Append new rows to existing CSV in Drive.
     Downloads only the existing file's content to check for duplicates by Image#.
@@ -122,9 +154,12 @@ def append_rows_to_drive_csv(drive, file_id: str, new_rows: list[dict]):
         return ""
 
     # Download existing file to get current Image# values to skip duplicates by key
-    request = drive.files().get_media(fileId=file_id, supportsAllDrives=True)
-    buf = io.BytesIO()
     from googleapiclient.http import MediaIoBaseDownload
+    if file_mime == SHEETS_MIME:
+        request = drive.files().export_media(fileId=file_id, mimeType="text/csv")
+    else:
+        request = drive.files().get_media(fileId=file_id, supportsAllDrives=True)
+    buf = io.BytesIO()
     downloader = MediaIoBaseDownload(buf, request)
     done = False
     while not done:
@@ -197,7 +232,7 @@ def process_camera(drive, camera_name: str, folder_id: str, local_csv: Path, ove
             overwrite_csv_in_drive(drive, existing_file['id'], new_rows)
             print(f"  ✓ Overwrote existing file")
         else:
-            append_rows_to_drive_csv(drive, existing_file['id'], new_rows)
+            append_rows_to_drive_csv(drive, existing_file['id'], new_rows, existing_file.get('mimeType', 'text/csv'))
             print(f"  ✓ Done - appended to existing file")
     else:
         print(f"  No existing CSV found - creating new file...")
@@ -221,15 +256,30 @@ def main():
     )
     drive = build("drive", "v3", credentials=creds)
 
+    deployment_map = build_camera_deployment_map(DRIVE_INDEX)
+    if not deployment_map:
+        print("WARNING: drive_index.csv not found or empty — cannot determine Drive folder IDs.")
+
+    # Resolve each deployment folder → its site-level parent folder (cache to avoid duplicate API calls)
+    parent_cache: dict[str, str] = {}
+    camera_folders: dict[str, str] = {}
+    for camera_name, dep_folder_id in deployment_map.items():
+        if dep_folder_id not in parent_cache:
+            parent_id = get_parent_folder_id(drive, dep_folder_id)
+            if parent_id:
+                parent_cache[dep_folder_id] = parent_id
+        if dep_folder_id in parent_cache:
+            camera_folders[camera_name] = parent_cache[dep_folder_id]
+
     print("\n" + "=" * 60)
     print("UPLOADING RESULTS TO GOOGLE DRIVE")
     print("=" * 60)
 
-    for camera_name, folder_id in CAMERA_FOLDERS.items():
-        local_csv = BY_LOCATION_DIR / f"{camera_name}_results.csv"
-
-        if not local_csv.exists():
-            print(f"\nSkipping {camera_name}: no local CSV found")
+    for local_csv in sorted(BY_LOCATION_DIR.glob("*.csv")):
+        camera_name = local_csv.stem
+        folder_id = camera_folders.get(camera_name)
+        if not folder_id:
+            print(f"\nSkipping {camera_name}: no matching Drive folder found in drive_index.csv")
             continue
 
         try:

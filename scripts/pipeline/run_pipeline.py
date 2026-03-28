@@ -1,3 +1,4 @@
+from typing import Optional
 # scripts/pipeline/run_pipeline.py
 
 import argparse
@@ -13,20 +14,23 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-os.chdir(REPO_ROOT)
+from ui.backend.services.pipeline_service import (
+    PipelineRunConfig as DirectPipelineConfig,
+    run_pipeline_service,
+)
 
 PYTHON = sys.executable
 STAGING_DIR = Path("data/staging")
 STAGING_BACKUP = Path("data/staging_full_backup")
 
 
-def parse_id_list(value: str | None) -> list[str]:
+def parse_id_list(value: Optional[str]) -> list[str]:
     if not value:
         return []
     return [s.strip() for s in value.split(",") if s.strip()]
 
 
-def make_run_tag(drive_root: str | None, start_folders: str | None) -> str:
+def make_run_tag(drive_root: Optional[str], start_folders: Optional[str]) -> str:
     ids = parse_id_list(start_folders)
     if ids:
         return "_".join(ids)
@@ -47,9 +51,10 @@ def infer_index_path(args: argparse.Namespace) -> str:
 
 def ensure_python_311() -> None:
     if sys.version_info[:2] != (3, 11):
-        print("ERROR: This pipeline must be run with Python 3.11 to match dependencies.")
-        print(f"Current Python: {sys.version}")
-        sys.exit(1)
+        raise RuntimeError(
+            "This pipeline must be run with Python 3.11 to match dependencies. "
+            f"Current Python: {sys.version}"
+        )
 
 
 def run_step(name: str, cmd: list[str]) -> None:
@@ -59,8 +64,7 @@ def run_step(name: str, cmd: list[str]) -> None:
     print("=" * 80)
     res = subprocess.run(cmd, text=True)
     if res.returncode != 0:
-        print(f"\nERROR: Step failed: {name} (exit code {res.returncode})")
-        sys.exit(res.returncode)
+        raise RuntimeError(f"Step failed: {name} (exit code {res.returncode})")
 
 
 def copy_staging_backup() -> None:
@@ -92,6 +96,10 @@ def manifest_has_rows(path: str) -> bool:
     except Exception:
         return False
     return False
+
+
+def run_pipeline_direct(config: Optional[DirectPipelineConfig] = None) -> dict:
+    return run_pipeline_service(config or DirectPipelineConfig())
 
 
 def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
@@ -138,21 +146,34 @@ def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
             "--batch_size", str(args.batch_size)
         ]))
 
-    steps.append(("Run SpeciesNet", [PYTHON, "scripts/ml/run_speciesnet.py"]))
-    steps.append(("Postprocess SpeciesNet", [PYTHON, "scripts/ml/postprocess_speciesnet.py", "--burst_window", str(args.ml_burst_window)]))
-    steps.append(("Parse ML Results", [PYTHON, "scripts/ml/run_inference.py", "--provider", "speciesnet"]))
-
     manifest_to_process = args.new_manifest if (args.mode == "auto" and args.use_new_manifest_for_outputs) else "data/outputs/manifest.csv"
     if args.mode == "auto" and args.use_new_manifest_for_outputs and not manifest_has_rows(manifest_to_process):
         manifest_to_process = "data/outputs/manifest.csv"
 
-    steps.append(("Extract Metadata", [PYTHON, "scripts/pipeline/extract_metadata.py", "--manifest", manifest_to_process]))
+    # Extract EXIF metadata before SpeciesNet postprocessing so that
+    # postprocess_speciesnet.py has metadata.csv available for burst timestamp grouping.
+    steps.append(("Extract Metadata (EXIF)", [PYTHON, "scripts/pipeline/extract_metadata.py", "--manifest", manifest_to_process]))
+
+    steps.append(("Run SpeciesNet", [PYTHON, "scripts/ml/run_speciesnet.py"]))
+    steps.append(("Postprocess SpeciesNet", [PYTHON, "scripts/ml/postprocess_speciesnet.py", "--burst_window", str(args.ml_burst_window)]))
+    steps.append(("Parse ML Results", [PYTHON, "scripts/ml/run_inference.py", "--provider", "speciesnet"]))
+
+    # Re-run extract_metadata now that ml_outputs.csv exists so the final
+    # metadata.csv has ML columns (species, has_animal, model_certainty) merged in.
+    steps.append(("Extract Metadata (merge ML)", [PYTHON, "scripts/pipeline/extract_metadata.py", "--manifest", manifest_to_process]))
+
     steps.append(("Generate Output CSVs", [
         PYTHON, "scripts/pipeline/make_output.py",
         "--manifest", manifest_to_process,
         "--burst_seconds", str(args.burst_seconds),
         "--burst_export", args.burst_export
     ]))
+
+    if args.upload:
+        upload_cmd = [PYTHON, "scripts/drive_upload/upload_to_drive.py"]
+        if args.overwrite:
+            upload_cmd += ["--overwrite"]
+        steps.append(("Upload Results to Drive", upload_cmd))
 
     return steps
 
@@ -185,9 +206,15 @@ def main() -> None:
     parser.add_argument("--burst_export", default="all", choices=["all", "first", "middle", "last"],
                         help="Which burst images to export in output.")
 
+    parser.add_argument("--upload", action="store_true",
+                        help="Upload output CSVs to Google Drive after pipeline completes (production).")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Overwrite existing Drive CSVs instead of appending (used with --upload).")
+
     args = parser.parse_args()
 
     ensure_python_311()
+    os.chdir(REPO_ROOT)
 
     if args.mode == "manual":
         if not args.folder:
@@ -202,7 +229,8 @@ def main() -> None:
             if p.is_file():
                 shutil.copy2(p, STAGING_DIR / p.name)
 
-    copy_staging_backup()
+    if args.mode == "manual":
+        copy_staging_backup()
 
     steps = build_steps(args)
     start = time.time()
@@ -211,7 +239,14 @@ def main() -> None:
     elapsed = time.time() - start
     print(f"\nDONE in {elapsed/60:.1f} minutes")
 
-    restore_staging_backup()
+    if args.mode == "manual":
+        restore_staging_backup()
+    else:
+        # Auto mode: clear staging after a successful run to free disk space.
+        # Re-downloads are prevented by data/outputs/.download_progress.csv.
+        if STAGING_DIR.exists():
+            shutil.rmtree(STAGING_DIR)
+            print(f"Cleared {STAGING_DIR} (outputs preserved in data/outputs/)")
 
 
 if __name__ == "__main__":

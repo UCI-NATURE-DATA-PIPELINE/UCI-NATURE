@@ -8,25 +8,21 @@ DO NOT TEST THESE SCRIPTS WITHOUT PERMISSION. Running them will upload files dir
 
 ## How It Works
 
-1. find_camera_folders.py - Finds Drive folder IDs for each camera location
-2. make_output_by_location.py - Splits output.csv by camera location locally
-3. upload_to_drive.py - Uploads CSVs to Julie's Drive with append logic
+1. `make_output.py` (part of main pipeline) — generates one CSV per camera in `data/outputs/by_location/`
+2. `find_camera_folders.py` — helper to look up Drive folder IDs for each camera location
+3. `upload_to_drive.py` — uploads per-camera CSVs to Julie's Drive with append + deduplication logic
 
 ## For Developers
 
-Step 1: Find folder IDs
+Step 1: Run the main pipeline first
+The main pipeline (`run_pipeline.py`) produces `data/outputs/by_location/<CameraName>.csv` files automatically. Run that before uploading.
+
+Step 2: Find folder IDs (first-time setup only)
 ```bash
 python scripts/drive_upload/find_camera_folders.py
 ```
 
-Copy the folder IDs and paste them into upload_to_drive.py in the CAMERA_FOLDERS dictionary.
-
-Step 2: Split results by location
-```bash
-python scripts/drive_upload/make_output_by_location.py
-```
-
-Creates separate CSVs in data/outputs/by_location/ for each camera.
+Copy the folder IDs and paste them into `upload_to_drive.py` in the `CAMERA_FOLDERS` dictionary. This only needs to be done once per new camera location.
 
 Step 3: Test locally first (IMPORTANT)
 Before running on Julie's Drive, test on your personal Google Drive:
