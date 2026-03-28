@@ -4,7 +4,7 @@ import threading
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from ui.backend.auth.routes import get_google_auth_state
@@ -34,12 +34,51 @@ DEFAULT_DRIVE_SYNC_STATE = {
     "last_sync_message": None,
 }
 DRIVE_SYNC_LOCK = threading.RLock()
-DRIVE_SYNC_STATE = deepcopy(DEFAULT_DRIVE_SYNC_STATE)
+DRIVE_SYNC_STATES: Dict[str, Dict[str, Any]] = {}
 
 
 class SelectFolderRequest(BaseModel):
     folder_id: str
     folder_name: Optional[str] = None
+    camera_location: Optional[str] = None
+    max_files: Optional[int] = None
+
+
+class SyncFolderRequest(BaseModel):
+    max_files: Optional[int] = None
+
+
+def _require_auth_session(authorization: Optional[str]) -> Tuple[str, Dict[str, Any]]:
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
+
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+
+    session_token = authorization.replace("Bearer ", "", 1).strip()
+    session = read_session(session_token)
+    if not session.get("token") or session["token"] != session_token:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    return session_token, session
+
+
+def _normalize_sync_limit(value: Optional[int]) -> Optional[int]:
+    if value in (None, 0):
+        return None
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Sync limit must be a whole number") from exc
+
+    if normalized < 0:
+        raise HTTPException(status_code=400, detail="Sync limit cannot be negative")
+    return normalized or None
+
+
+def _normalize_camera_location(value: Optional[str]) -> Optional[str]:
+    normalized = str(value or "").strip()
+    return normalized or None
 
 
 def _fresh_drive_sync_state(folder: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -52,20 +91,23 @@ def _fresh_drive_sync_state(folder: Optional[Dict[str, Any]] = None) -> Dict[str
     return state
 
 
-def _set_active_drive_sync_state(state: Dict[str, Any]) -> None:
+def _set_active_drive_sync_state(session_key: str, state: Dict[str, Any]) -> None:
     with DRIVE_SYNC_LOCK:
-        DRIVE_SYNC_STATE.clear()
-        DRIVE_SYNC_STATE.update(deepcopy(state))
+        DRIVE_SYNC_STATES[session_key] = deepcopy(state)
 
 
-def _update_active_drive_sync_state(**updates: Any) -> None:
+def _update_active_drive_sync_state(session_key: str, **updates: Any) -> None:
     with DRIVE_SYNC_LOCK:
-        DRIVE_SYNC_STATE.update(updates)
+        active_state = DRIVE_SYNC_STATES.setdefault(
+            session_key,
+            deepcopy(DEFAULT_DRIVE_SYNC_STATE),
+        )
+        active_state.update(updates)
 
 
-def _read_active_drive_sync_state() -> Dict[str, Any]:
+def _read_active_drive_sync_state(session_key: str) -> Dict[str, Any]:
     with DRIVE_SYNC_LOCK:
-        return deepcopy(DRIVE_SYNC_STATE)
+        return deepcopy(DRIVE_SYNC_STATES.get(session_key) or DEFAULT_DRIVE_SYNC_STATE)
 
 
 def _build_persisted_drive_sync_state(
@@ -133,13 +175,18 @@ def _build_persisted_drive_sync_state(
     return state
 
 
-def _persist_drive_sync_state(session: Dict[str, Any], state: Dict[str, Any]) -> None:
+def _persist_drive_sync_state(
+    session: Dict[str, Any],
+    session_key: str,
+    state: Dict[str, Any],
+) -> None:
     session["drive_sync"] = _build_persisted_drive_sync_state(base=state)
-    write_session(session)
+    write_session(session, session_key)
 
 
 def reset_drive_sync_state(
     session: Dict[str, Any],
+    session_key: str,
     *,
     folder: Optional[Dict[str, Any]] = None,
     message: Optional[str] = None,
@@ -158,13 +205,14 @@ def reset_drive_sync_state(
         error=None,
         last_sync_message=message,
     )
-    _set_active_drive_sync_state(state)
-    _persist_drive_sync_state(session, state)
+    _set_active_drive_sync_state(session_key, state)
+    _persist_drive_sync_state(session, session_key, state)
     return state
 
 
 def start_drive_sync_operation(
     session: Dict[str, Any],
+    session_key: str,
     *,
     folder: Dict[str, Any],
     message: str,
@@ -184,12 +232,13 @@ def start_drive_sync_operation(
         error=None,
         last_sync_message=message,
     )
-    _set_active_drive_sync_state(state)
-    _persist_drive_sync_state(session, state)
+    _set_active_drive_sync_state(session_key, state)
+    _persist_drive_sync_state(session, session_key, state)
     return state
 
 
 def update_drive_sync_progress(
+    session_key: str,
     *,
     folder: Dict[str, Any],
     discovered_count: int,
@@ -199,6 +248,7 @@ def update_drive_sync_progress(
     message: str,
 ) -> None:
     _update_active_drive_sync_state(
+        session_key,
         folder={
             "id": folder.get("id"),
             "name": folder.get("name"),
@@ -213,13 +263,14 @@ def update_drive_sync_progress(
 
 def complete_drive_sync_operation(
     session: Dict[str, Any],
+    session_key: str,
     *,
     folder: Dict[str, Any],
     sync_result: Dict[str, Any],
     message: str,
 ) -> Dict[str, Any]:
     completed_state = _build_persisted_drive_sync_state(
-        base=_read_active_drive_sync_state(),
+        base=_read_active_drive_sync_state(session_key),
         folder=folder,
         status="completed",
         source_ready=True,
@@ -232,20 +283,21 @@ def complete_drive_sync_operation(
         error=None,
         last_sync_message=message,
     )
-    _set_active_drive_sync_state(completed_state)
-    _persist_drive_sync_state(session, completed_state)
+    _set_active_drive_sync_state(session_key, completed_state)
+    _persist_drive_sync_state(session, session_key, completed_state)
     return completed_state
 
 
 def fail_drive_sync_operation(
     session: Dict[str, Any],
+    session_key: str,
     *,
     folder: Dict[str, Any],
     error: str,
     message: str = "Drive sync failed",
 ) -> Dict[str, Any]:
     failed_state = _build_persisted_drive_sync_state(
-        base=_read_active_drive_sync_state(),
+        base=_read_active_drive_sync_state(session_key),
         folder=folder,
         status="failed",
         source_ready=False,
@@ -253,19 +305,23 @@ def fail_drive_sync_operation(
         error=error,
         last_sync_message=message,
     )
-    _set_active_drive_sync_state(failed_state)
-    _persist_drive_sync_state(session, failed_state)
+    _set_active_drive_sync_state(session_key, failed_state)
+    _persist_drive_sync_state(session, session_key, failed_state)
     return failed_state
 
 
-def serialize_drive_sync_state(session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    session = session or read_session()
+def serialize_drive_sync_state(
+    session: Optional[Dict[str, Any]] = None,
+    *,
+    session_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    session = session or read_session(session_key)
     selected_folder = session.get("selected_drive_folder")
     persisted_state = _build_persisted_drive_sync_state(
         base=session.get("drive_sync") or {},
         folder=(session.get("drive_sync") or {}).get("folder") or selected_folder,
     )
-    active_state = _read_active_drive_sync_state()
+    active_state = _read_active_drive_sync_state(session_key or "")
 
     if (
         persisted_state.get("status") == "syncing"
@@ -284,7 +340,7 @@ def serialize_drive_sync_state(session: Optional[Dict[str, Any]] = None) -> Dict
             last_sync_message="Drive sync was interrupted before completion",
         )
         session["drive_sync"] = persisted_state
-        write_session(session)
+        write_session(session, session_key)
 
     state = active_state if active_state.get("status") == "syncing" else persisted_state
     folder = state.get("folder") or selected_folder
@@ -333,18 +389,20 @@ def normalize_folder_id(value: str) -> str:
     return value
 
 
-def get_google_drive_auth_session() -> Tuple[Dict[str, Any], Dict[str, Any], str]:
-    session = read_session()
-    google_auth = get_google_auth_state(session=session)
+def get_google_drive_auth_session(
+    authorization: Optional[str],
+) -> Tuple[str, Dict[str, Any], Dict[str, Any], str]:
+    session_key, session = _require_auth_session(authorization)
+    google_auth = get_google_auth_state(session=session, session_key=session_key)
     access_token = google_auth.get("access_token")
 
     if not google_auth.get("authenticated") or not access_token:
         raise HTTPException(status_code=401, detail="Not authenticated with Google")
 
-    return session, google_auth, access_token
+    return session_key, session, google_auth, access_token
 
 
-def invalidate_google_auth_session(session: Dict[str, Any]) -> None:
+def invalidate_google_auth_session(session_key: str, session: Dict[str, Any]) -> None:
     google_auth = session.get("google_auth") or {}
     session["google_auth"] = {
         "authenticated": False,
@@ -352,9 +410,10 @@ def invalidate_google_auth_session(session: Dict[str, Any]) -> None:
         "access_token": None,
         "refresh_token": google_auth.get("refresh_token"),
         "expires_at": google_auth.get("expires_at"),
+        "oauth_state": google_auth.get("oauth_state"),
     }
     session["drive_connected"] = False
-    write_session(session)
+    write_session(session, session_key)
 
 
 def get_google_error_detail(response: requests.Response) -> str:
@@ -376,6 +435,7 @@ def get_google_error_detail(response: requests.Response) -> str:
 
 def drive_api_get(
     *,
+    session_key: str,
     session: Dict[str, Any],
     access_token: str,
     path: str = "",
@@ -403,7 +463,7 @@ def drive_api_get(
         ) from exc
 
     if response.status_code == 401:
-        invalidate_google_auth_session(session)
+        invalidate_google_auth_session(session_key, session)
         raise HTTPException(
             status_code=401,
             detail="Google OAuth session expired or is invalid. Sign in with Google again.",
@@ -446,10 +506,12 @@ def _build_drive_folder_list_params(
 
 def _collect_drive_folder_options(
     *,
+    session_key: str,
     session: Dict[str, Any],
     access_token: str,
 ) -> List[Dict[str, Any]]:
     my_drive_results = drive_api_get(
+        session_key=session_key,
         session=session,
         access_token=access_token,
         params=_build_drive_folder_list_params(
@@ -462,6 +524,7 @@ def _collect_drive_folder_options(
         action="list top-level My Drive folders",
     )
     shared_results = drive_api_get(
+        session_key=session_key,
         session=session,
         access_token=access_token,
         params=_build_drive_folder_list_params(
@@ -474,6 +537,7 @@ def _collect_drive_folder_options(
         action="list shared Google Drive folders",
     )
     shortcut_results = drive_api_get(
+        session_key=session_key,
         session=session,
         access_token=access_token,
         params=_build_drive_folder_list_params(
@@ -567,10 +631,11 @@ def _collect_drive_folder_options(
 
 
 @router.get("/folders")
-def list_drive_folders():
+def list_drive_folders(authorization: Optional[str] = Header(default=None)):
     try:
-        session, _, access_token = get_google_drive_auth_session()
+        session_key, session, _, access_token = get_google_drive_auth_session(authorization)
         normalized_folders = _collect_drive_folder_options(
+            session_key=session_key,
             session=session,
             access_token=access_token,
         )
@@ -590,10 +655,13 @@ def list_drive_folders():
 
 
 @router.post("/select-folder")
-def select_drive_folder(payload: SelectFolderRequest):
+def select_drive_folder(
+    payload: SelectFolderRequest,
+    authorization: Optional[str] = Header(default=None),
+):
     folder_id = normalize_folder_id(payload.folder_id)
-    existing_session = read_session()
-    current_sync = serialize_drive_sync_state(session=existing_session)
+    session_key, existing_session = _require_auth_session(authorization)
+    current_sync = serialize_drive_sync_state(session=existing_session, session_key=session_key)
 
     if current_sync["status"] == "syncing":
         raise HTTPException(
@@ -602,8 +670,9 @@ def select_drive_folder(payload: SelectFolderRequest):
         )
 
     try:
-        session, _, access_token = get_google_drive_auth_session()
+        _, session, _, access_token = get_google_drive_auth_session(authorization)
         folder = drive_api_get(
+            session_key=session_key,
             session=session,
             access_token=access_token,
             path=folder_id,
@@ -629,46 +698,67 @@ def select_drive_folder(payload: SelectFolderRequest):
         "name": folder["name"],
         "drive_id": folder.get("driveId"),
         "web_view_link": folder.get("webViewLink"),
+        "camera_location": _normalize_camera_location(payload.camera_location),
+        "max_files": _normalize_sync_limit(payload.max_files),
     }
 
     previous_folder = existing_session.get("selected_drive_folder") or session.get("selected_drive_folder")
     session["selected_drive_folder"] = selected_folder
-    if not previous_folder or previous_folder.get("id") != selected_folder["id"]:
+    folder_changed = not previous_folder or previous_folder.get("id") != selected_folder["id"]
+    settings_changed = (
+        _normalize_camera_location((previous_folder or {}).get("camera_location"))
+        != selected_folder.get("camera_location")
+        or _normalize_sync_limit((previous_folder or {}).get("max_files"))
+        != selected_folder.get("max_files")
+    )
+    if folder_changed or settings_changed:
         reset_drive_sync_state(
             session,
+            session_key,
             folder=selected_folder,
-            message="Folder selection changed. Sync this folder before running the pipeline.",
+            message=(
+                "Drive folder settings changed. Sync this folder again before running the pipeline."
+                if settings_changed and not folder_changed
+                else "Folder selection changed. Sync this folder before running the pipeline."
+            ),
         )
     else:
-        write_session(session)
+        write_session(session, session_key)
 
     return {
         "message": "Folder selected successfully",
         "folder": selected_folder,
-        "sync": serialize_drive_sync_state(session=read_session()),
+        "sync": serialize_drive_sync_state(
+            session=read_session(session_key),
+            session_key=session_key,
+        ),
     }
 
 
 @router.get("/selected-folder")
-def get_selected_folder():
-    session = read_session()
+def get_selected_folder(authorization: Optional[str] = Header(default=None)):
+    session_key, session = _require_auth_session(authorization)
     selected_folder = session.get("selected_drive_folder")
 
     return {
         "folder": selected_folder,
-        "sync": serialize_drive_sync_state(session=session),
+        "sync": serialize_drive_sync_state(session=session, session_key=session_key),
         "message": None if selected_folder else "No folder selected yet",
     }
 
 
 @router.get("/sync-status")
-def get_drive_sync_status():
-    return serialize_drive_sync_state()
+def get_drive_sync_status(authorization: Optional[str] = Header(default=None)):
+    session_key, session = _require_auth_session(authorization)
+    return serialize_drive_sync_state(session=session, session_key=session_key)
 
 
 @router.post("/sync")
-def sync_selected_folder():
-    session, google_auth, access_token = get_google_drive_auth_session()
+def sync_selected_folder(
+    payload: Optional[SyncFolderRequest] = None,
+    authorization: Optional[str] = Header(default=None),
+):
+    session_key, session, google_auth, access_token = get_google_drive_auth_session(authorization)
     selected_folder = session.get("selected_drive_folder")
 
     if not selected_folder or not selected_folder.get("id"):
@@ -677,15 +767,22 @@ def sync_selected_folder():
             detail="Select a Google Drive folder before starting a sync",
         )
 
-    current_sync = serialize_drive_sync_state(session=session)
+    current_sync = serialize_drive_sync_state(session=session, session_key=session_key)
     if current_sync["status"] == "syncing":
         raise HTTPException(
             status_code=409,
             detail="A Drive sync is already in progress. Check /api/drive/sync-status for live progress.",
         )
 
+    selected_folder["max_files"] = _normalize_sync_limit(
+        payload.max_files if payload is not None else selected_folder.get("max_files")
+    )
+    session["selected_drive_folder"] = selected_folder
+    write_session(session, session_key)
+
     start_drive_sync_operation(
         session,
+        session_key,
         folder=selected_folder,
         staging_dir=str(resolve_pipeline_staging_dir()),
         message=(
@@ -696,6 +793,7 @@ def sync_selected_folder():
 
     def progress_callback(progress: Dict[str, Any]) -> None:
         update_drive_sync_progress(
+            session_key,
             folder=selected_folder,
             discovered_count=int(progress.get("discovered_count") or 0),
             downloaded_count=int(progress.get("downloaded_count") or 0),
@@ -713,11 +811,14 @@ def sync_selected_folder():
             refresh_token=google_auth.get("refresh_token"),
             folder_id=selected_folder["id"],
             folder_name=selected_folder.get("name") or selected_folder["id"],
+            camera_location=selected_folder.get("camera_location"),
             staging_dir=resolve_pipeline_staging_dir(),
+            max_files=selected_folder.get("max_files"),
             progress_callback=progress_callback,
         )
         complete_drive_sync_operation(
             session,
+            session_key,
             folder=selected_folder,
             sync_result=sync_result,
             message=(
@@ -728,6 +829,7 @@ def sync_selected_folder():
     except FileNotFoundError as exc:
         fail_drive_sync_operation(
             session,
+            session_key,
             folder=selected_folder,
             error=str(exc),
             message="Drive sync failed",
@@ -736,6 +838,7 @@ def sync_selected_folder():
     except Exception as exc:
         fail_drive_sync_operation(
             session,
+            session_key,
             folder=selected_folder,
             error=f"Failed to sync the selected Drive folder: {exc}",
             message="Drive sync failed",
@@ -748,6 +851,9 @@ def sync_selected_folder():
     return {
         "message": "Drive folder synced into backend staging",
         "folder": selected_folder,
-        "sync": serialize_drive_sync_state(session=read_session()),
+        "sync": serialize_drive_sync_state(
+            session=read_session(session_key),
+            session_key=session_key,
+        ),
         "result": sync_result,
     }

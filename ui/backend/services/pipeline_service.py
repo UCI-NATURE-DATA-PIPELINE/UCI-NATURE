@@ -268,6 +268,7 @@ def run_pipeline_service(
         metadata=config.metadata_path,
         burst_seconds=config.burst_seconds,
         burst_export=burst_export,
+        exclude_humans=config.exclude_humans,
     )
 
     elapsed = time.time() - started
@@ -280,8 +281,6 @@ def run_pipeline_service(
     )
 
     notes = []
-    if config.exclude_humans:
-        notes.append("exclude_humans is not yet wired into the exported rows and is currently informational only")
     if not output_result["drive_index_present"]:
         notes.append("drive_index.csv was not present, so output CSVs used fallback camera metadata")
 

@@ -1507,6 +1507,8 @@ input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgb
   position: fixed; inset: 0; z-index: 1000;
   background: linear-gradient(145deg, #0d2a52 0%, #1B3D6D 45%, #163461 100%);
   display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
   font-family: 'Inter', sans-serif;
   transition: opacity .5s var(--ease), transform .5s var(--ease);
 }
@@ -1520,6 +1522,7 @@ input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgb
   width: 480px; max-width: calc(100vw - 40px);
   box-shadow: 0 32px 80px rgba(0,0,0,.35);
   overflow: hidden;
+  margin: auto;
 }
 .login-header {
   background: var(--dark);

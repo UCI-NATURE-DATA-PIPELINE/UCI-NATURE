@@ -51,6 +51,8 @@ let driveFoldersLoading = false;
 let driveFolderError = "";
 let driveSyncState = createEmptyDriveSyncState();
 let driveSyncPollId = null;
+let driveCameraLocation = "";
+let driveSyncLimit = null;
 const DRIVE_FOLDER_SOURCE_LABELS = {
   my_drive: "My Drive",
   shared: "Shared",
@@ -174,6 +176,40 @@ function normalizeDriveSyncStatus(value) {
   );
   next.source_ready = Boolean(next.source_ready && next.selected_folder_matches);
   return next;
+}
+
+function normalizeDriveSyncLimitValue(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+function formatDriveSyncLimitLabel(value) {
+  const normalized = normalizeDriveSyncLimitValue(value);
+  return normalized ? `First ${formatNumber(normalized)} files` : "All files";
+}
+
+function applySelectedDriveFolderSettings(folder = null) {
+  driveCameraLocation = String(folder?.camera_location || "");
+  driveSyncLimit = normalizeDriveSyncLimitValue(folder?.max_files);
+}
+
+function syncDriveSelectionControls() {
+  const locationEl = document.getElementById("drive-camera-location-select");
+  const limitEl = document.getElementById("drive-sync-limit-select");
+  const controlsDisabled =
+    driveSyncState.status === "syncing" ||
+    !googleAuthActive ||
+    !driveConnected;
+
+  if (locationEl) {
+    locationEl.value = driveCameraLocation || "";
+    locationEl.disabled = controlsDisabled;
+  }
+
+  if (limitEl) {
+    limitEl.value = driveSyncLimit ? String(driveSyncLimit) : "";
+    limitEl.disabled = controlsDisabled;
+  }
 }
 
 function applyDriveSyncStatus(value) {
@@ -489,6 +525,7 @@ function applyBackendDriveState(googleAuth = null, driveStatus = null) {
   googleAuthUser = googleAuth?.user || null;
   driveConnected = googleAuthActive && Boolean(driveStatus?.connected);
   selectedDriveFolder = driveStatus?.selected_folder || selectedDriveFolder || null;
+  applySelectedDriveFolderSettings(selectedDriveFolder);
   driveSyncState = normalizeDriveSyncStatus(driveStatus?.sync || driveSyncState);
   currentDriveProfile = resolveDriveProfileFromBackend(driveStatus);
 }
@@ -544,10 +581,10 @@ async function simulateOAuth() {
 
   try {
     const response = await loginUser(currentDriveProfile.driveEmail, selectedProject);
-    const authUrl = await getGoogleAuthStartUrl();
     if (response?.access_token) {
       localStorage.setItem("token", response.access_token);
     }
+    const authUrl = await getGoogleAuthStartUrl();
     signedInUser = response?.user || null;
     googleAuthActive = false;
     googleAuthUser = null;
@@ -621,6 +658,7 @@ async function switchAccount() {
   googleAuthUser = null;
   usingMockAuth = false;
   selectedDriveFolder = null;
+  applySelectedDriveFolderSettings(null);
   availableDriveFolders = [];
   driveFoldersLoading = false;
   driveFolderError = "";
@@ -676,15 +714,7 @@ function syncDriveUI() {
   const selectedFolderName = selectedDriveFolder?.name || "";
   const syncedCount = driveSyncState.downloaded_count || driveSyncState.discovered_count || 0;
   const totalCount = driveSyncState.discovered_count || syncedCount;
-  const summaryFolder = document.getElementById("drive-sync-summary-folder");
-  const summarySynced = document.getElementById("drive-sync-summary-synced");
-  const summaryTotal = document.getElementById("drive-sync-summary-total");
-  const summaryReady = document.getElementById("drive-sync-summary-ready");
-  const accountName = document.getElementById("drive-account-name");
-  const accountEmail = document.getElementById("drive-account-email");
-  const sourcePill = document.getElementById("drive-source-status-pill");
-  const sourceTitle = document.getElementById("drive-source-status-text");
-  const sourceSub = document.getElementById("drive-source-status-sub");
+  const appliedLimitLabel = formatDriveSyncLimitLabel(selectedDriveFolder?.max_files ?? driveSyncLimit);
   const lastSyncTitle = document.getElementById("drive-last-sync-title");
   const lastSyncMeta = document.getElementById("drive-last-sync-meta");
   const queueCount = document.getElementById("drive-sync-queue-count");
@@ -693,35 +723,12 @@ function syncDriveUI() {
   const queueStatusSub = document.getElementById("drive-sync-status-sub");
   const queueFill = document.getElementById("drive-sync-progress-fill");
   const queuePct = document.getElementById("drive-sync-progress-pct");
-  const queueSourceMeta = document.getElementById("drive-queue-source-meta");
-  const queueSourceStatus = document.getElementById("drive-queue-source-status");
-  const queueDownloadMeta = document.getElementById("drive-queue-download-meta");
-  const queueDownloadFill = document.getElementById("drive-queue-download-fill");
-  const queueDownloadPct = document.getElementById("drive-queue-download-pct");
-  const queueDownloadStatus = document.getElementById("drive-queue-download-status");
-  const queueReadyMeta = document.getElementById("drive-queue-ready-meta");
-  const queueReadyStatus = document.getElementById("drive-queue-ready-status");
+  const syncLimitSummary = document.getElementById("drive-sync-limit-summary");
+  const syncStagingSummary = document.getElementById("drive-sync-staging-summary");
+  const syncCurrentFile = document.getElementById("drive-sync-current-file");
   const driveRunBtn = document.getElementById("drive-run-btn");
   const driveRunNote = document.getElementById("drive-run-note");
-
-  if (summaryFolder) {
-    summaryFolder.textContent = selectedFolderName || "No folder";
-  }
-  if (summarySynced) {
-    summarySynced.textContent = formatNumber(syncedCount);
-  }
-  if (summaryTotal) {
-    summaryTotal.textContent = totalCount ? formatNumber(totalCount) : "—";
-  }
-  if (summaryReady) {
-    summaryReady.textContent = isDriveSourceReady() ? "Ready" : driveSyncState.status === "syncing" ? "Syncing" : "Not Ready";
-  }
-  if (accountName) {
-    accountName.textContent = driveProfile.driveName;
-  }
-  if (accountEmail) {
-    accountEmail.textContent = driveEmail;
-  }
+  const stagingPath = driveSyncState.staging_dir || "data/staging";
 
   if (driveConnected) {
     if (badge) {
@@ -737,12 +744,13 @@ function syncDriveUI() {
     if (exportBanner) exportBanner.style.display = "none";
     if (exportContent) exportContent.style.opacity = "1";
 
-    if (syncBanner) syncBanner.classList.add("connected");
+    if (syncBanner) {
+      syncBanner.classList.add("connected");
+      syncBanner.classList.remove("disconnected");
+    }
     if (syncTitle) syncTitle.textContent = `Connected — ${driveProfile.driveName}`;
     if (syncSub) {
-      syncSub.textContent = selectedFolderName
-        ? `${driveEmail} · Selected folder: ${selectedFolderName}`
-        : `${driveEmail} · Select a folder to import images`;
+      syncSub.textContent = `${driveEmail} · Select a folder and sync settings below`;
     }
     if (reconnectBtn) reconnectBtn.style.display = "none";
   } else {
@@ -761,13 +769,16 @@ function syncDriveUI() {
     if (exportBanner) exportBanner.style.display = "flex";
     if (exportContent) exportContent.style.opacity = "0.65";
 
-    if (syncBanner) syncBanner.classList.remove("connected");
+    if (syncBanner) {
+      syncBanner.classList.remove("connected");
+      syncBanner.classList.add("disconnected");
+    }
     if (syncTitle) {
       syncTitle.textContent = googleAuthActive ? "Google account connected" : "Google Drive not connected";
     }
     if (syncSub) {
       syncSub.textContent = selectedFolderName
-        ? `${selectedFolderName} is saved in the backend. ${googleAuthActive ? "Confirm this Drive connection to use it." : "Sign in with Google again to use it."}`
+        ? `${googleAuthActive ? "Confirm this Drive connection to use the saved folder." : "Sign in with Google again to use the saved folder."}`
         : googleAuthActive
           ? `${driveEmail} · Confirm this Drive connection to enable folder staging`
           : "Sign in with Google to sync image folders. Manual mode still works.";
@@ -779,9 +790,13 @@ function syncDriveUI() {
   }
 
   if (queueCount) {
-    queueCount.textContent = totalCount
-      ? `${formatNumber(syncedCount)} / ${formatNumber(totalCount)} staged`
-      : "Awaiting folder sync";
+    if (driveSyncState.status === "syncing" || totalCount) {
+      queueCount.textContent = `${formatNumber(syncedCount)} / ${formatNumber(totalCount || 0)} staged`;
+    } else if (selectedFolderName) {
+      queueCount.textContent = appliedLimitLabel;
+    } else {
+      queueCount.textContent = "Awaiting folder sync";
+    }
   }
 
   if (queueStatusPill) {
@@ -805,9 +820,11 @@ function syncDriveUI() {
     if (driveSyncState.status === "syncing") {
       queueStatusText.textContent = `Syncing ${selectedFolderName || "selected folder"} into backend staging`;
     } else if (isDriveSourceReady()) {
-      queueStatusText.textContent = `Drive source ready for ${selectedFolderName || "selected folder"}`;
+      queueStatusText.textContent = "Drive source ready";
     } else if (driveSyncState.status === "failed") {
       queueStatusText.textContent = "Drive sync failed";
+    } else if (selectedFolderName) {
+      queueStatusText.textContent = "Selected folder saved";
     } else {
       queueStatusText.textContent = "Sync a Drive folder to prepare the source";
     }
@@ -815,14 +832,15 @@ function syncDriveUI() {
 
   if (queueStatusSub) {
     if (driveSyncState.status === "syncing") {
-      const currentFile = driveSyncState.current_file ? ` · ${driveSyncState.current_file}` : "";
-      queueStatusSub.textContent = `${formatNumber(syncedCount)} of ${formatNumber(totalCount || 0)} downloaded${currentFile}`;
+      queueStatusSub.textContent = `${formatNumber(syncedCount)} of ${formatNumber(totalCount || 0)} files downloaded · ${appliedLimitLabel}`;
     } else if (isDriveSourceReady()) {
-      queueStatusSub.textContent = `Backend staging dir: ${driveSyncState.staging_dir || "data/staging"} · drive_index.csv ready`;
+      queueStatusSub.textContent = `${formatNumber(syncedCount)} file(s) staged in ${stagingPath} · ${appliedLimitLabel}`;
     } else if (driveSyncState.status === "failed") {
       queueStatusSub.textContent = driveSyncState.error || "Retry sync to prepare the Drive source.";
+    } else if (selectedFolderName) {
+      queueStatusSub.textContent = `Sync will stage files into ${stagingPath}. Run Pipeline can also fetch the folder on demand.`;
     } else {
-      queueStatusSub.textContent = "Choose a folder, optionally sync it into backend staging, or run the pipeline below to fetch it on demand.";
+      queueStatusSub.textContent = "Choose a folder, optionally set a camera location or sync limit, then sync or run the pipeline.";
     }
   }
 
@@ -833,109 +851,18 @@ function syncDriveUI() {
     queuePct.textContent = `${Math.max(0, Math.min(100, driveSyncState.progress_percent || 0))}%`;
   }
 
-  if (queueSourceMeta) {
-    queueSourceMeta.textContent = selectedFolderName
-      ? `${selectedFolderName}${selectedDriveFolder?.id ? ` · ${selectedDriveFolder.id}` : ""}`
-      : "No Google Drive folder selected yet";
+  if (syncLimitSummary) {
+    syncLimitSummary.textContent = appliedLimitLabel;
   }
-  if (queueSourceStatus) {
-    queueSourceStatus.className = "status-pill";
-    if (selectedDriveFolder?.id) {
-      queueSourceStatus.classList.add("pill-green");
-      queueSourceStatus.textContent = "Selected";
-    } else {
-      queueSourceStatus.classList.add("pill-slate");
-      queueSourceStatus.textContent = "Waiting";
-    }
-  }
-
-  if (queueDownloadMeta) {
-    if (driveSyncState.status === "syncing") {
-      queueDownloadMeta.textContent = `${formatNumber(syncedCount)} of ${formatNumber(totalCount || 0)} files downloaded`;
-    } else if (isDriveSourceReady()) {
-      queueDownloadMeta.textContent = `${formatNumber(syncedCount)} files staged in ${driveSyncState.staging_dir || "data/staging"} on the backend`;
-    } else if (driveSyncState.status === "failed") {
-      queueDownloadMeta.textContent = driveSyncState.error || "Sync failed before staging completed";
-    } else {
-      queueDownloadMeta.textContent = "Run Sync to warm the backend staging cache ahead of the pipeline";
-    }
-  }
-  if (queueDownloadFill) {
-    queueDownloadFill.style.width = `${Math.max(0, Math.min(100, driveSyncState.progress_percent || 0))}%`;
-    queueDownloadFill.className = `queue-prog-fill ${driveSyncState.status === "syncing" ? "active" : driveSyncState.status === "completed" ? "done" : ""}`.trim();
-  }
-  if (queueDownloadPct) {
-    queueDownloadPct.textContent = `${Math.max(0, Math.min(100, driveSyncState.progress_percent || 0))}%`;
-  }
-  if (queueDownloadStatus) {
-    queueDownloadStatus.className = "status-pill";
-    if (driveSyncState.status === "completed" && isDriveSourceReady()) {
-      queueDownloadStatus.classList.add("pill-green");
-      queueDownloadStatus.textContent = "Complete";
-    } else if (driveSyncState.status === "syncing") {
-      queueDownloadStatus.classList.add("pill-yellow");
-      queueDownloadStatus.textContent = "Active";
-    } else if (driveSyncState.status === "failed") {
-      queueDownloadStatus.classList.add("pill-red");
-      queueDownloadStatus.textContent = "Failed";
-    } else {
-      queueDownloadStatus.classList.add("pill-slate");
-      queueDownloadStatus.textContent = "Queued";
-    }
-  }
-
-  if (queueReadyMeta) {
-    if (isDriveSourceReady()) {
-      queueReadyMeta.textContent = `drive_index.csv ready at ${driveSyncState.drive_index_path || "data/outputs/drive_index.csv"}`;
-    } else if (driveSyncState.status === "syncing") {
-      queueReadyMeta.textContent = "Finalizing index and source readiness after downloads complete";
-    } else {
-      queueReadyMeta.textContent = "Source becomes ready after sync completes successfully";
-    }
-  }
-  if (queueReadyStatus) {
-    queueReadyStatus.className = "status-pill";
-    if (isDriveSourceReady()) {
-      queueReadyStatus.classList.add("pill-green");
-      queueReadyStatus.textContent = "Ready";
-    } else if (driveSyncState.status === "syncing") {
-      queueReadyStatus.classList.add("pill-yellow");
-      queueReadyStatus.textContent = "Pending";
-    } else if (driveSyncState.status === "failed") {
-      queueReadyStatus.classList.add("pill-red");
-      queueReadyStatus.textContent = "Blocked";
-    } else {
-      queueReadyStatus.classList.add("pill-slate");
-      queueReadyStatus.textContent = "Waiting";
-    }
-  }
-
-  if (sourcePill) {
-    sourcePill.className = "status-pill";
-    if (isDriveSourceReady()) {
-      sourcePill.classList.add("pill-green");
-      sourcePill.textContent = "Ready";
-    } else if (driveSyncState.status === "syncing") {
-      sourcePill.classList.add("pill-yellow");
-      sourcePill.textContent = "Syncing";
-    } else if (driveSyncState.status === "failed") {
-      sourcePill.classList.add("pill-red");
-      sourcePill.textContent = "Failed";
-    } else {
-      sourcePill.classList.add("pill-slate");
-      sourcePill.textContent = "Needs Sync";
-    }
-  }
-
-  if (sourceTitle) {
-    sourceTitle.textContent = isDriveSourceReady()
-      ? "Drive-backed source is ready to run"
+  if (syncStagingSummary) {
+    syncStagingSummary.textContent = isDriveSourceReady()
+      ? `${stagingPath} · drive_index.csv ready`
       : driveSyncState.status === "syncing"
-        ? "Drive folder is syncing into backend staging"
-        : "Drive-backed source is not ready yet";
+        ? `${stagingPath} · downloading`
+        : `${stagingPath} · not staged yet`;
   }
-  if (sourceSub) {
-    sourceSub.textContent = getDriveRunIdleNote();
+  if (syncCurrentFile) {
+    syncCurrentFile.textContent = driveSyncState.current_file || "—";
   }
 
   if (lastSyncTitle) {
@@ -951,7 +878,7 @@ function syncDriveUI() {
   }
   if (lastSyncMeta) {
     if (driveSyncState.status === "completed") {
-      lastSyncMeta.textContent = `${formatNumber(syncedCount)} image(s) staged on the backend${driveSyncState.drive_index_path ? ` · ${driveSyncState.drive_index_path}` : ""}`;
+      lastSyncMeta.textContent = `${formatNumber(syncedCount)} image(s) staged on the backend · ${appliedLimitLabel}${driveSyncState.drive_index_path ? ` · ${driveSyncState.drive_index_path}` : ""}`;
     } else if (driveSyncState.status === "failed") {
       lastSyncMeta.textContent = driveSyncState.error || "Retry sync to prepare this folder.";
     } else {
@@ -1116,6 +1043,7 @@ function renderDriveFolderSelection() {
   const refreshBtn = document.getElementById("drive-folder-refresh-btn");
 
   setDriveFolderSelectOptions(selectEl, availableDriveFolders, selectedDriveFolder?.id || "");
+  syncDriveSelectionControls();
 
   if (refreshBtn) {
     refreshBtn.disabled = !driveConnected || driveFoldersLoading || driveSyncState.status === "syncing";
@@ -1137,9 +1065,9 @@ function renderDriveFolderSelection() {
     } else if (driveFolderError) {
       helperEl.textContent = driveFolderError;
     } else if (isDriveSourceReady()) {
-      helperEl.textContent = `Source ready. ${formatNumber(driveSyncState.downloaded_count || driveSyncState.discovered_count)} image(s) are staged on the backend for this folder.`;
+      helperEl.textContent = `Source ready. ${formatNumber(driveSyncState.downloaded_count || driveSyncState.discovered_count)} image(s) are staged on the backend.`;
     } else if (selectedDriveFolder?.name) {
-      helperEl.textContent = "The selected folder is stored in the backend. Sync is optional; Run Pipeline can fetch and stage it on the server automatically.";
+      helperEl.textContent = "This folder is saved in the backend. Sync is optional; Run Pipeline can fetch it on demand.";
     } else {
       helperEl.textContent = "Choose the Drive folder to sync or run directly from the backend.";
     }
@@ -1159,11 +1087,11 @@ function renderDriveFolderSelection() {
         ? `Stored backend selection · Folder ID: ${selectedDriveFolder.id}`
         : "Confirm this Drive connection to enable folder staging.";
     } else if (driveSyncState.status === "syncing") {
-      selectedMetaEl.textContent = `${formatNumber(driveSyncState.downloaded_count)} of ${formatNumber(driveSyncState.discovered_count || 0)} files downloaded into ${driveSyncState.staging_dir || "data/staging"} on the backend`;
+      selectedMetaEl.textContent = `${formatNumber(driveSyncState.downloaded_count)} of ${formatNumber(driveSyncState.discovered_count || 0)} files downloading into ${driveSyncState.staging_dir || "data/staging"} · ${formatDriveSyncLimitLabel(driveSyncLimit)}`;
     } else if (isDriveSourceReady()) {
-      selectedMetaEl.textContent = `Source ready · ${formatNumber(driveSyncState.downloaded_count || driveSyncState.discovered_count)} staged files · Folder ID: ${selectedDriveFolder.id}`;
+      selectedMetaEl.textContent = `${formatNumber(driveSyncState.downloaded_count || driveSyncState.discovered_count)} staged files · ${driveCameraLocation || "Using folder name for location"} · ${formatDriveSyncLimitLabel(driveSyncLimit)}`;
     } else if (selectedDriveFolder?.id) {
-      selectedMetaEl.textContent = `Folder ID: ${selectedDriveFolder.id} · Sync optional before Drive run`;
+      selectedMetaEl.textContent = `${driveCameraLocation || "Using folder name for location"} · ${formatDriveSyncLimitLabel(driveSyncLimit)} · Folder ID: ${selectedDriveFolder.id}`;
     } else if (driveFolderError) {
       selectedMetaEl.textContent = "Folder selection is unavailable until the backend Drive auth flow is active.";
     } else {
@@ -1183,6 +1111,7 @@ async function loadSelectedDriveFolderState({ silent = true } = {}) {
   try {
     const response = await getSelectedDriveFolder();
     selectedDriveFolder = response?.folder || null;
+    applySelectedDriveFolderSettings(selectedDriveFolder);
     if (response?.sync) {
       driveSyncState = normalizeDriveSyncStatus(response.sync);
     }
@@ -1241,6 +1170,7 @@ async function hydrateDriveFolderSelection({ silent = false } = {}) {
 
     if (selectedResponse) {
       selectedDriveFolder = selectedResponse.folder || null;
+      applySelectedDriveFolderSettings(selectedDriveFolder);
     }
 
     if (syncResponse) {
@@ -1315,7 +1245,12 @@ async function applyManualDriveFolderSelection() {
   syncDriveManualSelectionState();
 
   try {
-    const response = await saveSelectedDriveFolder(rawValue);
+    const response = await saveSelectedDriveFolder(
+      rawValue,
+      null,
+      driveCameraLocation || null,
+      driveSyncLimit
+    );
     const folder = response?.folder || null;
 
     if (!folder?.id || !folder?.name) {
@@ -1323,6 +1258,7 @@ async function applyManualDriveFolderSelection() {
     }
 
     selectedDriveFolder = folder;
+    applySelectedDriveFolderSettings(selectedDriveFolder);
     availableDriveFolders = normalizeDriveFolderOptions([
       ...availableDriveFolders,
       folder
@@ -1375,8 +1311,14 @@ async function handleDriveFolderSelect(selectEl) {
   if (selectEl) selectEl.disabled = true;
 
   try {
-    const response = await saveSelectedDriveFolder(folder.id, folder.name);
+    const response = await saveSelectedDriveFolder(
+      folder.id,
+      folder.name,
+      driveCameraLocation || null,
+      driveSyncLimit
+    );
     selectedDriveFolder = response?.folder || folder;
+    applySelectedDriveFolderSettings(selectedDriveFolder);
     driveSyncState = normalizeDriveSyncStatus(response?.sync || null);
     driveFolderError = "";
     setDriveManualSelectionFeedback(null);
@@ -1389,6 +1331,53 @@ async function handleDriveFolderSelect(selectEl) {
     showToast(driveFolderError, "warn");
   } finally {
     if (selectEl) selectEl.disabled = false;
+  }
+}
+
+async function handleDriveSyncSettingsChange() {
+  const locationEl = document.getElementById("drive-camera-location-select");
+  const limitEl = document.getElementById("drive-sync-limit-select");
+  const nextLocation = String(locationEl?.value || "").trim();
+  const nextLimit = normalizeDriveSyncLimitValue(limitEl?.value || "");
+
+  if (driveSyncState.status === "syncing") {
+    syncDriveSelectionControls();
+    showToast("Wait for the current Drive sync to finish before changing sync settings", "warn");
+    return;
+  }
+
+  driveCameraLocation = nextLocation;
+  driveSyncLimit = nextLimit;
+
+  if (!selectedDriveFolder?.id || !hasAppSession()) {
+    syncDriveUI();
+    renderDriveFolderSelection();
+    return;
+  }
+
+  try {
+    const response = await saveSelectedDriveFolder(
+      selectedDriveFolder.id,
+      selectedDriveFolder.name,
+      driveCameraLocation || null,
+      driveSyncLimit
+    );
+    selectedDriveFolder = response?.folder || {
+      ...selectedDriveFolder,
+      camera_location: driveCameraLocation || null,
+      max_files: driveSyncLimit
+    };
+    applySelectedDriveFolderSettings(selectedDriveFolder);
+    driveSyncState = normalizeDriveSyncStatus(response?.sync || null);
+    driveFolderError = "";
+    syncDriveUI();
+    renderDriveFolderSelection();
+  } catch (error) {
+    driveFolderError = error.message || "Unable to save Drive sync settings";
+    applySelectedDriveFolderSettings(selectedDriveFolder);
+    syncDriveUI();
+    renderDriveFolderSelection();
+    showToast(driveFolderError, "warn");
   }
 }
 
@@ -1472,15 +1461,17 @@ async function triggerSync(buttonEl) {
     helperEl.textContent = `Syncing ${selectedDriveFolder.name} into backend staging...`;
   }
   if (selectedMetaEl) {
-    selectedMetaEl.textContent = "Preparing download queue...";
+    selectedMetaEl.textContent = `Preparing sync in ${driveSyncState.staging_dir || "data/staging"} · ${formatDriveSyncLimitLabel(driveSyncLimit)}`;
   }
 
   try {
-    const syncRequest = syncSelectedDriveFolder();
+    const syncRequest = syncSelectedDriveFolder(driveSyncLimit);
     window.setTimeout(() => {
       void loadDriveSyncStatus({ silent: true });
     }, 150);
     const response = await syncRequest;
+    selectedDriveFolder = response?.folder || selectedDriveFolder;
+    applySelectedDriveFolderSettings(selectedDriveFolder);
     const sync = normalizeDriveSyncStatus(response?.sync || null);
     applyDriveSyncStatus(sync);
     stopDriveSyncPolling();
@@ -1492,7 +1483,7 @@ async function triggerSync(buttonEl) {
     }
 
     if (selectedMetaEl && sync?.staging_dir) {
-      selectedMetaEl.textContent = `Synced to ${sync.staging_dir} · Folder ID: ${selectedDriveFolder.id}`;
+      selectedMetaEl.textContent = `Synced to ${sync.staging_dir} · ${formatDriveSyncLimitLabel(driveSyncLimit)} · Folder ID: ${selectedDriveFolder.id}`;
     }
 
     updatePipelineSourceSummary();
@@ -3426,7 +3417,7 @@ function returnToLogin() {
   const mainApp = document.getElementById("main-app");
 
   setDriveModalVisible(false);
-  if (loginScreen) loginScreen.style.display = "block";
+  if (loginScreen) loginScreen.style.display = "flex";
   if (mainApp) mainApp.style.display = "none";
 }
 
@@ -3526,6 +3517,7 @@ async function bootstrapAppState() {
     googleAuthActive = false;
     googleAuthUser = null;
     selectedDriveFolder = null;
+    applySelectedDriveFolderSettings(null);
     driveFolderError = "";
     currentDriveProfile = getDriveProfile();
     localStorage.removeItem("token");
@@ -3649,6 +3641,7 @@ window.switchUploadTab = switchUploadTab;
 window.togglePause = togglePause;
 window.selectLocCard = selectLocCard;
 window.handleDriveFolderSelect = handleDriveFolderSelect;
+window.handleDriveSyncSettingsChange = handleDriveSyncSettingsChange;
 window.refreshDriveFolders = refreshDriveFolders;
 window.syncDriveManualSelectionState = syncDriveManualSelectionState;
 window.handleDriveManualSelectionKeydown = handleDriveManualSelectionKeydown;

@@ -84,6 +84,7 @@ export async function getCurrentUser() {
 export async function getGoogleAuthStartUrl() {
   const res = await fetch(`${API_BASE}/auth/google/start`, {
     method: "GET",
+    headers: getAuthHeaders(),
     cache: "no-store"
   });
 
@@ -94,6 +95,7 @@ export async function getGoogleAuthStartUrl() {
 export async function getGoogleAuthStatus() {
   const res = await fetch(`${API_BASE}/auth/google/me`, {
     method: "GET",
+    headers: getAuthHeaders(),
     cache: "no-store"
   });
 
@@ -102,7 +104,8 @@ export async function getGoogleAuthStatus() {
 
 export async function logoutGoogleAuth() {
   const res = await fetch(`${API_BASE}/auth/google/logout`, {
-    method: "POST"
+    method: "POST",
+    headers: getAuthHeaders()
   });
 
   return handleResponse(res);
@@ -138,11 +141,11 @@ export async function getDriveFolders() {
   return handleResponse(res);
 }
 
-export async function saveSelectedDriveFolder(folder_id, folder_name) {
+export async function saveSelectedDriveFolder(folder_id, folder_name, camera_location = null, max_files = null) {
   const res = await fetch(`${API_BASE}/drive/select-folder`, {
     method: "POST",
     headers: getAuthHeaders(),
-    body: JSON.stringify({ folder_id, folder_name })
+    body: JSON.stringify({ folder_id, folder_name, camera_location, max_files })
   });
 
   return handleResponse(res);
@@ -158,10 +161,11 @@ export async function getSelectedDriveFolder() {
   return handleResponse(res);
 }
 
-export async function syncSelectedDriveFolder() {
+export async function syncSelectedDriveFolder(max_files = null) {
   const res = await fetch(`${API_BASE}/drive/sync`, {
     method: "POST",
-    headers: getAuthHeaders()
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ max_files })
   });
 
   return handleResponse(res);

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import shutil
 import time
 from pathlib import Path
@@ -23,6 +24,7 @@ DOWNLOAD_RETRY_ATTEMPTS = 8
 RETRYABLE_DOWNLOAD_STATUS_CODES = {500, 502, 503, 504}
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+STAGING_MANIFEST_NAME = ".drive_staging_manifest.json"
 DRIVE_INDEX_FIELDS = [
     "file_name",
     "file_id",
@@ -212,7 +214,13 @@ def _emit_progress(
         return
 
 
-def _write_drive_index(index_path: Path, files: List[Dict[str, object]]) -> None:
+def _write_drive_index(
+    index_path: Path,
+    files: List[Dict[str, object]],
+    *,
+    folder_name: str,
+    camera_location: Optional[str] = None,
+) -> None:
     index_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(index_path, "w", newline="", encoding="utf-8") as f:
@@ -220,6 +228,10 @@ def _write_drive_index(index_path: Path, files: List[Dict[str, object]]) -> None
         writer.writeheader()
         for file_info in files:
             site, deployment_folder, deployment_id, status = _parse_drive_path(str(file_info["drive_path"]))
+            fallback_location = (camera_location or folder_name or "").strip()
+            if not deployment_folder and (not site or site == (file_info.get("file_name") or "").strip()):
+                site = fallback_location
+                deployment_folder = fallback_location
             writer.writerow({
                 "file_name": file_info["file_name"],
                 "file_id": file_info["file_id"],
@@ -244,14 +256,53 @@ def _clear_directory_contents(path: Path) -> None:
             child.unlink()
 
 
+def _staging_manifest_path(staging_dir: Path) -> Path:
+    return staging_dir / STAGING_MANIFEST_NAME
+
+
+def _read_staging_manifest(staging_dir: Path) -> Optional[Dict[str, object]]:
+    manifest_path = _staging_manifest_path(staging_dir)
+    if not manifest_path.exists():
+        return None
+
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except Exception:
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    return payload
+
+
+def _write_staging_manifest(staging_dir: Path, *, folder_id: str, folder_name: str) -> Path:
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = _staging_manifest_path(staging_dir)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "folder_id": folder_id,
+                "folder_name": folder_name,
+                "updated_at": time.time(),
+            },
+            f,
+            indent=2,
+        )
+    return manifest_path
+
+
 def stage_selected_drive_folder(
     *,
     access_token: Optional[str],
     refresh_token: Optional[str],
     folder_id: str,
     folder_name: str,
+    camera_location: Optional[str] = None,
     staging_dir: Union[Path, str],
     drive_index_path: Path = DEFAULT_DRIVE_INDEX_PATH,
+    max_files: Optional[int] = None,
     progress_callback: Optional[Callable[[Dict[str, object]], None]] = None,
 ) -> dict:
     if not access_token:
@@ -269,12 +320,68 @@ def stage_selected_drive_folder(
     print(f"Drive staging target dir: {resolved_staging_dir}")
 
     files = _list_selected_folder_images(service, folder_id)
-    discovered_count = len(files)
-    print(f"Supported image files discovered: {discovered_count}")
+    available_count = len(files)
     if not files:
+        if resolved_staging_dir.exists() and any(resolved_staging_dir.iterdir()):
+            _clear_directory_contents(resolved_staging_dir)
+            print(f"Cleared staging directory because the selected Drive folder is empty: {resolved_staging_dir}")
         raise FileNotFoundError(
             f"No supported image files were found in the selected Google Drive folder: {folder_name} ({folder_id})"
         )
+
+    existing_manifest = _read_staging_manifest(resolved_staging_dir)
+    reset_staging = bool(
+        existing_manifest is None
+        or str(existing_manifest.get("folder_id") or "").strip() != str(folder_id).strip()
+    )
+    if reset_staging:
+        if resolved_staging_dir.exists() and any(resolved_staging_dir.iterdir()):
+            _clear_directory_contents(resolved_staging_dir)
+            print(
+                "Cleared staging directory because the selected Drive source changed or "
+                f"no Drive staging manifest was present: {resolved_staging_dir}"
+            )
+        else:
+            resolved_staging_dir.mkdir(parents=True, exist_ok=True)
+        _write_staging_manifest(
+            resolved_staging_dir,
+            folder_id=folder_id,
+            folder_name=folder_name,
+        )
+    else:
+        _write_staging_manifest(
+            resolved_staging_dir,
+            folder_id=folder_id,
+            folder_name=folder_name,
+        )
+
+    staged_files: List[Dict[str, object]] = []
+    pending_files: List[Dict[str, object]] = []
+    for file_info in files:
+        staged_path = resolved_staging_dir / Path(file_info["relative_local_path"])
+        if staged_path.exists():
+            staged_files.append(file_info)
+        else:
+            pending_files.append(file_info)
+
+    already_staged_count = len(staged_files)
+    remaining_unsynced_count = len(pending_files)
+    files_to_download = pending_files
+    if max_files is not None:
+        limited_count = max(0, int(max_files))
+        files_to_download = pending_files[:limited_count]
+        if limited_count and remaining_unsynced_count > limited_count:
+            print(
+                f"Applying sync limit: downloading next {limited_count} of "
+                f"{remaining_unsynced_count} unsynced image(s)"
+            )
+
+    discovered_count = len(files_to_download)
+    print(f"Supported image files discovered: {available_count}")
+    print(f"Already staged and skipped: {already_staged_count}")
+    print(f"Pending unsynced images: {remaining_unsynced_count}")
+    if not files_to_download:
+        print("No new Drive files needed for this sync; using the existing staged cache.")
     _emit_progress(
         progress_callback,
         {
@@ -283,16 +390,17 @@ def stage_selected_drive_folder(
             "folder_name": folder_name,
             "discovered_count": discovered_count,
             "downloaded_count": 0,
+            "available_count": available_count,
+            "already_staged_count": already_staged_count,
+            "staged_count": already_staged_count,
+            "remaining_count": remaining_unsynced_count,
             "current_file": None,
             "staging_dir": str(resolved_staging_dir),
         },
     )
 
-    _clear_directory_contents(resolved_staging_dir)
-    print(f"Cleared staging directory for Drive-backed run: {resolved_staging_dir}")
-
     downloaded_files: List[str] = []
-    for index, file_info in enumerate(files, start=1):
+    for index, file_info in enumerate(files_to_download, start=1):
         out_path = resolved_staging_dir / Path(file_info["relative_local_path"])
         _download_file(service, str(file_info["file_id"]), out_path)
         downloaded_files.append(str(file_info["relative_local_path"]))
@@ -305,14 +413,31 @@ def stage_selected_drive_folder(
                 "folder_name": folder_name,
                 "discovered_count": discovered_count,
                 "downloaded_count": index,
+                "available_count": available_count,
+                "already_staged_count": already_staged_count,
+                "staged_count": already_staged_count + index,
+                "remaining_count": max(remaining_unsynced_count - index, 0),
                 "current_file": str(file_info["drive_path"]),
                 "staging_dir": str(resolved_staging_dir),
             },
         )
 
-    _write_drive_index(resolved_drive_index_path, files)
+    staged_files = [
+        file_info
+        for file_info in files
+        if (resolved_staging_dir / Path(file_info["relative_local_path"])).exists()
+    ]
+    staged_count = len(staged_files)
+
+    _write_drive_index(
+        resolved_drive_index_path,
+        staged_files,
+        folder_name=folder_name,
+        camera_location=camera_location,
+    )
 
     print(f"Files downloaded: {len(downloaded_files)}")
+    print(f"Files staged total: {staged_count}")
     print(f"Final staging dir path: {resolved_staging_dir}")
     print(f"Drive index written: {resolved_drive_index_path}")
 
@@ -321,7 +446,12 @@ def stage_selected_drive_folder(
         "folder_name": folder_name,
         "staging_dir": str(resolved_staging_dir),
         "drive_index_path": str(resolved_drive_index_path),
-        "discovered_count": discovered_count,
-        "downloaded_count": len(downloaded_files),
+        "discovered_count": staged_count,
+        "available_count": available_count,
+        "downloaded_count": staged_count,
+        "newly_downloaded_count": len(downloaded_files),
+        "already_staged_count": already_staged_count,
+        "remaining_count": max(available_count - staged_count, 0),
+        "max_files": max_files,
         "downloaded_files": downloaded_files,
     }

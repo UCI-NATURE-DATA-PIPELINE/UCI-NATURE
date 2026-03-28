@@ -1,9 +1,9 @@
 from urllib.parse import urlencode
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Tuple
 
 import requests
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
 from scripts.config import (
@@ -12,7 +12,12 @@ from scripts.config import (
     GOOGLE_OAUTH_CLIENT_SECRET,
     GOOGLE_OAUTH_REDIRECT_URI,
 )
-from ui.backend.session_store import read_session, write_session
+from ui.backend.session_store import (
+    create_session_token,
+    find_session_key_by_google_oauth_state,
+    read_session,
+    write_session,
+)
 
 router = APIRouter(prefix="/api/auth/google", tags=["google-auth"])
 
@@ -25,9 +30,6 @@ GOOGLE_SCOPES = [
     "profile",
     "https://www.googleapis.com/auth/drive.readonly",
 ]
-OAUTH_STATE = "uci-nature-demo"
-
-
 def _invalidate_google_auth_session(session: dict, google_auth: dict) -> None:
     session["google_auth"] = {
         "authenticated": False,
@@ -35,8 +37,24 @@ def _invalidate_google_auth_session(session: dict, google_auth: dict) -> None:
         "access_token": None,
         "refresh_token": google_auth.get("refresh_token"),
         "expires_at": google_auth.get("expires_at"),
+        "oauth_state": google_auth.get("oauth_state"),
     }
     session["drive_connected"] = False
+
+
+def _require_auth_session(authorization: Optional[str]) -> Tuple[str, dict]:
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
+
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+
+    session_token = authorization.replace("Bearer ", "", 1).strip()
+    session = read_session(session_token)
+    if not session.get("token") or session["token"] != session_token:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    return session_token, session
 
 
 def _refresh_google_access_token(refresh_token: str) -> Optional[dict]:
@@ -82,8 +100,12 @@ def _refresh_google_access_token(refresh_token: str) -> Optional[dict]:
     }
 
 
-def get_google_auth_state(session: Optional[dict] = None):
-    session = session if session is not None else read_session()
+def get_google_auth_state(
+    session: Optional[dict] = None,
+    *,
+    session_key: Optional[str] = None,
+):
+    session = session if session is not None else read_session(session_key)
     google_auth = session.get("google_auth") or {}
 
     access_token = google_auth.get("access_token")
@@ -120,6 +142,7 @@ def get_google_auth_state(session: Optional[dict] = None):
                 "access_token": refreshed_auth["access_token"],
                 "refresh_token": refreshed_auth["refresh_token"],
                 "expires_at": refreshed_auth["expires_at"],
+                "oauth_state": google_auth.get("oauth_state"),
             }
             access_token = refreshed_auth["access_token"]
             authenticated = True
@@ -131,7 +154,7 @@ def get_google_auth_state(session: Optional[dict] = None):
             session_changed = True
 
     if session_changed:
-        write_session(session)
+        write_session(session, session_key)
         google_auth = session.get("google_auth") or {}
 
     return {
@@ -143,7 +166,7 @@ def get_google_auth_state(session: Optional[dict] = None):
     }
 
 
-def _build_auth_url() -> str:
+def _build_auth_url(oauth_state: str) -> str:
     params = {
         "client_id": GOOGLE_OAUTH_CLIENT_ID,
         "redirect_uri": GOOGLE_OAUTH_REDIRECT_URI,
@@ -151,19 +174,43 @@ def _build_auth_url() -> str:
         "scope": " ".join(GOOGLE_SCOPES),
         "access_type": "offline",
         "prompt": "consent",
-        "state": OAUTH_STATE,
+        "state": oauth_state,
     }
     return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
 
 
 @router.get("/login")
-def google_login():
-    return {"auth_url": _build_auth_url()}
+def google_login(authorization: Optional[str] = Header(default=None)):
+    session_key, session = _require_auth_session(authorization)
+    oauth_state = create_session_token()
+    google_auth = session.get("google_auth") or {}
+    session["google_auth"] = {
+        "authenticated": False,
+        "user": google_auth.get("user"),
+        "access_token": google_auth.get("access_token"),
+        "refresh_token": google_auth.get("refresh_token"),
+        "expires_at": google_auth.get("expires_at"),
+        "oauth_state": oauth_state,
+    }
+    write_session(session, session_key)
+    return {"auth_url": _build_auth_url(oauth_state)}
 
 
 @router.get("/start")
-def google_start():
-    return {"auth_url": _build_auth_url()}
+def google_start(authorization: Optional[str] = Header(default=None)):
+    session_key, session = _require_auth_session(authorization)
+    oauth_state = create_session_token()
+    google_auth = session.get("google_auth") or {}
+    session["google_auth"] = {
+        "authenticated": False,
+        "user": google_auth.get("user"),
+        "access_token": google_auth.get("access_token"),
+        "refresh_token": google_auth.get("refresh_token"),
+        "expires_at": google_auth.get("expires_at"),
+        "oauth_state": oauth_state,
+    }
+    write_session(session, session_key)
+    return {"auth_url": _build_auth_url(oauth_state)}
 
 
 @router.get("/callback")
@@ -178,7 +225,8 @@ def google_callback(
     if not code:
         raise HTTPException(status_code=400, detail="Missing OAuth code")
 
-    if state != OAUTH_STATE:
+    session_key = find_session_key_by_google_oauth_state(state)
+    if not session_key:
         raise HTTPException(status_code=400, detail="Invalid OAuth state")
 
     try:
@@ -230,7 +278,7 @@ def google_callback(
 
     google_user = userinfo_res.json()
 
-    session = read_session()
+    session = read_session(session_key)
     previous_google_user = ((session.get("google_auth") or {}).get("user") or {}).get("email")
     new_google_user = google_user.get("email")
 
@@ -254,6 +302,7 @@ def google_callback(
         "access_token": access_token,
         "refresh_token": token_data.get("refresh_token"),
         "expires_at": expires_at,
+        "oauth_state": None,
     }
 
     if previous_google_user and previous_google_user != new_google_user:
@@ -261,14 +310,15 @@ def google_callback(
         session["drive_connected"] = False
         session["drive_name"] = None
         session["drive_email"] = None
-    write_session(session)
+    write_session(session, session_key)
 
     return RedirectResponse(url=FRONTEND_SUCCESS_REDIRECT, status_code=302)
 
 
 @router.get("/me")
-def google_me():
-    google_auth = get_google_auth_state()
+def google_me(authorization: Optional[str] = Header(default=None)):
+    session_key, session = _require_auth_session(authorization)
+    google_auth = get_google_auth_state(session=session, session_key=session_key)
     return {
         "authenticated": bool(google_auth.get("authenticated")),
         "user": google_auth.get("user"),
@@ -276,17 +326,18 @@ def google_me():
 
 
 @router.post("/logout")
-def google_logout():
-    session = read_session()
+def google_logout(authorization: Optional[str] = Header(default=None)):
+    session_key, session = _require_auth_session(authorization)
     session["google_auth"] = {
         "authenticated": False,
         "user": None,
         "access_token": None,
         "refresh_token": None,
         "expires_at": None,
+        "oauth_state": None,
     }
     session["drive_connected"] = False
     session["selected_drive_folder"] = None
-    write_session(session)
+    write_session(session, session_key)
 
     return {"message": "Logged out from Google"}

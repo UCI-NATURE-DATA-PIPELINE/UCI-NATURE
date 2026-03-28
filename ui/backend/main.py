@@ -4,7 +4,7 @@ from datetime import datetime
 import importlib.util
 from pathlib import Path
 import sys
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 import csv
 import json
 import threading
@@ -26,7 +26,7 @@ from ui.backend.auth.routes_drive import (
     update_drive_sync_progress,
 )
 from ui.backend.services.drive_staging_service import stage_selected_drive_folder
-from ui.backend.session_store import read_session, write_session
+from ui.backend.session_store import create_session_token, read_session, write_session
 
 app = FastAPI()
 
@@ -56,7 +56,7 @@ BY_LOCATION_DIR = OUTPUTS_DIR / "by_location"
 ML_SUMMARY_JSON = OUTPUTS_DIR / "logs" / "ml_summary.json"
 
 PIPELINE_LOCK = threading.Lock()
-PIPELINE_STATE = {
+DEFAULT_PIPELINE_STATE = {
     "thread": None,
     "status": "idle",
     "run_id": None,
@@ -69,9 +69,32 @@ PIPELINE_STATE = {
     "integration_mode": None,
     "progress": None,
 }
+PIPELINE_STATES: Dict[str, dict] = {}
 
 
-def require_auth(authorization: Optional[str]):
+def _get_pipeline_state(session_key: str) -> dict:
+    state = PIPELINE_STATES.get(session_key)
+    if state is None:
+        state = deepcopy(DEFAULT_PIPELINE_STATE)
+        PIPELINE_STATES[session_key] = state
+    return state
+
+
+def _latest_pipeline_state() -> dict:
+    if not PIPELINE_STATES:
+        return deepcopy(DEFAULT_PIPELINE_STATE)
+
+    def sort_key(state: dict):
+        return (
+            state.get("finished_at") or "",
+            state.get("started_at") or "",
+        )
+
+    latest = max(PIPELINE_STATES.values(), key=sort_key)
+    return deepcopy(latest)
+
+
+def require_auth_context(authorization: Optional[str]) -> Tuple[str, dict]:
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization header")
 
@@ -79,12 +102,16 @@ def require_auth(authorization: Optional[str]):
         raise HTTPException(status_code=401, detail="Invalid authorization format")
 
     token = authorization.replace("Bearer ", "", 1).strip()
-    session = read_session()
+    session = read_session(token)
 
     if not session.get("token") or session["token"] != token:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    return session
+    return token, session
+
+
+def require_auth(authorization: Optional[str]):
+    return require_auth_context(authorization)[1]
 
 
 class LoginRequest(BaseModel):
@@ -172,6 +199,7 @@ def read_pipeline_log_summary(log_path: Optional[Union[Path, str]]) -> dict:
 
 
 def set_pipeline_progress(
+    session_key: str,
     *,
     step: str,
     percent: int,
@@ -186,21 +214,22 @@ def set_pipeline_progress(
         "updated_at": datetime.now().isoformat(timespec="seconds"),
     }
     with PIPELINE_LOCK:
-        PIPELINE_STATE["progress"] = progress
+        _get_pipeline_state(session_key)["progress"] = progress
 
 
-def serialize_pipeline_state() -> dict:
-    thread = PIPELINE_STATE.get("thread")
-    status = PIPELINE_STATE.get("status") or "idle"
-    run_id = PIPELINE_STATE.get("run_id")
-    started_at = PIPELINE_STATE.get("started_at")
-    finished_at = PIPELINE_STATE.get("finished_at")
-    log_path = PIPELINE_STATE.get("log_path")
-    payload = PIPELINE_STATE.get("payload")
-    result = PIPELINE_STATE.get("result")
-    error = PIPELINE_STATE.get("error")
-    integration_mode = PIPELINE_STATE.get("integration_mode")
-    progress = deepcopy(PIPELINE_STATE.get("progress"))
+def serialize_pipeline_state(session_key: str) -> dict:
+    state = _get_pipeline_state(session_key)
+    thread = state.get("thread")
+    status = state.get("status") or "idle"
+    run_id = state.get("run_id")
+    started_at = state.get("started_at")
+    finished_at = state.get("finished_at")
+    log_path = state.get("log_path")
+    payload = state.get("payload")
+    result = state.get("result")
+    error = state.get("error")
+    integration_mode = state.get("integration_mode")
+    progress = deepcopy(state.get("progress"))
     log_summary = read_pipeline_log_summary(log_path)
     current_step = (progress or {}).get("step") or log_summary["current_step"]
     latest_log_line = (progress or {}).get("message") or log_summary["latest_log_line"]
@@ -362,9 +391,10 @@ def build_dashboard_summary_data(project_name: str) -> dict:
     success_matched = int(ml_summary.get("matched_to_manifest", 0) or 0)
     success_rate = round((success_matched / success_total) * 100) if success_total else 0
 
+    latest_pipeline_state = _latest_pipeline_state()
     last_run_timestamp = None
-    if PIPELINE_STATE.get("finished_at"):
-        last_run_timestamp = PIPELINE_STATE["finished_at"]
+    if latest_pipeline_state.get("finished_at"):
+        last_run_timestamp = latest_pipeline_state["finished_at"]
     elif ML_SUMMARY_JSON.exists():
         last_run_timestamp = datetime.fromtimestamp(ML_SUMMARY_JSON.stat().st_mtime).isoformat()
 
@@ -377,8 +407,8 @@ def build_dashboard_summary_data(project_name: str) -> dict:
         last_run_date = "Unknown"
 
     last_duration = None
-    if isinstance(PIPELINE_STATE.get("result"), dict):
-        last_duration = PIPELINE_STATE["result"].get("elapsed_seconds")
+    if isinstance(latest_pipeline_state.get("result"), dict):
+        last_duration = latest_pipeline_state["result"].get("elapsed_seconds")
 
     batch_count = len(list((OUTPUTS_DIR / "batches").glob("batch_*.csv"))) if (OUTPUTS_DIR / "batches").exists() else 0
 
@@ -461,11 +491,16 @@ def build_export_artifact_summary() -> dict:
     }
 
 
-def validate_pipeline_prerequisites(session: dict, source_mode: str) -> dict:
+def validate_pipeline_prerequisites(
+    session: dict,
+    source_mode: str,
+    *,
+    session_key: Optional[str] = None,
+) -> dict:
     from ui.backend.services.pipeline_service import resolve_pipeline_staging_dir
 
     selected_folder = session.get("selected_drive_folder")
-    drive_sync = serialize_drive_sync_state(session=session)
+    drive_sync = serialize_drive_sync_state(session=session, session_key=session_key)
     local_staging_dir = resolve_pipeline_staging_dir()
     image_files = get_staging_image_files(local_staging_dir) if local_staging_dir.exists() else []
 
@@ -482,7 +517,7 @@ def validate_pipeline_prerequisites(session: dict, source_mode: str) -> dict:
                 detail="Drive sync is still in progress. Wait for sync to finish before running the pipeline.",
             )
 
-        google_auth = get_google_auth_state(session=session)
+        google_auth = get_google_auth_state(session=session, session_key=session_key)
         if not google_auth.get("authenticated") or not google_auth.get("access_token"):
             raise HTTPException(
                 status_code=400,
@@ -557,7 +592,13 @@ def validate_pipeline_runtime() -> None:
         )
 
 
-def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: Path) -> None:
+def execute_pipeline_run(
+    session_key: str,
+    run_id: str,
+    payload: dict,
+    batch_size: int,
+    log_path: Path,
+) -> None:
     result = None
     try:
         with open(log_path, "w", encoding="utf-8", buffering=1) as log_file:
@@ -566,18 +607,25 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                 from ui.backend.services.pipeline_service import resolve_pipeline_staging_dir
 
                 set_pipeline_progress(
+                    session_key,
                     step="Prepare Run",
                     percent=3,
                     message="Preparing the backend pipeline run",
                 )
 
                 source_mode = normalize_source_mode(payload.get("source_mode"))
-                session = read_session()
-                preflight = validate_pipeline_prerequisites(session, source_mode)
+                session = read_session(session_key)
+                preflight = validate_pipeline_prerequisites(
+                    session,
+                    source_mode,
+                    session_key=session_key,
+                )
                 selected_folder = preflight.get("selected_folder")
                 drive_sync = preflight.get("drive_sync") or {}
                 google_auth = (
-                    get_google_auth_state(session=session) if source_mode == "drive" else None
+                    get_google_auth_state(session=session, session_key=session_key)
+                    if source_mode == "drive"
+                    else None
                 )
 
                 config = PipelineRunConfig(
@@ -600,6 +648,7 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                     reuse_cache = should_reuse_drive_cache(preflight)
                     if reuse_cache:
                         set_pipeline_progress(
+                            session_key,
                             step="Reuse Backend Cache",
                             percent=8,
                             message=(
@@ -613,6 +662,7 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                         )
                     else:
                         set_pipeline_progress(
+                            session_key,
                             step="Sync Google Drive Folder",
                             percent=5,
                             message=(
@@ -622,6 +672,7 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                         )
                         start_drive_sync_operation(
                             session,
+                            session_key,
                             folder=selected_folder,
                             staging_dir=str(resolved_staging_dir),
                             message=(
@@ -642,6 +693,7 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                                 status_message = f"{status_message}: {current_file}"
 
                             update_drive_sync_progress(
+                                session_key,
                                 folder=selected_folder,
                                 discovered_count=discovered_count,
                                 downloaded_count=downloaded_count,
@@ -656,6 +708,7 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                                     5 + round((downloaded_count / discovered_count) * 9),
                                 )
                             set_pipeline_progress(
+                                session_key,
                                 step="Sync Google Drive Folder",
                                 percent=sync_percent,
                                 message=status_message,
@@ -672,11 +725,14 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                                 refresh_token=(google_auth or {}).get("refresh_token"),
                                 folder_id=selected_folder["id"],
                                 folder_name=selected_folder.get("name") or selected_folder["id"],
+                                camera_location=selected_folder.get("camera_location"),
                                 staging_dir=resolved_staging_dir,
+                                max_files=selected_folder.get("max_files"),
                                 progress_callback=drive_progress_callback,
                             )
                             complete_drive_sync_operation(
                                 session,
+                                session_key,
                                 folder=selected_folder,
                                 sync_result=sync_result,
                                 message=(
@@ -684,7 +740,10 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                                     f"image(s) from {selected_folder.get('name') or selected_folder['id']}"
                                 ),
                             )
-                            drive_sync = serialize_drive_sync_state(session=read_session())
+                            drive_sync = serialize_drive_sync_state(
+                                session=read_session(session_key),
+                                session_key=session_key,
+                            )
                             preflight["image_count"] = int(
                                 sync_result.get("downloaded_count")
                                 or sync_result.get("discovered_count")
@@ -693,6 +752,7 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                         except FileNotFoundError as exc:
                             fail_drive_sync_operation(
                                 session,
+                                session_key,
                                 folder=selected_folder,
                                 error=str(exc),
                                 message="Drive staging failed during pipeline run",
@@ -701,6 +761,7 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                         except Exception as exc:
                             fail_drive_sync_operation(
                                 session,
+                                session_key,
                                 folder=selected_folder,
                                 error=f"Failed to stage the selected Drive folder: {exc}",
                                 message="Drive staging failed during pipeline run",
@@ -720,6 +781,7 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                     )
                 else:
                     set_pipeline_progress(
+                        session_key,
                         step="Prepare Local Source",
                         percent=5,
                         message="Using the current local staging directory",
@@ -742,6 +804,7 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                 result = run_pipeline_service(
                     config,
                     progress_callback=lambda progress: set_pipeline_progress(
+                        session_key,
                         step=str(progress.get("step") or "Pipeline Running"),
                         percent=int(progress.get("percent") or 0),
                         message=str(progress.get("message") or "Pipeline running"),
@@ -772,11 +835,12 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                 print(f"Pipeline run {run_id} completed successfully")
 
         with PIPELINE_LOCK:
-            PIPELINE_STATE["status"] = "completed"
-            PIPELINE_STATE["finished_at"] = datetime.now().isoformat(timespec="seconds")
-            PIPELINE_STATE["result"] = result
-            PIPELINE_STATE["error"] = None
-            PIPELINE_STATE["progress"] = {
+            state = _get_pipeline_state(session_key)
+            state["status"] = "completed"
+            state["finished_at"] = datetime.now().isoformat(timespec="seconds")
+            state["result"] = result
+            state["error"] = None
+            state["progress"] = {
                 "step": "Completed",
                 "percent": 100,
                 "message": "Pipeline completed successfully",
@@ -791,11 +855,12 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
                 traceback.print_exc()
 
         with PIPELINE_LOCK:
-            PIPELINE_STATE["status"] = "failed"
-            PIPELINE_STATE["finished_at"] = datetime.now().isoformat(timespec="seconds")
-            PIPELINE_STATE["result"] = None
-            PIPELINE_STATE["error"] = str(exc)
-            PIPELINE_STATE["progress"] = {
+            state = _get_pipeline_state(session_key)
+            state["status"] = "failed"
+            state["finished_at"] = datetime.now().isoformat(timespec="seconds")
+            state["result"] = None
+            state["error"] = str(exc)
+            state["progress"] = {
                 "step": "Failed",
                 "percent": 100,
                 "message": str(exc),
@@ -804,19 +869,26 @@ def execute_pipeline_run(run_id: str, payload: dict, batch_size: int, log_path: 
             }
 
 
-def start_pipeline_thread(data: RunPipelineRequest) -> dict:
+def start_pipeline_thread(session_key: str, data: RunPipelineRequest) -> dict:
     with PIPELINE_LOCK:
-        current = serialize_pipeline_state()
-        if current["status"] == "running":
+        if any(
+            state.get("status") == "running"
+            and bool(state.get("thread") and state["thread"].is_alive())
+            for state in PIPELINE_STATES.values()
+        ):
             raise HTTPException(
                 status_code=409,
                 detail="A pipeline run is already in progress. Check /api/pipeline/status for details.",
             )
 
-        session = read_session()
+        session = read_session(session_key)
         validate_pipeline_runtime()
         source_mode = normalize_source_mode(data.source_mode)
-        preflight = validate_pipeline_prerequisites(session, source_mode)
+        preflight = validate_pipeline_prerequisites(
+            session,
+            source_mode,
+            session_key=session_key,
+        )
 
         batch_size = normalize_batch_size(data.batch_size)
         run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -826,22 +898,23 @@ def start_pipeline_thread(data: RunPipelineRequest) -> dict:
 
         thread = threading.Thread(
             target=execute_pipeline_run,
-            args=(run_id, payload, batch_size, log_path),
+            args=(session_key, run_id, payload, batch_size, log_path),
             daemon=True,
             name=f"pipeline-{run_id}",
         )
 
-        PIPELINE_STATE["thread"] = thread
-        PIPELINE_STATE["status"] = "running"
-        PIPELINE_STATE["run_id"] = run_id
-        PIPELINE_STATE["started_at"] = datetime.now().isoformat(timespec="seconds")
-        PIPELINE_STATE["finished_at"] = None
-        PIPELINE_STATE["log_path"] = log_path
-        PIPELINE_STATE["payload"] = payload
-        PIPELINE_STATE["result"] = None
-        PIPELINE_STATE["error"] = None
-        PIPELINE_STATE["integration_mode"] = preflight["mode"]
-        PIPELINE_STATE["progress"] = {
+        state = _get_pipeline_state(session_key)
+        state["thread"] = thread
+        state["status"] = "running"
+        state["run_id"] = run_id
+        state["started_at"] = datetime.now().isoformat(timespec="seconds")
+        state["finished_at"] = None
+        state["log_path"] = log_path
+        state["payload"] = payload
+        state["result"] = None
+        state["error"] = None
+        state["integration_mode"] = preflight["mode"]
+        state["progress"] = {
             "step": "Queued",
             "percent": 1,
             "message": "Pipeline run queued on the backend",
@@ -853,7 +926,7 @@ def start_pipeline_thread(data: RunPipelineRequest) -> dict:
         }
 
         thread.start()
-        return serialize_pipeline_state()
+        return serialize_pipeline_state(session_key)
 
 
 @app.get("/")
@@ -863,9 +936,9 @@ def root():
 
 @app.post("/api/auth/login")
 def login(data: LoginRequest):
-    token = "demo-token"
+    token = create_session_token()
 
-    session = read_session()
+    session = read_session(token)
     session["token"] = token
     session["user"] = {
         "email": data.email,
@@ -874,7 +947,7 @@ def login(data: LoginRequest):
     session["drive_connected"] = session.get("drive_connected", False)
     session["drive_name"] = session.get("drive_name")
     session["drive_email"] = session.get("drive_email")
-    write_session(session)
+    write_session(session, token)
 
     return {
         "access_token": token,
@@ -893,9 +966,9 @@ def connect_drive(
     data: ConnectDriveRequest,
     authorization: Optional[str] = Header(default=None),
 ):
-    session = require_auth(authorization)
+    session_key, session = require_auth_context(authorization)
 
-    google_auth = get_google_auth_state(session=session)
+    google_auth = get_google_auth_state(session=session, session_key=session_key)
     if not google_auth.get("authenticated"):
         raise HTTPException(
             status_code=400,
@@ -905,7 +978,7 @@ def connect_drive(
     session["drive_connected"] = True
     session["drive_name"] = data.drive_name
     session["drive_email"] = data.drive_email
-    write_session(session)
+    write_session(session, session_key)
 
     return {
         "connected": True,
@@ -916,15 +989,15 @@ def connect_drive(
 
 @app.get("/api/drive/status")
 def drive_status(authorization: Optional[str] = Header(default=None)):
-    session = require_auth(authorization)
-    google_auth = get_google_auth_state(session=session)
+    session_key, session = require_auth_context(authorization)
+    google_auth = get_google_auth_state(session=session, session_key=session_key)
 
     return {
         "connected": session.get("drive_connected", False),
         "drive_name": session.get("drive_name"),
         "drive_email": session.get("drive_email"),
         "selected_folder": session.get("selected_drive_folder"),
-        "sync": serialize_drive_sync_state(session=session),
+        "sync": serialize_drive_sync_state(session=session, session_key=session_key),
         "google_authenticated": bool(google_auth.get("authenticated")),
         "google_user": google_auth.get("user"),
     }
@@ -941,9 +1014,8 @@ def run_pipeline(
     data: RunPipelineRequest,
     authorization: Optional[str] = Header(default=None),
 ):
-    require_auth(authorization)
-    session = read_session()
-    state = start_pipeline_thread(data)
+    session_key, session = require_auth_context(authorization)
+    state = start_pipeline_thread(session_key, data)
     source_mode = normalize_source_mode(data.source_mode)
 
     return {
@@ -966,8 +1038,8 @@ def run_pipeline(
 
 @app.get("/api/pipeline/status")
 def pipeline_status(authorization: Optional[str] = Header(default=None)):
-    require_auth(authorization)
-    return serialize_pipeline_state()
+    session_key, _ = require_auth_context(authorization)
+    return serialize_pipeline_state(session_key)
 
 
 @app.get("/api/review/items")

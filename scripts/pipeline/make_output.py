@@ -103,6 +103,7 @@ def generate_output_csvs(
     set_month: Optional[int] = None,
     set_day: Optional[int] = None,
     offset_apply_to: str = "both",
+    exclude_humans: bool = False,
 ) -> dict:
     args = argparse.Namespace(
         manifest=str(manifest),
@@ -125,6 +126,7 @@ def generate_output_csvs(
         set_month=set_month,
         set_day=set_day,
         offset_apply_to=offset_apply_to,
+        exclude_humans=exclude_humans,
     )
 
     args.burst_seconds = max(10, min(300, int(args.burst_seconds)))
@@ -177,6 +179,7 @@ def generate_output_csvs(
 
     total_processed = 0
     total_skipped_blank = 0
+    total_excluded_humans = 0
 
     def _normalize_species(val: str) -> str:
         return (val or "").strip().lower()
@@ -212,6 +215,11 @@ def generate_output_csvs(
         if mode == "speciesnet":
             return sp not in ("", "blank", "vehicle", "no cv result")
         return True
+
+    def _is_human_only_row(mrow: dict) -> bool:
+        has_animal = (mrow.get("has_animal", "") or "").strip()
+        has_human = (mrow.get("has_human", "") or "").strip()
+        return has_human == "1" and has_animal != "1"
 
     def _parse_row_dt(d: str, t: str):
         d = (d or "").strip()
@@ -273,6 +281,10 @@ def generate_output_csvs(
 
             if not count and species and species.strip().lower() not in ("blank", "vehicle", "no cv result"):
                 count = "1"
+
+            if args.exclude_humans and _is_human_only_row(m):
+                total_excluded_humans += 1
+                continue
 
             if not _keep_row(m):
                 total_skipped_blank += 1
@@ -418,6 +430,8 @@ def generate_output_csvs(
     ]
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    for existing_csv in out_dir.glob("*.csv"):
+        existing_csv.unlink()
 
     total_output = 0
     export_rows = []
@@ -564,6 +578,8 @@ def generate_output_csvs(
     print(f"    Animals: {animal_count}")
     print(f"    Humans (by Species=human): {human_only_count}")
     print(f"  Skipped (blank/vehicle): {total_skipped_blank}")
+    if args.exclude_humans:
+        print(f"  Excluded human-only rows: {total_excluded_humans}")
 
     print(f"\nColumns filled automatically:")
     print("  ✓ CameraName (from folder structure)")
@@ -599,6 +615,7 @@ def generate_output_csvs(
         "humans": human_only_count,
         "species_filled": species_filled,
         "skipped_blank": total_skipped_blank,
+        "excluded_humans": total_excluded_humans,
     }
 
 
@@ -624,6 +641,7 @@ def main():
     parser.add_argument("--set_month", type=int, default=None)
     parser.add_argument("--set_day", type=int, default=None)
     parser.add_argument("--offset_apply_to", choices=["date", "time", "both"], default="both")
+    parser.add_argument("--exclude_humans", action="store_true")
     args = parser.parse_args()
 
     generate_output_csvs(
@@ -647,6 +665,7 @@ def main():
         set_month=args.set_month,
         set_day=args.set_day,
         offset_apply_to=args.offset_apply_to,
+        exclude_humans=args.exclude_humans,
     )
 
 
