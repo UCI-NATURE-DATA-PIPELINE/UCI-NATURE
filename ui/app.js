@@ -840,9 +840,9 @@ function syncDriveUI() {
     } else if (driveSyncState.status === "failed") {
       queueStatusSub.textContent = driveSyncState.error || "Retry sync to prepare the Drive source.";
     } else if (selectedFolderName) {
-      queueStatusSub.textContent = `Sync will stage files into ${stagingPath}. Run Pipeline can also fetch the folder on demand.`;
+      queueStatusSub.textContent = `Sync will stage files into ${stagingPath}. Run the pipeline from the Run Model page when the source is ready.`;
     } else {
-      queueStatusSub.textContent = "Choose a folder, optionally set a camera location or sync limit, then sync or run the pipeline.";
+      queueStatusSub.textContent = "Choose a folder, optionally set a camera location or sync limit, then sync it into backend staging.";
     }
   }
 
@@ -1069,9 +1069,9 @@ function renderDriveFolderSelection() {
     } else if (isDriveSourceReady()) {
       helperEl.textContent = `Source ready. ${formatNumber(driveSyncState.downloaded_count || driveSyncState.discovered_count)} image(s) are staged on the backend.`;
     } else if (selectedDriveFolder?.name) {
-      helperEl.textContent = "This folder is saved in the backend. Sync is optional; Run Pipeline can fetch it on demand.";
+      helperEl.textContent = "This folder is saved in the backend. Sync it here to prepare staging, then run the pipeline from the Run Model page.";
     } else {
-      helperEl.textContent = "Choose the Drive folder to sync or run directly from the backend.";
+      helperEl.textContent = "Choose the Drive folder to prepare as the backend source.";
     }
   }
 
@@ -1097,7 +1097,7 @@ function renderDriveFolderSelection() {
     } else if (driveFolderError) {
       selectedMetaEl.textContent = "Folder selection is unavailable until the backend Drive auth flow is active.";
     } else {
-      selectedMetaEl.textContent = "Select a folder in this panel, then run the pipeline from Drive mode.";
+      selectedMetaEl.textContent = "Select a folder in this panel, then use the Run Model page to execute the pipeline.";
     }
   }
 
