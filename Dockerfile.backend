@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements /app/requirements
 
-RUN python -m pip install --upgrade pip setuptools wheel && \
+RUN python -m pip install --upgrade pip "setuptools<81" wheel && \
     python -m pip install --index-url https://download.pytorch.org/whl/cpu \
       "torch==${TORCH_VERSION}" \
       "torchvision==${TORCHVISION_VERSION}" && \
@@ -34,7 +34,8 @@ RUN python -m pip install --upgrade pip setuptools wheel && \
       fastapi \
       "uvicorn[standard]" \
       pydantic && \
-    python -m pip install --use-pep517 "speciesnet==5.0.3"
+    python -m pip install --use-pep517 "speciesnet==5.0.3" && \
+    python -c "import pkg_resources; import speciesnet; print('speciesnet import ok')"
 
 COPY . /app
 
