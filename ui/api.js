@@ -22,15 +22,20 @@ function resolveBackendBase() {
 const BACKEND_BASE = resolveBackendBase();
 const API_BASE = `${BACKEND_BASE}/api`;
 
-function getStoredToken() {
+function getStoredToken(tokenOverride = "") {
+  const normalizedOverride = String(tokenOverride || "").trim();
+  if (normalizedOverride) {
+    return normalizedOverride;
+  }
+
   return localStorage.getItem("token") || "";
 }
 
-function getAuthHeaders() {
+function getAuthHeaders(tokenOverride = "") {
   const headers = {
     "Content-Type": "application/json"
   };
-  const token = getStoredToken();
+  const token = getStoredToken(tokenOverride);
 
   if (token) {
     headers.Authorization = `Bearer ${token}`;
@@ -81,10 +86,10 @@ export async function getCurrentUser() {
   return handleResponse(res);
 }
 
-export async function getGoogleAuthStartUrl() {
+export async function getGoogleAuthStartUrl(tokenOverride = "") {
   const res = await fetch(`${API_BASE}/auth/google/start`, {
     method: "GET",
-    headers: getAuthHeaders(),
+    headers: getAuthHeaders(tokenOverride),
     cache: "no-store"
   });
 
