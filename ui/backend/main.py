@@ -4,7 +4,7 @@ from datetime import datetime
 import importlib.util
 from pathlib import Path
 import sys
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import csv
 import json
 import threading
@@ -72,17 +72,80 @@ DEFAULT_PIPELINE_STATE = {
 PIPELINE_STATES: Dict[str, dict] = {}
 
 
+def _is_json_like_primitive(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
+def _make_safe_copy(value: Any) -> Any:
+    if _is_json_like_primitive(value):
+        return value
+
+    if isinstance(value, Path):
+        return str(value)
+
+    if isinstance(value, dict):
+        safe: Dict[str, Any] = {}
+        for key, item in value.items():
+            if str(key) in {"thread", "_thread", "lock", "_lock"}:
+                continue
+            safe[str(key)] = _make_safe_copy(item)
+        return safe
+
+    if isinstance(value, (list, tuple, set)):
+        return [_make_safe_copy(item) for item in value]
+
+    if isinstance(value, threading.Thread):
+        return {
+            "name": value.name,
+            "alive": value.is_alive(),
+            "daemon": value.daemon,
+        }
+
+    try:
+        return deepcopy(value)
+    except Exception:
+        return repr(value)
+
+
+def _serialize_state_for_copy(state: dict) -> dict:
+    return {
+        "thread": state.get("thread"),
+        "status": state.get("status"),
+        "run_id": state.get("run_id"),
+        "started_at": state.get("started_at"),
+        "finished_at": state.get("finished_at"),
+        "log_path": str(state["log_path"]) if state.get("log_path") else None,
+        "payload": _make_safe_copy(state.get("payload")),
+        "result": _make_safe_copy(state.get("result")),
+        "error": state.get("error"),
+        "integration_mode": state.get("integration_mode"),
+        "progress": _make_safe_copy(state.get("progress")),
+    }
+
+
 def _get_pipeline_state(session_key: str) -> dict:
     state = PIPELINE_STATES.get(session_key)
     if state is None:
-        state = deepcopy(DEFAULT_PIPELINE_STATE)
+        state = {
+            "thread": None,
+            "status": "idle",
+            "run_id": None,
+            "started_at": None,
+            "finished_at": None,
+            "log_path": None,
+            "payload": None,
+            "result": None,
+            "error": None,
+            "integration_mode": None,
+            "progress": None,
+        }
         PIPELINE_STATES[session_key] = state
     return state
 
 
 def _latest_pipeline_state() -> dict:
     if not PIPELINE_STATES:
-        return deepcopy(DEFAULT_PIPELINE_STATE)
+        return _serialize_state_for_copy(DEFAULT_PIPELINE_STATE)
 
     def sort_key(state: dict):
         return (
@@ -91,7 +154,7 @@ def _latest_pipeline_state() -> dict:
         )
 
     latest = max(PIPELINE_STATES.values(), key=sort_key)
-    return deepcopy(latest)
+    return _serialize_state_for_copy(latest)
 
 
 def require_auth_context(authorization: Optional[str]) -> Tuple[str, dict]:
@@ -225,11 +288,11 @@ def serialize_pipeline_state(session_key: str) -> dict:
     started_at = state.get("started_at")
     finished_at = state.get("finished_at")
     log_path = state.get("log_path")
-    payload = state.get("payload")
-    result = state.get("result")
+    payload = _make_safe_copy(state.get("payload"))
+    result = _make_safe_copy(state.get("result"))
     error = state.get("error")
     integration_mode = state.get("integration_mode")
-    progress = deepcopy(state.get("progress"))
+    progress = _make_safe_copy(state.get("progress"))
     log_summary = read_pipeline_log_summary(log_path)
     current_step = (progress or {}).get("step") or log_summary["current_step"]
     latest_log_line = (progress or {}).get("message") or log_summary["latest_log_line"]
