@@ -1,11 +1,12 @@
 # scripts/ml/postprocess_speciesnet.py
 
-import json
-import csv
-from pathlib import Path, PurePosixPath
-from datetime import datetime, timedelta
-from collections import defaultdict
 import argparse
+import csv
+import json
+from collections import defaultdict
+from datetime import datetime, timedelta
+from pathlib import Path, PurePosixPath
+
 
 IN_JSON = Path("data/outputs/speciesnet_results.json")
 MANIFEST_CSV = Path("data/outputs/manifest.csv")
@@ -19,11 +20,15 @@ MOUNTED_JSON = Path("/mnt/data/speciesnet_results.json")
 THRESH_NORMAL = 0.90
 THRESH_GENERIC = 0.97
 MARGIN_MIN = 0.20
-
 BURST_WINDOW_SECONDS = 300
 
 GENERIC_EXACT = {
-    "no cv result", "animal", "mammal", "rodent", "carnivorous mammal", "canis species"
+    "no cv result",
+    "animal",
+    "mammal",
+    "rodent",
+    "carnivorous mammal",
+    "canis species",
 }
 
 
@@ -82,14 +87,17 @@ def is_generic(label: str) -> bool:
 def top2(scores):
     if not scores:
         return (0.0, 0.0)
+
     vals = []
     for x in scores:
         try:
             vals.append(float(x))
         except Exception:
             pass
+
     if not vals:
         return (0.0, 0.0)
+
     vals.sort(reverse=True)
     p1 = vals[0]
     p2 = vals[1] if len(vals) > 1 else 0.0
@@ -99,6 +107,7 @@ def top2(scores):
 def parse_datetime_loose(s: str):
     if not s:
         return None
+
     s = str(s).strip()
     fmts = [
         "%Y-%m-%d %H:%M:%S",
@@ -107,18 +116,25 @@ def parse_datetime_loose(s: str):
         "%Y-%m-%d %H:%M:%S%z",
         "%Y-%m-%dT%H:%M:%S%z",
     ]
+
     for fmt in fmts:
         try:
             return datetime.strptime(s, fmt)
         except Exception:
             pass
+
     if "." in s:
         base = s.split(".", 1)[0]
-        for fmt in ["%Y-%m-%d %H:%M:%S", "%Y:%m:%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
+        for fmt in [
+            "%Y-%m-%d %H:%M:%S",
+            "%Y:%m:%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+        ]:
             try:
                 return datetime.strptime(base, fmt)
             except Exception:
                 pass
+
     return None
 
 
@@ -142,7 +158,7 @@ def load_manifest_localpath_by_fileid(manifest_csv: Path = MANIFEST_CSV):
 
         if not fileid_col or not path_col:
             raise ValueError(
-                f"manifest.csv must have file_id/id + local_path/filepath/path. Found: {fieldnames}"
+                f"{manifest_csv} must have file_id/id + local_path/filepath/path. Found: {fieldnames}"
             )
 
         out = {}
@@ -151,6 +167,7 @@ def load_manifest_localpath_by_fileid(manifest_csv: Path = MANIFEST_CSV):
             lp = (row.get(path_col) or "").strip()
             if fid and lp:
                 out[fid] = normalize_path(lp)
+
         return out
 
 
@@ -171,7 +188,7 @@ def load_exif_dt_by_fileid(metadata_csv: Path = METADATA_CSV):
 
         fileid_col = pick_col({"file_id", "fileid", "id"})
         if not fileid_col:
-            raise ValueError(f"metadata.csv must have file_id/id. Found: {fieldnames}")
+            raise ValueError(f"{metadata_csv} must have file_id/id. Found: {fieldnames}")
 
         exif_col = pick_col({"exif_datetime", "datetime", "exifdatetime", "date_time"})
         date_col = pick_col({"date"})
@@ -184,6 +201,7 @@ def load_exif_dt_by_fileid(metadata_csv: Path = METADATA_CSV):
                 continue
 
             dt = None
+
             if exif_col:
                 dt = parse_datetime_loose(row.get(exif_col, ""))
 
@@ -199,12 +217,13 @@ def load_exif_dt_by_fileid(metadata_csv: Path = METADATA_CSV):
 
             if dt:
                 out[fid] = dt
+
         return out
 
 
 def decision_needs_review(label, score, margin):
-    is_blank = (label == "blank")
-    is_human = (label == "human")
+    is_blank = label == "blank"
+    is_human = label == "human"
     generic = is_generic(label)
     thresh = THRESH_GENERIC if generic else THRESH_NORMAL
 
@@ -272,7 +291,9 @@ def burst_vote(items):
 
 
 def make_bursts(pred_rows, burst_window_seconds: int = BURST_WINDOW_SECONDS):
+    burst_window_seconds = max(10, min(300, int(burst_window_seconds)))
     by_folder = defaultdict(list)
+
     for i, pr in enumerate(pred_rows):
         fp = pr["filepath"]
         dt = pr.get("dt")
@@ -329,10 +350,13 @@ def postprocess_speciesnet_results(
     metadata_csv = Path(metadata_csv)
     out_csv = Path(out_csv)
     review_csv = Path(review_csv)
+
     if not in_path.exists() and MOUNTED_JSON.exists():
         in_path = MOUNTED_JSON
     if not in_path.exists():
-        raise FileNotFoundError(f"Missing input JSON: {IN_JSON} (also checked {MOUNTED_JSON})")
+        raise FileNotFoundError(
+            f"Missing input JSON: {in_path} (also checked {MOUNTED_JSON})"
+        )
 
     with open(in_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -350,8 +374,8 @@ def postprocess_speciesnet_results(
         lp = fileid_to_path.get(fid)
         if not lp:
             continue
-        lp_n = normalize_path(lp)
 
+        lp_n = normalize_path(lp)
         exact_path_to_dt[lp_n] = dt
 
         bn = PurePosixPath(lp_n).name
@@ -397,42 +421,65 @@ def postprocess_speciesnet_results(
         p1, p2 = top2(scores)
         margin = p1 - p2
 
-        pred_rows.append({
-            "filepath": fp,
-            "label_raw": label,
-            "score": score,
-            "margin": margin,
-            "is_blank": int(label == "blank"),
-            "is_human": int(label == "human"),
-            "generic": int(is_generic(label)),
-            "dt": lookup_dt(fp),
-        })
+        pred_rows.append(
+            {
+                "filepath": fp,
+                "label_raw": label,
+                "score": score,
+                "margin": margin,
+                "is_blank": int(label == "blank"),
+                "is_human": int(label == "human"),
+                "generic": int(is_generic(label)),
+                "dt": lookup_dt(fp),
+            }
+        )
 
     bursts = make_bursts(pred_rows, burst_window_seconds=burst_window_seconds)
 
     voted_label_by_idx = {}
     for burst in bursts:
-        items = [{"label_raw": pred_rows[idx]["label_raw"], "score": pred_rows[idx]["score"]} for idx in burst]
+        items = [
+            {
+                "label_raw": pred_rows[idx]["label_raw"],
+                "score": pred_rows[idx]["score"],
+            }
+            for idx in burst
+        ]
         voted = burst_vote(items)
         for idx in burst:
             voted_label_by_idx[idx] = voted
 
     out_csv.parent.mkdir(parents=True, exist_ok=True)
+    review_csv.parent.mkdir(parents=True, exist_ok=True)
 
     review_count = 0
-    with open(out_csv, "w", newline="", encoding="utf-8") as f_out, \
-         open(review_csv, "w", newline="", encoding="utf-8") as f_rev:
-
+    with open(out_csv, "w", newline="", encoding="utf-8") as f_out, open(
+        review_csv, "w", newline="", encoding="utf-8"
+    ) as f_rev:
         out_w = csv.DictWriter(
             f_out,
             fieldnames=[
-                "filepath", "label_raw", "score", "p1_minus_p2",
-                "burst_label", "is_blank", "is_human", "final_label", "needs_review"
+                "filepath",
+                "label_raw",
+                "score",
+                "p1_minus_p2",
+                "burst_label",
+                "is_blank",
+                "is_human",
+                "final_label",
+                "needs_review",
             ],
         )
         rev_w = csv.DictWriter(
             f_rev,
-            fieldnames=["filepath", "label_raw", "score", "p1_minus_p2", "burst_label", "reason"],
+            fieldnames=[
+                "filepath",
+                "label_raw",
+                "score",
+                "p1_minus_p2",
+                "burst_label",
+                "reason",
+            ],
         )
 
         out_w.writeheader()
@@ -446,30 +493,36 @@ def postprocess_speciesnet_results(
             burst_label = voted_label_by_idx.get(i, label)
             working = burst_label or label
 
-            needs_review, final_label, reason = decision_needs_review(working, score, margin)
+            needs_review, final_label, reason = decision_needs_review(
+                working, score, margin
+            )
 
-            out_w.writerow({
-                "filepath": r["filepath"],
-                "label_raw": label,
-                "score": round(score, 6),
-                "p1_minus_p2": round(margin, 6),
-                "burst_label": working,
-                "is_blank": r["is_blank"],
-                "is_human": r["is_human"],
-                "final_label": final_label,
-                "needs_review": int(needs_review),
-            })
-
-            if needs_review:
-                review_count += 1
-                rev_w.writerow({
+            out_w.writerow(
+                {
                     "filepath": r["filepath"],
                     "label_raw": label,
                     "score": round(score, 6),
                     "p1_minus_p2": round(margin, 6),
                     "burst_label": working,
-                    "reason": reason,
-                })
+                    "is_blank": r["is_blank"],
+                    "is_human": r["is_human"],
+                    "final_label": final_label,
+                    "needs_review": int(needs_review),
+                }
+            )
+
+            if needs_review:
+                review_count += 1
+                rev_w.writerow(
+                    {
+                        "filepath": r["filepath"],
+                        "label_raw": label,
+                        "score": round(score, 6),
+                        "p1_minus_p2": round(margin, 6),
+                        "burst_label": working,
+                        "reason": reason,
+                    }
+                )
 
     print(f"Wrote: {out_csv}")
     print(f"Wrote: {review_csv}")
@@ -489,11 +542,24 @@ def postprocess_speciesnet_results(
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--in_path", default=str(IN_JSON))
+    parser.add_argument("--manifest_csv", default=str(MANIFEST_CSV))
+    parser.add_argument("--metadata_csv", default=str(METADATA_CSV))
+    parser.add_argument("--out_csv", default=str(OUT_CSV))
+    parser.add_argument("--review_csv", default=str(REVIEW_CSV))
     parser.add_argument("--burst_window", type=int, default=300)
     args = parser.parse_args()
 
-    postprocess_speciesnet_results(burst_window_seconds=args.burst_window)
+    postprocess_speciesnet_results(
+        in_path=Path(args.in_path),
+        manifest_csv=Path(args.manifest_csv),
+        metadata_csv=Path(args.metadata_csv),
+        out_csv=Path(args.out_csv),
+        review_csv=Path(args.review_csv),
+        burst_window_seconds=args.burst_window,
+    )
 
 
 if __name__ == "__main__":
     main()
+    

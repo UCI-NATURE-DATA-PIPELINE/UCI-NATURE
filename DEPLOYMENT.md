@@ -14,7 +14,15 @@ The deployed Compose stack has three services:
 - `frontend`: static UI served by nginx from `ui/`
 - `caddy`: reverse proxy and TLS terminator
 
-Compose definition: `docker-compose.yml`
+Compose definition: `docker/docker-compose.yml`
+
+Docker deployment assets live in `docker/`:
+
+- `docker/docker-compose.yml`
+- `docker/Dockerfile.backend`
+- `docker/Dockerfile.frontend`
+- `docker/Caddyfile`
+- `docker/nginx.conf`
 
 ## Where Things Live
 
@@ -29,7 +37,7 @@ Compose definition: `docker-compose.yml`
 
 ## Environment and Secrets
 
-`.env` is used by the `backend` service through `env_file` in `docker-compose.yml`.
+`.env` is used by the `backend` service through `env_file` in `docker/docker-compose.yml`.
 
 Important runtime values currently come from:
 
@@ -53,30 +61,30 @@ From the server:
 
 ```bash
 cd ~/UCI-NATURE
-docker compose up -d --build
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 
 Targeted rebuilds:
 
 ```bash
 cd ~/UCI-NATURE
-docker compose up -d --build frontend
-docker compose up -d --build backend
-docker compose up -d --build caddy
+docker compose -f docker/docker-compose.yml up -d --build frontend
+docker compose -f docker/docker-compose.yml up -d --build backend
+docker compose -f docker/docker-compose.yml up -d --build caddy
 ```
 
 Restart without rebuilding:
 
 ```bash
 cd ~/UCI-NATURE
-docker compose restart backend frontend caddy
+docker compose -f docker/docker-compose.yml restart backend frontend caddy
 ```
 
 ## Check Container Status
 
 ```bash
 cd ~/UCI-NATURE
-docker compose ps
+docker compose -f docker/docker-compose.yml ps
 ```
 
 ## Check Logs
@@ -85,18 +93,18 @@ Follow live logs:
 
 ```bash
 cd ~/UCI-NATURE
-docker compose logs -f backend
-docker compose logs -f frontend
-docker compose logs -f caddy
+docker compose -f docker/docker-compose.yml logs -f backend
+docker compose -f docker/docker-compose.yml logs -f frontend
+docker compose -f docker/docker-compose.yml logs -f caddy
 ```
 
 Recent logs only:
 
 ```bash
 cd ~/UCI-NATURE
-docker compose logs --tail=200 backend
-docker compose logs --tail=200 frontend
-docker compose logs --tail=200 caddy
+docker compose -f docker/docker-compose.yml logs --tail=200 backend
+docker compose -f docker/docker-compose.yml logs --tail=200 frontend
+docker compose -f docker/docker-compose.yml logs --tail=200 caddy
 ```
 
 Useful on-disk logs:
@@ -141,7 +149,7 @@ Symptoms:
 Fix:
 
 - start Docker Desktop or the Docker daemon on the EC2 host
-- rerun `docker compose ps`
+- rerun `docker compose -f docker/docker-compose.yml ps`
 
 ### Stale frontend cache
 
@@ -157,7 +165,7 @@ Fix:
 
 ```bash
 cd ~/UCI-NATURE
-docker compose up -d --build frontend
+docker compose -f docker/docker-compose.yml up -d --build frontend
 ```
 
 ### Folder picker not showing shared or shortcut folders
