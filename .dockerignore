@@ -1,0 +1,14 @@
+.git
+.gitignore
+.venv
+.venv311
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+data
+ui/backend/data
+ui.zip
+secrets
+node_modules

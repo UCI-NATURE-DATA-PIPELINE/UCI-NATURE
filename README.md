@@ -2,6 +2,8 @@
 
 Automated data pipeline for processing 100,000+ wildlife camera images from UCI Campus Reserves.
 
+Live deployed UI: [https://uci-nature-pipeline.duckdns.org](https://uci-nature-pipeline.duckdns.org)
+
 ## Problem
 
 Current workflow relies on manual review by student interns. Images accumulate faster than they can be processed, creating a backlog of 100,000+ unprocessed images. No project funding available for cloud services.
@@ -17,6 +19,57 @@ Automated pipeline that retrieves images from Google Drive, extracts metadata, d
 - Resumable downloads via `data/outputs/.download_progress.csv` + skip already-downloaded files
 - Retry logic with exponential backoff for transient Drive/network failures
 - ML output CSV now includes `is_blank` and logs unmatched/failed items to `inference_errors.csv`
+- FastAPI UI/backend path can now run the real pipeline in-process from either local staging or a selected Google Drive folder
+- Google Drive folder selection in the UI supports My Drive folders, shared folders, shortcut-backed folders, and a manual folder URL/ID fallback
+
+## Current UI App
+
+The current browser app lives in:
+
+- Frontend: `ui/`
+- Backend: `ui/backend/`
+- Deployment assets: `docker/`
+
+This cleanup keeps the frontend and backend together under `ui/`.
+That avoids low-value path churn in static asset loading, Python imports, and deployment wiring while still separating Docker-specific files into their own folder.
+
+### Main UI-backed features
+
+- Google OAuth login in the backend
+- Local mode that runs against images already present in `data/staging/`
+- Drive mode that stages a selected Google Drive folder into backend staging before running the same pipeline
+- Folder selection from the picker or by pasting a Google Drive folder URL or raw folder ID
+- Live Drive sync and pipeline status in the UI
+
+### Local UI development overview
+
+Run the backend:
+
+```bash
+python3.11 -m uvicorn ui.backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Run the static frontend:
+
+```bash
+cd ui
+python3 -m http.server 3000
+```
+
+Then open:
+
+- Frontend: `http://127.0.0.1:3000/`
+- Backend API: `http://127.0.0.1:8000/`
+
+### High-level UI/Drive run flow
+
+1. Sign in and confirm the Google Drive connection.
+2. Choose a folder from the Drive dropdown, or use the manual URL/ID fallback.
+3. For Drive runs, the backend stages files into `data/staging/`.
+4. The pipeline builds the manifest, extracts metadata, runs SpeciesNet, and writes outputs.
+5. Results are reviewed in the Dashboard, Review, Validate, and Export pages.
+
+See `DEPLOYMENT.md` for the current EC2/Docker/Caddy deployment workflow.
 
 ## Pipeline Flow
 

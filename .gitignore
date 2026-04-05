@@ -39,3 +39,9 @@ venv/
 
 # notes/screenshots
 notes/*.png
+*.pem
+.env
+AGENTS.md
+ui/backend/data/logs/
+ui/backend/data/session.json
+ui/backend/data/sessions/

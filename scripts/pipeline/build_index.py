@@ -1,3 +1,4 @@
+from typing import Optional
 ## makes a CSV index of everything inside the Drive folder (ids + basic metadata)
 # new: recursive + drive_path + parsed folder fields (site, deployment info)
 
@@ -48,13 +49,13 @@ MAX_RETRIES = 3         # NEW: retry API calls
 RETRY_DELAY = 2         # NEW: initial delay for retries
 
 
-def parse_id_list(value: str | None) -> list[str]:
+def parse_id_list(value: Optional[str]) -> list[str]:
     if not value:
         return []
     return [s.strip() for s in value.split(",") if s.strip()]
 
 
-def make_run_tag(drive_root: str | None, start_folders: str | None) -> str:
+def make_run_tag(drive_root: Optional[str], start_folders: Optional[str]) -> str:
     ids = parse_id_list(start_folders)
     if ids:
         return "_".join(ids)
