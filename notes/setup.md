@@ -30,6 +30,13 @@ Supported workflow B: UI-backed workflow
 python3.11 -m uvicorn ui.backend.main:app --reload --host 127.0.0.1 --port 8000
 cd ui && python3 -m http.server 3000
 
+Docker deployment assets:
+- docker/docker-compose.yml
+- docker/Dockerfile.backend
+- docker/Dockerfile.frontend
+- docker/Caddyfile
+- docker/nginx.conf
+
 Expected input:
 - images already copied into data/staging/
 

@@ -828,7 +828,7 @@
                   </div>
                   <div style="flex:1">
                     <div class="drive-sync-banner-title" id="drive-sync-banner-title">Connected — Wildlife Camera Photo Database</div>
-                    <div class="drive-sync-banner-sub" id="drive-sync-banner-sub">julie.coffey@uci.edu · Select a folder to import images</div>
+                    <div class="drive-sync-banner-sub" id="drive-sync-banner-sub">julie.coffey@uci.edu · Select a folder and prepare the Drive source</div>
                   </div>
                   <button class="drive-sync-reconnect-btn" id="drive-sync-reconnect-btn" style="display:none" onclick="reconnectDrive()">Reconnect</button>
                 </div>
@@ -886,7 +886,7 @@
 	                        <option value="1000">First 1000 files</option>
 	                      </select>
 	                      <div style="margin-top:7px;font-size:12px;color:var(--muted);line-height:1.45">
-	                        Applies to Sync and Drive-backed backend staging for Run Pipeline.
+	                        Limits how many files are staged from the selected Drive folder.
 	                      </div>
 	                    </div>
 	                  </div>
@@ -926,7 +926,7 @@
                   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
                     <div>
                       <div class="drive-sync-status-title" id="drive-sync-status-text">Sync a Drive folder to prepare the source</div>
-                      <div class="drive-sync-status-sub" id="drive-sync-status-sub">Choose a folder, optionally sync it into backend staging, or run the pipeline below to fetch it on demand.</div>
+                      <div class="drive-sync-status-sub" id="drive-sync-status-sub">Choose a folder, optionally set a camera location and sync limit, then stage it into backend storage.</div>
                     </div>
                     <span class="status-pill pill-slate" id="drive-sync-status-pill">Idle</span>
                   </div>
@@ -953,83 +953,6 @@
 	                  </div>
 	                </div>
 	              </div>
-
-              <div class="card card-p">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-                  <div class="card-title" style="margin-bottom:0">Run Pipeline</div>
-                  <span style="font-size:12px;color:var(--muted)">Drive-backed flow</span>
-                </div>
-
-                <div class="drive-run-inline">
-                  <button class="run-model-btn idle" id="drive-run-btn" onclick="toggleDriveRunModel()">
-                    <span class="run-btn-icon" id="drive-run-btn-icon">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                        <polygon points="5 3 19 12 5 21 5 3"/>
-                      </svg>
-                    </span>
-                    <span id="drive-run-btn-label">Run Pipeline</span>
-                  </button>
-                  <span class="drive-run-note" id="drive-run-note">Run Pipeline will fetch and stage the selected Drive folder on the backend server. Sync is optional.</span>
-                </div>
-
-                <div class="run-progress-panel" id="drive-run-progress" style="margin-top:20px">
-                  <div class="run-progress-header">
-                    <div class="run-progress-label">
-                      <div class="proc-dot"></div>
-                      <span id="drive-run-progress-label-text">No active pipeline run</span>
-                    </div>
-                    <span class="run-progress-eta" id="drive-run-eta">Run becomes available once a Drive folder is selected</span>
-                  </div>
-                  <div class="run-prog-track">
-                    <div class="run-prog-fill" id="drive-run-fill" style="width:0%"></div>
-                  </div>
-                  <div class="run-stat-grid">
-                    <div class="run-stat-cell">
-                      <div class="run-stat-cell-val" id="drive-rs-status">Idle</div>
-                      <div class="run-stat-cell-lbl">Overall Status</div>
-                    </div>
-                    <div class="run-stat-cell">
-                      <div class="run-stat-cell-val" id="drive-rs-step" style="font-size:14px;line-height:1.25">Waiting for a run</div>
-                      <div class="run-stat-cell-lbl">Current Step</div>
-                    </div>
-                    <div class="run-stat-cell">
-                      <div class="run-stat-cell-val" id="drive-rs-discovered">—</div>
-                      <div class="run-stat-cell-lbl">Discovered Images</div>
-                    </div>
-                    <div class="run-stat-cell">
-                      <div class="run-stat-cell-val" id="drive-rs-downloaded">—</div>
-                      <div class="run-stat-cell-lbl">Downloaded Images</div>
-                    </div>
-                  </div>
-                  <div class="run-ml-progress" id="drive-run-ml-progress">
-                    <div class="run-ml-progress-head">
-                      <div class="run-ml-progress-title">SpeciesNet Progress</div>
-                      <div class="run-ml-progress-summary" id="drive-run-ml-progress-summary">—</div>
-                    </div>
-                    <div class="run-prog-track" style="margin-bottom:0">
-                      <div class="run-prog-fill" id="drive-run-ml-progress-fill" style="width:0%"></div>
-                    </div>
-                    <div class="run-ml-progress-meta">
-                      <div class="run-ml-progress-chip">Processed <strong id="drive-run-ml-processed">—</strong></div>
-                      <div class="run-ml-progress-chip">Total <strong id="drive-run-ml-total">—</strong></div>
-                    </div>
-                  </div>
-                  <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
-                    <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:start;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#F7FAFC">
-                      <div style="font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)">Current File</div>
-                      <div id="drive-run-current-file" style="font-size:12px;color:var(--text);line-height:1.5;word-break:break-word">—</div>
-                    </div>
-                    <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:start;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#F7FAFC">
-                      <div style="font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)">Log Path</div>
-                      <div id="drive-run-log-path" style="font-size:12px;color:var(--text);line-height:1.5;word-break:break-word">—</div>
-                    </div>
-                    <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:start;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#FFF5F5">
-                      <div style="font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#C53030">Error</div>
-                      <div id="drive-run-error-state" style="font-size:12px;color:#742A2A;line-height:1.5;word-break:break-word">—</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
 
 	            <div style="display:flex;flex-direction:column;gap:16px">
@@ -1044,7 +967,7 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D69E2E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                   Drive Workflow Note
                 </div>
-                <div style="font-size:12px;color:#7B341E;line-height:1.5">Sync warms the backend staging cache. Run Pipeline can also fetch the selected Google Drive folder directly on the backend if nothing is cached yet, so the whole Drive flow stays on this page.</div>
+                <div style="font-size:12px;color:#7B341E;line-height:1.5">Use this tab to choose and sync the Drive source into backend staging. Run Pipeline stays on the Run Model page.</div>
               </div>
             </div>
           </div>

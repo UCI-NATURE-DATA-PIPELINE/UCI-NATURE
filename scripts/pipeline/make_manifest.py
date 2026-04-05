@@ -1,10 +1,12 @@
+# scripts/pipeline/make_manifest.py
 # creates manifest.csv from local downloaded images in data/staging/
 # optionally creates batch manifests in data/outputs/batches/
 
-import csv
 import argparse
+import csv
 from datetime import datetime
 from pathlib import Path
+
 
 STAGING = Path("data/staging")
 OUT = Path("data/outputs/manifest.csv")
@@ -49,16 +51,17 @@ def build_manifest(
     if not staging.exists():
         raise FileNotFoundError(f"{staging} not found. Run download_drive.py first.")
 
-    IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG"}
+    image_extensions = {".jpg", ".jpeg", ".png"}
 
     rows = []
     for p in sorted(staging.rglob("*")):
         if not p.is_file():
             continue
-        # Skip macOS metadata files (.DS_Store, ._* resource forks, other hidden files)
-        if p.name.startswith("."):
+
+        # Skip hidden files, macOS resource forks, and non-images
+        if p.name.startswith(".") or p.name.startswith("._"):
             continue
-        if p.suffix not in IMAGE_EXTENSIONS:
+        if p.suffix.lower() not in image_extensions:
             continue
 
         file_id, original_name = split_local_name(p.name)
@@ -68,38 +71,51 @@ def build_manifest(
         except ValueError:
             local_path = str(p)
 
-        rows.append({
-            "file_id": file_id,
-            "file_name": original_name,
-            "local_file_name": p.name,
-            "local_path": local_path,
-            "size_bytes": p.stat().st_size,
-            "modified_time": datetime.fromtimestamp(p.stat().st_mtime).isoformat(),
-        })
+        stat = p.stat()
+        rows.append(
+            {
+                "file_id": file_id,
+                "file_name": original_name,
+                "local_file_name": p.name,
+                "local_path": local_path,
+                "size_bytes": stat.st_size,
+                "modified_time": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            }
+        )
 
-    fieldnames = ["file_id", "file_name", "local_file_name", "local_path", "size_bytes", "modified_time"]
+    fieldnames = [
+        "file_id",
+        "file_name",
+        "local_file_name",
+        "local_path",
+        "size_bytes",
+        "modified_time",
+    ]
+
     write_csv(out, rows, fieldnames)
     print(f"wrote {len(rows)} rows -> {out}")
+
     result = {
         "manifest_path": str(out),
         "rows_written": len(rows),
+        "batch_count": 0,
         "new_manifest_path": None,
         "new_rows_written": None,
     }
 
-    # batch manifests
     if batch_size and batch_size > 0:
         batch_dir.mkdir(parents=True, exist_ok=True)
         total = len(rows)
         batch_count = (total + batch_size - 1) // batch_size
+        result["batch_count"] = batch_count
 
         for i in range(batch_count):
             start = i * batch_size
             end = min(start + batch_size, total)
             batch_rows = rows[start:end]
-            batch_path = batch_dir / f"batch_{i+1:04d}.csv"
+            batch_path = batch_dir / f"batch_{i + 1:04d}.csv"
             write_csv(batch_path, batch_rows, fieldnames)
-            print(f"  batch {i+1:04d}: {len(batch_rows)} rows -> {batch_path}")
+            print(f"  batch {i + 1:04d}: {len(batch_rows)} rows -> {batch_path}")
 
     if write_new_only:
         processed = set()
@@ -126,11 +142,11 @@ def build_manifest(
         print(f"cache: {cache_path} ({len(processed)} ids)")
         print(f"wrote {len(new_rows)} rows -> {new_out}")
         print(f"skipped {skipped} rows (already processed or missing file_id)")
+
         result["new_manifest_path"] = str(new_out)
         result["new_rows_written"] = len(new_rows)
 
         if update_cache:
-            # SAFE cache update: append ONLY ids from new_out, and dedupe
             cache_path.parent.mkdir(parents=True, exist_ok=True)
 
             existing = set(processed)
@@ -154,8 +170,6 @@ def main():
     parser.add_argument("--out", default=str(OUT))
     parser.add_argument("--batch_size", type=int, default=0, help="0 = no batch manifests")
     parser.add_argument("--batch_dir", default=str(BATCH_DIR))
-
-    # Auto-mode caching helpers
     parser.add_argument("--cache", default=str(CACHE), help="file with processed file_ids (one per line)")
     parser.add_argument("--new_out", default=str(NEW_OUT), help="where to write manifest of only new/unprocessed ids")
     parser.add_argument("--write_new_only", action="store_true", help="also write a filtered manifest containing only new/unprocessed file_ids")

@@ -17,33 +17,54 @@ OUT_DIR = Path("data/outputs/by_location")
 
 def load_csv_by_key(path: Path, key: str) -> dict:
     out = {}
+    if not path.exists():
+        return out
     with open(path, "r", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            k = row.get(key, "")
+            k = (row.get(key, "") or "").strip()
             if k:
                 out[k] = row
     return out
 
 
 def extract_image_number(filename: str) -> str:
-    match = re.search(r'(IMG)_?(\d+)', filename, re.IGNORECASE)
+    match = re.search(r"(IMG)_?(\d+)", filename, re.IGNORECASE)
     if match:
         num = match.group(2).zfill(4)
         return f"IMG_{num}"
     return filename
 
 
-def get_camera_name(drive_row: dict) -> str:
+def _normalize_camera_label(name: str) -> str:
+    name = (name or "").strip()
+    if not name:
+        return "Unknown"
+    name = re.sub(r"^\d{4}_\d{2}_\d{2}_", "", name)
+    name = re.sub(r"_DONE$", "", name, flags=re.IGNORECASE)
+    name = name.replace(" ", "")
+    return name or "Unknown"
+
+
+def get_camera_name(drive_row: dict, manifest_row: Optional[dict] = None) -> str:
     deployment_folder = (drive_row.get("deployment_folder") or "").strip()
     site = (drive_row.get("site") or "").strip()
 
     if deployment_folder:
-        name = re.sub(r'^\d{4}_\d{2}_\d{2}_', '', deployment_folder)
-        name = re.sub(r'_DONE$', '', name)
-        if name:
-            return name.replace(" ", "")
+        return _normalize_camera_label(deployment_folder)
 
-    return site.replace(" ", "") if site else "Unknown"
+    if site:
+        return _normalize_camera_label(site)
+
+    if manifest_row:
+        local_path = (manifest_row.get("local_path") or "").strip()
+        if local_path:
+            p = Path(local_path)
+            parent_name = p.parent.name.strip()
+
+            if parent_name and parent_name not in {"", ".", "staging", "data"}:
+                return _normalize_camera_label(parent_name)
+
+    return "Unknown"
 
 
 def format_date(exif_datetime: str) -> str:
@@ -141,6 +162,7 @@ def generate_output_csvs(
     if not meta_path.exists():
         raise FileNotFoundError("metadata.csv not found. Run extract_metadata.py first.")
 
+    manifest_by_id = load_csv_by_key(manifest_path, "file_id")
     meta_by_id = load_csv_by_key(meta_path, "file_id")
     drive_by_id = load_csv_by_key(drive_index_path, "file_id") if drive_index_path.exists() else {}
 
@@ -150,13 +172,13 @@ def generate_output_csvs(
     end_time = (args.end_time or "").strip()
 
     if start_date and not re.match(r"^\d{8}$", start_date):
-        raise ValueError("--start_date must be YYYYMMDD (e.g., 20200311)")
+        raise ValueError("--start_date must be YYYYMMDD")
     if end_date and not re.match(r"^\d{8}$", end_date):
-        raise ValueError("--end_date must be YYYYMMDD (e.g., 20200311)")
+        raise ValueError("--end_date must be YYYYMMDD")
     if start_time and not re.match(r"^\d{2}:\d{2}:\d{2}$", start_time):
-        raise ValueError("--start_time must be HH:MM:SS (e.g., 13:45:19)")
+        raise ValueError("--start_time must be HH:MM:SS")
     if end_time and not re.match(r"^\d{2}:\d{2}:\d{2}$", end_time):
-        raise ValueError("--end_time must be HH:MM:SS (e.g., 13:45:19)")
+        raise ValueError("--end_time must be HH:MM:SS")
 
     offset_start_date = (args.offset_start_date or "").strip()
     offset_end_date = (args.offset_end_date or "").strip()
@@ -164,22 +186,21 @@ def generate_output_csvs(
     offset_end_time = (args.offset_end_time or "").strip()
 
     if offset_start_date and not re.match(r"^\d{8}$", offset_start_date):
-        raise ValueError("--offset_start_date must be YYYYMMDD (e.g., 20200311)")
+        raise ValueError("--offset_start_date must be YYYYMMDD")
     if offset_end_date and not re.match(r"^\d{8}$", offset_end_date):
-        raise ValueError("--offset_end_date must be YYYYMMDD (e.g., 20200311)")
+        raise ValueError("--offset_end_date must be YYYYMMDD")
     if offset_start_time and not re.match(r"^\d{2}:\d{2}:\d{2}$", offset_start_time):
-        raise ValueError("--offset_start_time must be HH:MM:SS (e.g., 13:45:19)")
+        raise ValueError("--offset_start_time must be HH:MM:SS")
     if offset_end_time and not re.match(r"^\d{2}:\d{2}:\d{2}$", offset_end_time):
-        raise ValueError("--offset_end_time must be HH:MM:SS (e.g., 13:45:19)")
+        raise ValueError("--offset_end_time must be HH:MM:SS")
 
     total_flagged_outside_interval = 0
     total_missing_datetime_for_interval = 0
-
-    rows_by_camera = defaultdict(list)
-
     total_processed = 0
     total_skipped_blank = 0
     total_excluded_humans = 0
+
+    rows_by_camera = defaultdict(list)
 
     def _normalize_species(val: str) -> str:
         return (val or "").strip().lower()
@@ -190,7 +211,7 @@ def generate_output_csvs(
         return ha in ("0", "1") or hh in ("0", "1")
 
     def _sn_present(mrow: dict) -> bool:
-        sp = _normalize_species(mrow.get("species", "") or "")
+        sp = _normalize_species(mrow.get("species", ""))
         return sp != ""
 
     def _effective_mode(mrow: dict) -> str:
@@ -206,7 +227,7 @@ def generate_output_csvs(
         mode = _effective_mode(mrow)
         ha = (mrow.get("has_animal", "") or "").strip()
         hh = (mrow.get("has_human", "") or "").strip()
-        sp = _normalize_species(mrow.get("species", "") or "")
+        sp = _normalize_species(mrow.get("species", ""))
 
         if mode == "none":
             return True
@@ -232,14 +253,21 @@ def generate_output_csvs(
             return None
         try:
             return datetime(
-                int(d[0:4]), int(d[4:6]), int(d[6:8]),
-                int(t[0:2]), int(t[3:5]), int(t[6:8])
+                int(d[0:4]),
+                int(d[4:6]),
+                int(d[6:8]),
+                int(t[0:2]),
+                int(t[3:5]),
+                int(t[6:8]),
             )
         except Exception:
             return None
 
     offset_enabled = bool(offset_start_date and offset_end_date) and (
-        args.shift_minutes != 0 or args.set_year is not None or args.set_month is not None or args.set_day is not None
+        args.shift_minutes != 0
+        or args.set_year is not None
+        or args.set_month is not None
+        or args.set_day is not None
     )
 
     offset_start_dt = None
@@ -253,17 +281,16 @@ def generate_output_csvs(
         except Exception:
             offset_start_dt = None
             offset_end_dt = None
-        if offset_start_dt is None or offset_end_dt is None:
+
+        if offset_start_dt is None or offset_end_dt is None or offset_end_dt < offset_start_dt:
             offset_enabled = False
-        else:
-            if offset_end_dt < offset_start_dt:
-                offset_enabled = False
 
     with open(manifest_path, "r", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            file_id = row["file_id"]
-            filename = row["file_name"]
+            file_id = (row.get("file_id") or "").strip()
+            filename = (row.get("file_name") or row.get("local_file_name") or "").strip()
 
+            manifest_row = manifest_by_id.get(file_id, row) if file_id else row
             m = meta_by_id.get(file_id, {})
             d = drive_by_id.get(file_id, {})
 
@@ -275,11 +302,19 @@ def generate_output_csvs(
             count = (m.get("count", "") or "").strip()
             model_certainty = (m.get("model_certainty", "") or "").strip()
 
-            sp_norm = species.strip().lower()
-            if sp_norm in ("animal", "mammal", "bird", "canis species", "canine family", "rodent", "carnivorous mammal"):
+            sp_norm = species.lower()
+            if sp_norm in (
+                "animal",
+                "mammal",
+                "bird",
+                "canis species",
+                "canine family",
+                "rodent",
+                "carnivorous mammal",
+            ):
                 species = "unknown"
 
-            if not count and species and species.strip().lower() not in ("blank", "vehicle", "no cv result"):
+            if not count and species and species.lower() not in ("blank", "vehicle", "no cv result"):
                 count = "1"
 
             if args.exclude_humans and _is_human_only_row(m):
@@ -290,8 +325,8 @@ def generate_output_csvs(
                 total_skipped_blank += 1
                 continue
 
-            camera_name = get_camera_name(d)
-            deployment_folder = d.get("deployment_folder", "")
+            camera_name = get_camera_name(d, manifest_row)
+            deployment_folder = (d.get("deployment_folder") or "").strip()
             image_num = extract_image_number(filename)
 
             date = (m.get("date", "") or "").strip()
@@ -306,7 +341,7 @@ def generate_output_csvs(
 
             notes_val = ""
 
-            if (start_date or end_date or start_time or end_time):
+            if start_date or end_date or start_time or end_time:
                 if not date or not time_val:
                     total_missing_datetime_for_interval += 1
                     notes_val = "WARNING: Missing date/time for interval check"
@@ -360,24 +395,17 @@ def generate_output_csvs(
 
                         if args.offset_apply_to == "date":
                             corrected_date = new_date_str
+                            date = corrected_date
                         elif args.offset_apply_to == "time":
                             corrected_time = new_time_str
+                            time_val = corrected_time
                         else:
                             corrected_date = new_date_str
                             corrected_time = new_time_str
-
-                        if args.offset_apply_to == "date":
-                            date = corrected_date
-                        elif args.offset_apply_to == "time":
-                            time_val = corrected_time
-                        else:
                             date = corrected_date
                             time_val = corrected_time
 
-                        if notes_val:
-                            notes_val = notes_val + "; OFFSET_APPLIED"
-                        else:
-                            notes_val = "OFFSET_APPLIED"
+                        notes_val = f"{notes_val}; OFFSET_APPLIED".strip("; ").strip() if notes_val else "OFFSET_APPLIED"
 
             row_data = {
                 "CameraName": camera_name,
@@ -437,64 +465,46 @@ def generate_output_csvs(
     export_rows = []
 
     for camera_name, rows in sorted(rows_by_camera.items()):
-        rows.sort(key=lambda r: (r.get("Date", ""), r.get("Time", "")))
+        rows.sort(key=lambda r: (r.get("Date", ""), r.get("Time", ""), r.get("Image#", "")))
 
         obs_seq = 0
         i = 0
         kept_rows = []
 
-        while i < len(rows):
-            def _to_seconds(r: dict) -> Optional[int]:
-                d = (r.get("Date", "") or "").strip()
-                t = (r.get("Time", "") or "").strip()
-                if not d or not t:
-                    return None
-                m = re.match(r"^(\d{2}):(\d{2}):(\d{2})$", t)
-                if not m:
-                    return None
-                if not re.match(r"^\d{8}$", d):
-                    return None
-                try:
-                    dt = datetime(
-                        int(d[0:4]), int(d[4:6]), int(d[6:8]),
-                        int(m.group(1)), int(m.group(2)), int(m.group(3))
-                    )
-                    return int((dt - datetime(1970, 1, 1)).total_seconds())
-                except Exception:
-                    return None
+        def _to_seconds(r: dict) -> Optional[int]:
+            d = (r.get("Date", "") or "").strip()
+            t = (r.get("Time", "") or "").strip()
+            if not d or not t:
+                return None
+            m = re.match(r"^(\d{2}):(\d{2}):(\d{2})$", t)
+            if not m or not re.match(r"^\d{8}$", d):
+                return None
+            try:
+                dt = datetime(
+                    int(d[0:4]),
+                    int(d[4:6]),
+                    int(d[6:8]),
+                    int(m.group(1)),
+                    int(m.group(2)),
+                    int(m.group(3)),
+                )
+                return int((dt - datetime(1970, 1, 1)).total_seconds())
+            except Exception:
+                return None
 
+        while i < len(rows):
             start = i
             start_sec = _to_seconds(rows[i])
 
             if start_sec is None:
                 obs_seq += 1
-                burst_rows = rows[i:i+1]
+                burst_rows = rows[i:i + 1]
                 obs_id_date = (burst_rows[0].get("Date", "") or "").strip()
                 obs_id = f"{camera_name}_{obs_id_date}_{str(obs_seq).zfill(6)}"
                 burst_rows[0]["ObservationID"] = obs_id
                 burst_rows[0]["BurstCount"] = "1"
                 burst_rows[0]["BurstIndex"] = "1"
-
-                mode = _effective_mode({
-                    "has_animal": burst_rows[0].get("has_animal", ""),
-                    "has_human": burst_rows[0].get("has_human", ""),
-                    "species": burst_rows[0].get("Species", ""),
-                })
-
-                keep_ok = True
-                if mode == "md":
-                    ha = (burst_rows[0].get("has_animal", "") or "").strip()
-                    hh = (burst_rows[0].get("has_human", "") or "").strip()
-                    keep_ok = (ha == "1" or hh == "1")
-                elif mode == "speciesnet":
-                    sp = _normalize_species(burst_rows[0].get("Species", "") or "")
-                    keep_ok = sp not in ("", "blank", "vehicle", "no cv result")
-                elif mode == "none":
-                    keep_ok = True
-
-                if keep_ok:
-                    kept_rows.append(burst_rows[0])
-
+                kept_rows.append(burst_rows[0])
                 i += 1
                 continue
 
@@ -521,39 +531,14 @@ def generate_output_csvs(
                 r["BurstCount"] = str(burst_count)
                 r["BurstIndex"] = str(idx_in_burst)
 
-            first_kept_in_burst = None
-            for r in burst_rows:
-                mode = _effective_mode({
-                    "has_animal": r.get("has_animal", ""),
-                    "has_human": r.get("has_human", ""),
-                    "species": r.get("Species", ""),
-                })
-
-                keep_ok = True
-                if mode == "md":
-                    ha = (r.get("has_animal", "") or "").strip()
-                    hh = (r.get("has_human", "") or "").strip()
-                    keep_ok = (ha == "1" or hh == "1")
-                elif mode == "speciesnet":
-                    sp = _normalize_species(r.get("Species", "") or "")
-                    keep_ok = sp not in ("", "blank", "vehicle", "no cv result")
-                elif mode == "none":
-                    keep_ok = True
-
-                if keep_ok:
-                    if first_kept_in_burst is not None and args.burst_export != "all":
-                        pass
-                    if first_kept_in_burst is None:
-                        first_kept_in_burst = r
-                    if args.burst_export == "all":
-                        kept_rows.append(r)
-
-            if args.burst_export == "first" and first_kept_in_burst is not None:
-                kept_rows.append(first_kept_in_burst)
+            if args.burst_export == "all":
+                kept_rows.extend(burst_rows)
+            else:
+                kept_rows.append(burst_rows[0])
 
             i = j
 
-        csv_path = out_dir / f"{safe_filename(camera_name)}.csv"
+        csv_path = out_dir / f"{safe_filename(camera_name)}_results.csv"
         write_csv(csv_path, kept_rows, FINAL_FIELDS)
 
         total_output += len(kept_rows)
@@ -561,13 +546,21 @@ def generate_output_csvs(
         print(f"  {camera_name}: {len(kept_rows)} images -> {csv_path}")
 
     animal_count = sum(1 for r in export_rows if (r.get("has_animal", "") or "").strip() == "1")
-    human_only_count = sum(1 for r in export_rows if (r.get("has_human", "") or "").strip() == "1")
-    species_filled = sum(1 for r in export_rows if (r.get("Species", "") or "").strip() != "")
+    human_only_count = sum(
+        1
+        for r in export_rows
+        if (r.get("has_human", "") or "").strip() == "1" and (r.get("has_animal", "") or "").strip() != "1"
+    )
+    species_filled = sum(
+        1
+        for r in export_rows
+        if (r.get("Species", "") or "").strip().lower() not in ("", "blank", "vehicle", "no cv result", "human", "unknown")
+    )
 
     print(f"\nTotal: {total_output} images across {len(rows_by_camera)} locations")
     print(f"Output directory: {out_dir}")
 
-    if (start_date or end_date or start_time or end_time):
+    if start_date or end_date or start_time or end_time:
         print(f"\nInterval checks:")
         print(f"  Flagged outside interval: {total_flagged_outside_interval}")
         print(f"  Missing date/time for check: {total_missing_datetime_for_interval}")
@@ -582,23 +575,23 @@ def generate_output_csvs(
         print(f"  Excluded human-only rows: {total_excluded_humans}")
 
     print(f"\nColumns filled automatically:")
-    print("  ✓ CameraName (from folder structure)")
-    print("  ✓ DeploymentFolder (SD card upload identifier)")
-    print("  ✓ Image# (from filename)")
-    print("  ✓ Date (from EXIF metadata)")
-    print("  ✓ Time (from EXIF metadata)")
+    print("  ✓ CameraName")
+    print("  ✓ DeploymentFolder")
+    print("  ✓ Image#")
+    print("  ✓ Date")
+    print("  ✓ Time")
 
     print(f"\nMegaDetector results:")
     print(f"  ✓ has_animal — {animal_count} animals")
-    print(f"  ✓ model_certainty — confidence scores filled")
-    print(f"  ✓ # of Individuals — detection counts filled")
+    print("  ✓ model_certainty — confidence scores filled")
+    print("  ✓ # of Individuals — detection counts filled")
 
     if species_filled > 0:
         print(f"\nSpeciesNet results:")
         print(f"  ✓ Species — {species_filled}/{total_output} classified")
     else:
         print(f"\nSpecies classification:")
-        print("  ○ Species (run SpeciesNet to fill this column)")
+        print("  ○ Species not confidently classified yet")
 
     print(f"\nManual columns:")
     print("  ○ Notes (human review)")

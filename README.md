@@ -28,6 +28,10 @@ The current browser app lives in:
 
 - Frontend: `ui/`
 - Backend: `ui/backend/`
+- Deployment assets: `docker/`
+
+This cleanup keeps the frontend and backend together under `ui/`.
+That avoids low-value path churn in static asset loading, Python imports, and deployment wiring while still separating Docker-specific files into their own folder.
 
 ### Main UI-backed features
 

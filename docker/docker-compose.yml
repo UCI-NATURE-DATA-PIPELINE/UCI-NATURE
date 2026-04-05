@@ -1,22 +1,24 @@
+name: uci-nature
+
 services:
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile.backend
+      context: ..
+      dockerfile: docker/Dockerfile.backend
     env_file:
-      - .env
+      - ../.env
     expose:
       - "8000"
     volumes:
-      - ./data:/app/data
-      - ./ui/backend/data:/app/ui/backend/data
-      - ./secrets:/app/secrets:ro
+      - ../data:/app/data
+      - ../ui/backend/data:/app/ui/backend/data
+      - ../secrets:/app/secrets:ro
     restart: unless-stopped
 
   frontend:
     build:
-      context: .
-      dockerfile: Dockerfile.frontend
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
     depends_on:
       - backend
     expose:
