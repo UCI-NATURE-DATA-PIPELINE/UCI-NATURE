@@ -38,9 +38,9 @@ Example:
 ssh -i secrets/uci-nature-key.pem ubuntu@18.218.xx.xx
 ```
 Once connected, move into the project folder:
-
+``` bash 
 cd ~/UCI-NATURE
-
+```
 How to pull the latest code
 
 Before rebuilding anything, pull the latest changes from GitHub:
@@ -78,9 +78,9 @@ docker compose restart backend frontend caddy
 How to check container status
 
 Use this to confirm all containers are running:
-
+``` bash 
 docker compose ps
-
+```
 You should see services like:
 	•	backend
 	•	frontend
