@@ -3,10 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="uci-nature-backend-base" content="">
 <title>UCI Nature — Wildlife Pipeline</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./styles.css">
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
@@ -97,7 +96,7 @@
       <!-- Step 2: Connect Drive (hidden initially) -->
       <div id="login-step2" style="display:none">
         <div class="login-section-title">Connect Google Drive</div>
-        <div class="login-section-sub">Sign in with the Google account that has access to the <strong>Wildlife Camera Photo Database</strong>. In production, the Google Cloud OAuth redirect URI should match your public domain callback, for example <strong>https://nature.example.com/api/auth/google/callback</strong>.</div>
+        <div class="login-section-sub">Sign in with the Google account that has access to the <strong>Wildlife Camera Photo Database</strong>.</div>
 
         <button class="oauth-btn" id="oauth-btn" onclick="simulateOAuth()">
           <svg width="18" height="18" viewBox="0 0 24 24">
@@ -135,7 +134,7 @@
           <div class="drive-confirm-dot"></div>
           <div class="drive-confirm-name" id="drive-confirm-name">Wildlife Camera Photo Database</div>
         </div>
-        <div class="drive-confirm-account" id="drive-confirm-account" style="margin-left:18px">julie.coffey@uci.edu · UCI Campus Reserves</div>
+        <div class="drive-confirm-account" id="drive-confirm-account" style="margin-left:18px"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="a2c8d7cecbc78cc1cdc4c4c7dbe2d7c1cb8cc7c6d7">[email&#160;protected]</a> · UCI Campus Reserves</div>
       </div>
     </div>
 
@@ -246,7 +245,7 @@
           <div class="stat-card">
             <div>
               <div class="stat-label">Total Images</div>
-              <div class="stat-value" id="stat-total-images" data-target="102847" data-format="comma">0</div>
+              <div class="stat-value" id="stat-total-images">0</div>
               <div class="stat-sub">All camera locations</div>
             </div>
             <div class="stat-icon" style="background:#EBF8FF;color:#3182CE">
@@ -256,8 +255,8 @@
           <div class="stat-card">
             <div>
               <div class="stat-label">Processed</div>
-              <div class="stat-value" id="stat-processed-images" data-target="45231" data-format="comma">0</div>
-              <div class="stat-sub" id="stat-processed-sub" style="color:#38A169">↑ 44% complete</div>
+              <div class="stat-value" id="stat-processed-images">0</div>
+              <div class="stat-sub" style="color:#38A169">↑ 44% complete</div>
             </div>
             <div class="stat-icon" style="background:#F0FFF4;color:#38A169">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -266,8 +265,8 @@
           <div class="stat-card">
             <div>
               <div class="stat-label">Animals Detected</div>
-              <div class="stat-value" id="stat-animals-detected" data-target="12847" data-format="comma">0</div>
-              <div class="stat-sub" id="stat-animals-sub">Across all species</div>
+              <div class="stat-value" id="stat-animals-detected">0</div>
+              <div class="stat-sub">Across all species</div>
             </div>
             <div class="stat-icon" style="background:#FFFBEB;color:#D69E2E">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M8 11c0-1.1.9-2 2-2s2 .9 2 2-.9 2-2 2"/><circle cx="17.5" cy="6.5" r="1"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -276,8 +275,8 @@
           <div class="stat-card">
             <div>
               <div class="stat-label">Pending Review</div>
-              <div class="stat-value" id="stat-pending-review" data-target="892" data-format="comma">0</div>
-              <div class="stat-sub" id="stat-review-sub" style="color:#D69E2E">Needs attention</div>
+              <div class="stat-value" id="stat-pending-review">0</div>
+              <div class="stat-sub" style="color:#D69E2E">Needs attention</div>
             </div>
             <div class="stat-icon" style="background:#FAF5FF;color:#805AD5">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -286,8 +285,8 @@
           <div class="stat-card">
             <div>
               <div class="stat-label">Warnings</div>
-              <div class="stat-value" id="stat-warnings" data-target="156" data-format="comma">0</div>
-              <div class="stat-sub" id="stat-warnings-sub" style="color:#E53E3E">Validation issues</div>
+              <div class="stat-value" id="stat-warnings">0</div>
+              <div class="stat-sub" style="color:#E53E3E">Validation issues</div>
             </div>
             <div class="stat-icon" style="background:#FFF5F5;color:#E53E3E">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -327,7 +326,7 @@
                 <div class="pipeline-step-inner">
                   <div class="pipeline-name">Upload<span class="pipeline-pct">100%</span></div>
                   <div class="prog-track"><div class="prog-fill" style="width:0" data-width="100%" data-delay="0"></div></div>
-                  <div class="pipeline-count">102,847 images</div>
+                  <div class="pipeline-count" id="pipeline-count-upload">-- images</div>
                 </div>
               </div>
 
@@ -339,7 +338,7 @@
                 <div class="pipeline-step-inner">
                   <div class="pipeline-name">Classify<span class="pipeline-pct">44%</span></div>
                   <div class="prog-track"><div class="prog-fill" style="width:0" data-width="44%" data-delay="160"></div></div>
-                  <div class="pipeline-count">45,231 / 102,847</div>
+                  <div class="pipeline-count" id="pipeline-count-classify">-- / --</div>
                 </div>
               </div>
 
@@ -349,7 +348,7 @@
                 <div class="pipeline-step-inner">
                   <div class="pipeline-name">Review<span class="pipeline-pct">32%</span></div>
                   <div class="prog-track"><div class="prog-fill" style="width:0" data-width="32%" data-delay="320"></div></div>
-                  <div class="pipeline-count">14,474 reviewed</div>
+                  <div class="pipeline-count">--</div>
                 </div>
               </div>
 
@@ -359,7 +358,7 @@
                 <div class="pipeline-step-inner">
                   <div class="pipeline-name">Validate<span class="pipeline-pct">20%</span></div>
                   <div class="prog-track"><div class="prog-fill" style="width:0" data-width="20%" data-delay="480"></div></div>
-                  <div class="pipeline-count">9,046 validated</div>
+                  <div class="pipeline-count">--</div>
                 </div>
               </div>
 
@@ -394,61 +393,16 @@
                   <div class="donut-sub">Success</div>
                 </div>
               </div>
-              <div style="flex:1">
-                <div class="legend-item">
-                  <div class="legend-dot" style="background:#48BB78"></div>
-                  <span class="legend-name" id="run-success-label">Success</span>
-                  <span class="legend-count" id="run-success-count">4,988</span>
-                  <span class="legend-pct" id="run-success-rate" style="color:#48BB78">95%</span>
-                </div>
-                <div class="legend-item">
-                  <div class="legend-dot" style="background:#FC8181"></div>
-                  <span class="legend-name" id="run-failure-label">Failures</span>
-                  <span class="legend-count" id="run-failure-count">12</span>
-                  <span class="legend-pct" id="run-failure-rate" style="color:#E53E3E">0.2%</span>
-                </div>
-                <div style="border-top:1px solid var(--border); margin: 10px 0 8px; padding-top:8px; font-size:12px; color:var(--muted)">
-                  <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Start Time</span><span id="run-start-time" style="color:var(--text);font-weight:500">Feb 10 · 14:30</span></div>
-                  <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Duration</span><span id="run-duration" style="color:var(--text);font-weight:500">25 min 47 s</span></div>
-                  <div style="display:flex;justify-content:space-between"><span>Throughput</span><span id="run-throughput" style="color:var(--text);font-weight:500">3.2 img / s</span></div>
-                </div>
+              <div class="run-stats-list">
+                <div class="run-stat-row"><span class="run-stat-label">Processed</span><span class="run-stat-val" id="run-success-count">--</span></div>
+                <div class="run-stat-row"><span class="run-stat-label">Success rate</span><span class="run-stat-val" id="run-success-rate">--</span></div>
+                <div class="run-stat-row"><span class="run-stat-label">Failures</span><span class="run-stat-val" id="run-failure-count">--</span></div>
               </div>
             </div>
-
             <!-- Camera locations covered -->
-            <div style="border-top:1px solid var(--border);padding-top:11px;margin-top:4px">
+            <div style="border-top:1px solid var(--border);padding-top:11px;margin-top:10px">
               <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px">Cameras Processed</div>
-              <div id="dashboard-camera-chip-list" style="display:flex;flex-wrap:wrap;gap:6px">
-                <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;background:#F0FFF4;border:1.5px solid #9AE6B4;border-radius:20px;font-size:11.5px;font-weight:600;color:#276749">
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                  Research Park
-                </span>
-                <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;background:#F0FFF4;border:1.5px solid #9AE6B4;border-radius:20px;font-size:11.5px;font-weight:600;color:#276749">
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                  Bonita Canyon 1
-                </span>
-                <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;background:#F7FAFC;border:1.5px solid var(--border);border-radius:20px;font-size:11.5px;font-weight:500;color:var(--muted)">
-                  Bonita Canyon 2
-                </span>
-                <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;background:#F0FFF4;border:1.5px solid #9AE6B4;border-radius:20px;font-size:11.5px;font-weight:600;color:#276749">
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                  Marshtrail
-                </span>
-              </div>
-            </div>
-
-            <!-- Review queue shortcut -->
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:11px;padding:10px 13px;background:#EBF8FF;border:1.5px solid #BEE3F8;border-radius:10px">
-              <div style="display:flex;align-items:center;gap:8px">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2B6CB0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                <div>
-                  <div id="dashboard-review-shortcut-title" style="font-size:12.5px;font-weight:600;color:#2B6CB0">892 images ready for review</div>
-                  <div id="dashboard-review-shortcut-sub" style="font-size:11px;color:#2C5282;margin-top:1px">Low confidence detections need manual confirmation</div>
-                </div>
-              </div>
-              <button onclick="showPage('review')" style="padding:5px 12px;background:#2B6CB0;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;white-space:nowrap;transition:background .15s" onmouseover="this.style.background='#2C5282'" onmouseout="this.style.background='#2B6CB0'">
-                Go to Review
-              </button>
+              <div id="dashboard-camera-chip-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
             </div>
           </div>
 
@@ -462,57 +416,11 @@
                   <!-- segments added by JS -->
                 </svg>
                 <div class="donut-center">
-                  <div class="donut-val" id="species-total">12,847</div>
+                  <div class="donut-val" id="species-total">--</div>
                   <div class="donut-sub" id="species-total-label">Animals</div>
                 </div>
               </div>
-              <div id="species-legend-list" style="flex:1">
-                <div class="legend-item">
-                  <div class="legend-dot" style="background:#DD6B20"></div>
-                  <span class="legend-name">Coyote</span>
-                  <span class="legend-count">4,882</span>
-                  <span class="legend-pct" style="color:#DD6B20">38%</span>
-                </div>
-                <div class="legend-item">
-                  <div class="legend-dot" style="background:#4A90D9"></div>
-                  <span class="legend-name">Raccoon</span>
-                  <span class="legend-count">3,340</span>
-                  <span class="legend-pct" style="color:#4A90D9">26%</span>
-                </div>
-                <div class="legend-item">
-                  <div class="legend-dot" style="background:#68D391"></div>
-                  <span class="legend-name">Squirrel</span>
-                  <span class="legend-count">2,312</span>
-                  <span class="legend-pct" style="color:#38A169">18%</span>
-                </div>
-                <div class="legend-item">
-                  <div class="legend-dot" style="background:#4299E1"></div>
-                  <span class="legend-name">Bird</span>
-                  <span class="legend-count">1,413</span>
-                  <span class="legend-pct" style="color:#3182CE">11%</span>
-                </div>
-                <div class="legend-item">
-                  <div class="legend-dot" style="background:#9F7AEA"></div>
-                  <span class="legend-name">Opossum</span>
-                  <span class="legend-count">642</span>
-                  <span class="legend-pct" style="color:#805AD5">5%</span>
-                </div>
-                <div class="legend-item">
-                  <div class="legend-dot" style="background:#CBD5E0"></div>
-                  <span class="legend-name">Unknown</span>
-                  <span class="legend-count">258</span>
-                  <span class="legend-pct" style="color:#718096">2%</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Human Detection Notice -->
-            <div style="display:flex;align-items:flex-start;gap:10px;margin-top:14px;padding:10px 13px;background:#FFF5F5;border:1.5px solid #FEB2B2;border-radius:10px">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E53E3E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              <div>
-                <div id="dashboard-human-title" style="font-size:12.5px;font-weight:600;color:#C53030">312 Human Detections</div>
-                <div id="dashboard-human-sub" style="font-size:11.5px;color:#742A2A;margin-top:2px;line-height:1.5">Flagged across 3 locations · Excluded from species analysis. Review in the <strong>Review</strong> step.</div>
-              </div>
+              <div id="species-legend-list" style="flex:1"></div>
             </div>
           </div>
         </div>
@@ -523,42 +431,7 @@
           <div class="card card-p">
             <div class="card-title">Camera Locations</div>
             <div id="dashboard-camera-status-list" style="display:flex;flex-direction:column;gap:8px">
-              <div class="camera-card" style="border-left:3px solid #48BB78">
-                <div class="camera-name" style="display:flex;align-items:center;gap:6px">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#48BB78" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                  Research Park
-                </div>
-                <div class="camera-stat"><span class="camera-stat-label">Images</span><span class="camera-stat-val">28,450</span></div>
-                <div class="camera-stat"><span class="camera-stat-label">Last Sync</span><span class="camera-stat-val">Feb 15, 2026</span></div>
-                <span class="camera-sync sync-ok">✓ Synced</span>
-              </div>
-              <div class="camera-card" style="border-left:3px solid #48BB78">
-                <div class="camera-name" style="display:flex;align-items:center;gap:6px">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#48BB78" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                  Bonita Canyon 1
-                </div>
-                <div class="camera-stat"><span class="camera-stat-label">Images</span><span class="camera-stat-val">24,100</span></div>
-                <div class="camera-stat"><span class="camera-stat-label">Last Sync</span><span class="camera-stat-val">Feb 14, 2026</span></div>
-                <span class="camera-sync sync-ok">✓ Synced</span>
-              </div>
-              <div class="camera-card" style="border-left:3px solid #48BB78">
-                <div class="camera-name" style="display:flex;align-items:center;gap:6px">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#48BB78" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                  Bonita Canyon 2
-                </div>
-                <div class="camera-stat"><span class="camera-stat-label">Images</span><span class="camera-stat-val">18,900</span></div>
-                <div class="camera-stat"><span class="camera-stat-label">Last Sync</span><span class="camera-stat-val">Feb 12, 2026</span></div>
-                <span class="camera-sync sync-ok">✓ Synced</span>
-              </div>
-              <div class="camera-card" style="border-left:3px solid #F6AD55">
-                <div class="camera-name" style="display:flex;align-items:center;gap:6px">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#D69E2E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                  Marshtrail
-                </div>
-                <div class="camera-stat"><span class="camera-stat-label">Images</span><span class="camera-stat-val">31,397</span></div>
-                <div class="camera-stat"><span class="camera-stat-label">Last Sync</span><span class="camera-stat-val">Feb 8, 2026</span></div>
-                <span class="camera-sync sync-pending">⚠ Pending Export</span>
-              </div>
+              <div class="empty-state" style="color:var(--muted);font-size:13px;padding:16px 0">Loading camera locations…</div>
             </div>
           </div>
 
@@ -566,36 +439,7 @@
           <div class="card card-p">
             <div class="card-title">Recent Activity</div>
             <div class="activity-list" id="dashboard-activity-list">
-              <div class="activity-item">
-                <span class="activity-badge badge-green">Export to Drive</span>
-                <span class="activity-text">Research Park CSV uploaded to Google Drive</span>
-                <span class="activity-time">2 min ago</span>
-              </div>
-              <div class="activity-item">
-                <span class="activity-badge badge-blue">Model complete</span>
-                <span class="activity-text">Batch #47 — 5,000 images processed</span>
-                <span class="activity-time">15 min ago</span>
-              </div>
-              <div class="activity-item">
-                <span class="activity-badge badge-yellow">Validation issue</span>
-                <span class="activity-text">23 images outside deployment date range</span>
-                <span class="activity-time">1 hr ago</span>
-              </div>
-              <div class="activity-item">
-                <span class="activity-badge badge-green">Upload complete</span>
-                <span class="activity-text">Research Park — 1,200 images indexed</span>
-                <span class="activity-time">2 hrs ago</span>
-              </div>
-              <div class="activity-item">
-                <span class="activity-badge badge-blue">Review saved</span>
-                <span class="activity-text">892 detections confirmed by alex@uci.edu</span>
-                <span class="activity-time">3 hrs ago</span>
-              </div>
-              <div class="activity-item">
-                <span class="activity-badge badge-yellow">Time correction</span>
-                <span class="activity-text">+1 hr offset applied to Bonita Canyon 2</span>
-                <span class="activity-time">5 hrs ago</span>
-              </div>
+              <div class="empty-state" style="color:var(--muted);font-size:13px;padding:16px 0">Loading recent activity…</div>
             </div>
           </div>
         </div>
@@ -626,11 +470,7 @@
           <!-- Summary strip -->
           <div class="upload-summary-strip">
             <div class="upload-summary-card">
-              <div class="upload-summary-val">102,847</div>
-              <div class="upload-summary-lbl">Total Images</div>
-            </div>
-            <div class="upload-summary-card">
-              <div class="upload-summary-val" style="color:#38A169">1,800</div>
+              <div class="upload-summary-val" id="upload-manual-total">--</div>
               <div class="upload-summary-lbl">This Session</div>
             </div>
             <div class="upload-summary-card">
@@ -828,7 +668,7 @@
                   </div>
                   <div style="flex:1">
                     <div class="drive-sync-banner-title" id="drive-sync-banner-title">Connected — Wildlife Camera Photo Database</div>
-                    <div class="drive-sync-banner-sub" id="drive-sync-banner-sub">julie.coffey@uci.edu · Select a folder and prepare the Drive source</div>
+                    <div class="drive-sync-banner-sub" id="drive-sync-banner-sub"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="5238273e3b377c313d3434372b1227313b7c373627">[email&#160;protected]</a> · Select a folder and prepare the Drive source</div>
                   </div>
                   <button class="drive-sync-reconnect-btn" id="drive-sync-reconnect-btn" style="display:none" onclick="reconnectDrive()">Reconnect</button>
                 </div>
@@ -1010,13 +850,11 @@
                 <span class="slider-range-label slider-range-label-low">
                   <span class="slider-range-dot slider-range-dot-low"></span>
                   Low
-                  <span class="slider-range-sub">more results, more noise</span>
                 </span>
                 <span class="slider-val-pill" id="threshold-val">80%</span>
                 <span class="slider-range-label slider-range-label-high">
                   <span class="slider-range-dot slider-range-dot-high"></span>
                   High
-                  <span class="slider-range-sub">fewer, more confident</span>
                 </span>
               </div>
             </div>
@@ -1051,7 +889,7 @@
             </div>
           </div>
 
-          <!-- Run / Stop button row — extra breathing room above divider -->
+                    <!-- Run / Stop button row — extra breathing room above divider -->
           <div style="display:flex;align-items:center;gap:12px;padding-top:18px;padding-bottom:4px;border-top:1px solid var(--border);margin-top:6px">
             <button class="run-model-btn idle" id="run-btn" onclick="toggleRunModel()">
               <span class="run-btn-icon" id="run-btn-icon">
@@ -1059,17 +897,31 @@
                   <polygon points="5 3 19 12 5 21 5 3"/>
                 </svg>
               </span>
-              <span id="run-btn-label">Run Pipeline</span>
+              <span id="run-btn-label">Run Detection &amp; Classification</span>
             </button>
-            <span style="font-size:12.5px;color:var(--muted)" id="run-ready-note">57,616 images ready to process</span>
+            <span style="font-size:12.5px;color:var(--muted)" id="run-ready-note">-- images ready to process</span>
           </div>
 
-          <!-- Progress panel — hidden until run starts -->
-          <div class="run-progress-panel" id="run-progress" style="margin-top:20px">
+
+          <!-- Drive source run button — shown when Drive is the pipeline source -->
+          <div style="display:flex;align-items:center;gap:12px;padding-top:12px;display:none" id="drive-run-row">
+            <button class="run-model-btn idle" id="drive-run-btn" onclick="toggleDriveRunModel()">
+              <span class="run-btn-icon" id="drive-run-btn-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+              </span>
+              <span id="drive-run-btn-label">Run Pipeline (Drive Source)</span>
+            </button>
+            <span style="font-size:12.5px;color:var(--muted)" id="drive-run-note"></span>
+          </div>
+
+                    <!-- Progress panel — hidden until run starts -->
+          <div class="run-progress-panel" id="run-progress" style="display:none;margin-top:20px">
             <div class="run-progress-header">
               <div class="run-progress-label">
                 <div class="proc-dot"></div>
-                <span id="run-progress-label-text">Processing images…</span>
+                Processing images…
               </div>
               <span class="run-progress-eta" id="run-eta">~18 min remaining</span>
             </div>
@@ -1078,47 +930,20 @@
             </div>
             <div class="run-stat-grid">
               <div class="run-stat-cell">
-                <div class="run-stat-cell-val" id="rs-status">Idle</div>
-                <div class="run-stat-cell-lbl">Overall Status</div>
+                <div class="run-stat-cell-val" id="rs-processed">--</div>
+                <div class="run-stat-cell-lbl">Processed</div>
               </div>
               <div class="run-stat-cell">
-                <div class="run-stat-cell-val" id="rs-step" style="font-size:14px;line-height:1.25">Waiting for a run</div>
-                <div class="run-stat-cell-lbl">Current Step</div>
+                <div class="run-stat-cell-val" id="rs-remaining">--</div>
+                <div class="run-stat-cell-lbl">Remaining</div>
               </div>
               <div class="run-stat-cell">
-                <div class="run-stat-cell-val" id="rs-discovered">—</div>
-                <div class="run-stat-cell-lbl">Discovered Images</div>
+                <div class="run-stat-cell-val">3.2</div>
+                <div class="run-stat-cell-lbl">img / sec</div>
               </div>
               <div class="run-stat-cell">
-                <div class="run-stat-cell-val" id="rs-downloaded">—</div>
-                <div class="run-stat-cell-lbl">Downloaded Images</div>
-              </div>
-            </div>
-            <div class="run-ml-progress" id="run-ml-progress">
-              <div class="run-ml-progress-head">
-                <div class="run-ml-progress-title">SpeciesNet Progress</div>
-                <div class="run-ml-progress-summary" id="run-ml-progress-summary">—</div>
-              </div>
-              <div class="run-prog-track" style="margin-bottom:0">
-                <div class="run-prog-fill" id="run-ml-progress-fill" style="width:0%"></div>
-              </div>
-              <div class="run-ml-progress-meta">
-                <div class="run-ml-progress-chip">Processed <strong id="run-ml-processed">—</strong></div>
-                <div class="run-ml-progress-chip">Total <strong id="run-ml-total">—</strong></div>
-              </div>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
-              <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:start;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#F7FAFC">
-                <div style="font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)">Current File</div>
-                <div id="run-current-file" style="font-size:12px;color:var(--text);line-height:1.5;word-break:break-word">—</div>
-              </div>
-              <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:start;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#F7FAFC">
-                <div style="font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)">Log Path</div>
-                <div id="run-log-path" style="font-size:12px;color:var(--text);line-height:1.5;word-break:break-word">—</div>
-              </div>
-              <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:start;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#FFF5F5">
-                <div style="font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#C53030">Error</div>
-                <div id="run-error-state" style="font-size:12px;color:#742A2A;line-height:1.5;word-break:break-word">—</div>
+                <div class="run-stat-cell-val" style="color:#E53E3E">12</div>
+                <div class="run-stat-cell-lbl">Failures</div>
               </div>
             </div>
           </div>
@@ -1142,13 +967,7 @@
                 <th></th>
               </tr>
             </thead>
-            <tbody id="run-history-body">
-              <tr>
-                <td colspan="7" style="color:var(--muted);padding:18px 12px">
-                  No real backend run history is available yet.
-                </td>
-              </tr>
-            </tbody>
+            <tbody id="run-history-body"></tbody>
           </table>
         </div>
 
@@ -1415,19 +1234,19 @@
         <!-- Summary strip -->
         <div class="val-summary-strip">
           <div class="val-summary-card total">
-            <div class="val-summary-val" id="val-total-records">45,231</div>
+            <div class="val-summary-val" id="val-total">--</div>
             <div class="val-summary-lbl">Total Records</div>
           </div>
           <div class="val-summary-card valid">
-            <div class="val-summary-val" id="val-valid-records">44,869</div>
+            <div class="val-summary-val" id="val-valid">--</div>
             <div class="val-summary-lbl">Valid</div>
           </div>
           <div class="val-summary-card warning">
-            <div class="val-summary-val" id="val-warning-count">310</div>
+            <div class="val-summary-val" id="val-warnings">310</div>
             <div class="val-summary-lbl">Warnings</div>
           </div>
           <div class="val-summary-card error">
-            <div class="val-summary-val" id="val-error-count">52</div>
+            <div class="val-summary-val" id="val-errors">52</div>
             <div class="val-summary-lbl">Errors</div>
           </div>
         </div>
@@ -1590,7 +1409,7 @@
               </div>
             </div>
             <div class="check-right">
-              <span class="check-badge ok">45,231 unique</span>
+              <span class="check-badge ok" id="val-badge-unique">-- unique</span>
             </div>
           </div>
 
@@ -1617,11 +1436,11 @@
               </div>
               <div>
                 <div class="check-label">ML classification complete</div>
-                <div class="check-sub" id="val-sub-unprocessed">Some images did not complete model processing</div>
+                <div class="check-sub">Some images did not complete model processing</div>
               </div>
             </div>
             <div class="check-right">
-              <span class="check-badge err" id="val-badge-unprocessed">52 unprocessed</span>
+              <span class="check-badge err">52 unprocessed</span>
               <button class="check-detail-btn" id="unproc-detail-btn" onclick="toggleUnprocPanel()">Details</button>
             </div>
           </div>
@@ -1630,8 +1449,8 @@
           <div class="unproc-panel" id="unproc-panel">
             <div class="unproc-panel-header">
               <div>
-                <div class="unproc-panel-title" id="unproc-panel-title">52 images — ML processing incomplete</div>
-                <div class="unproc-panel-sub" id="unproc-panel-sub">These images have missing or invalid model output and will not be included in the export</div>
+                <div class="unproc-panel-title">52 images — ML processing incomplete</div>
+                <div class="unproc-panel-sub">These images have missing or invalid model output and will not be included in the export</div>
               </div>
               <button class="unproc-panel-close" onclick="toggleUnprocPanel()">&#215;</button>
             </div>
@@ -1680,8 +1499,8 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D69E2E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           </div>
           <div>
-            <div class="export-status-title" id="export-status-title">2 validation issues found</div>
-            <div class="export-status-sub" id="export-status-sub">52 unprocessed images and 23 out-of-range timestamps — these records will be excluded from the export automatically</div>
+            <div class="export-status-title">2 validation issues found</div>
+            <div class="export-status-sub">52 unprocessed images and 23 out-of-range timestamps — these records will be excluded from the export automatically</div>
           </div>
           <button class="export-status-link" onclick="showPage('validate')">Review in Validate</button>
         </div>
@@ -1694,17 +1513,17 @@
           </div>
           <div class="export-summary-grid">
             <div class="export-summary-card primary">
-              <div class="export-summary-val" id="export-records-val">44,869</div>
+              <div class="export-summary-val" id="export-val-total">--</div>
               <div class="export-summary-lbl">Records to export</div>
               <div class="export-summary-sub">After all exclusions applied</div>
             </div>
             <div class="export-summary-card red">
-              <div class="export-summary-val" id="export-humans-val">75</div>
+              <div class="export-summary-val" id="export-val-human">75</div>
               <div class="export-summary-lbl">Human detections excluded</div>
               <div class="export-summary-sub">Flagged human detections removed</div>
             </div>
             <div class="export-summary-card blue">
-              <div class="export-summary-val" id="export-duplicates-val">8,462</div>
+              <div class="export-summary-val" id="export-val-burst">--</div>
               <div class="export-summary-lbl">Burst duplicates removed</div>
               <div class="export-summary-sub">Best frame per burst group kept</div>
             </div>
@@ -1712,130 +1531,9 @@
 
           <!-- Camera breakdown -->
           <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">By Camera Location</div>
-          <div id="export-folder-list">
-          <div class="export-folder-row">
-            <div class="export-folder-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2B6CB0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            </div>
-            <div style="flex:1;min-width:0">
-              <div class="export-folder-name">Research Park</div>
-              <div class="export-folder-sub">12,500 records · Last exported Feb 15, 2026</div>
-            </div>
-            <div class="export-folder-actions">
-              <span class="export-sync-badge synced">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                Synced
-              </span>
-              <button class="export-folder-view-btn" onclick="showToast('Opening Drive folder…','')">View in Drive</button>
-            </div>
-          </div>
-          <div class="export-folder-row">
-            <div class="export-folder-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2B6CB0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            </div>
-            <div style="flex:1;min-width:0">
-              <div class="export-folder-name">Bonita Canyon 1</div>
-              <div class="export-folder-sub">8,200 records · Last exported Feb 14, 2026</div>
-            </div>
-            <div class="export-folder-actions">
-              <span class="export-sync-badge synced">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                Synced
-              </span>
-              <button class="export-folder-view-btn" onclick="showToast('Opening Drive folder…','')">View in Drive</button>
-            </div>
-          </div>
-          <div class="export-folder-row">
-            <div class="export-folder-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2B6CB0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            </div>
-            <div style="flex:1;min-width:0">
-              <div class="export-folder-name">Bonita Canyon 2</div>
-              <div class="export-folder-sub">6,800 records · Last exported Feb 12, 2026</div>
-            </div>
-            <div class="export-folder-actions">
-              <span class="export-sync-badge synced">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                Synced
-              </span>
-              <button class="export-folder-view-btn" onclick="showToast('Opening Drive folder…','')">View in Drive</button>
-            </div>
-          </div>
-          <div class="export-folder-row">
-            <div class="export-folder-icon" style="background:#FFFFF0">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D69E2E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            </div>
-            <div style="flex:1;min-width:0">
-              <div class="export-folder-name">Marshtrail</div>
-              <div class="export-folder-sub">17,369 records · Not yet exported</div>
-            </div>
-            <div class="export-folder-actions">
-              <span class="export-sync-badge pending">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                Pending
-              </span>
-              <button class="export-folder-view-btn" onclick="showToast('Opening Drive folder…','')">View in Drive</button>
-            </div>
-          </div>
-          </div>
-        </div>
+          <div id="export-folder-list"></div>
 
-        <!-- ── Output Settings ── -->
-        <div class="card card-p" style="margin-bottom:14px">
-          <div style="margin-bottom:14px">
-            <div class="card-title" style="margin-bottom:2px">Output Settings</div>
-            <div style="font-size:12px;color:var(--muted)">Each export creates a new timestamped file — existing files are never overwritten</div>
-          </div>
-
-          <!-- Filename -->
-          <div style="margin-bottom:16px">
-            <label class="field-label">Output Filename</label>
-            <div class="export-filename-wrap">
-              <input class="export-filename-input" id="export-filename" type="text" value="uci_wildlife_2024_export_20260309">
-              <div class="export-filename-ext">.csv</div>
-            </div>
-            <div style="font-size:11.5px;color:var(--muted);margin-top:5px">Date suffix is added automatically. File will be saved to your connected Google Drive.</div>
-          </div>
-
-          <!-- Format -->
-          <div style="margin-bottom:0">
-            <label class="field-label">File Format</label>
-            <div class="export-format-row">
-              <div class="export-fmt-card selected" id="fmt-csv" onclick="selectFormat('csv')">
-                <div class="export-fmt-icon csv">
-                  <!-- Table / spreadsheet rows -->
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
-                </div>
-                <div>
-                  <div class="export-fmt-name">CSV</div>
-                  <div class="export-fmt-sub">Recommended · .csv</div>
-                </div>
-              </div>
-              <div class="export-fmt-card" id="fmt-xlsx" onclick="selectFormat('xlsx')">
-                <div class="export-fmt-icon xlsx">
-                  <!-- Bar chart — Excel analytics feel -->
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/><line x1="15" y1="9" x2="15" y2="21"/></svg>
-                </div>
-                <div>
-                  <div class="export-fmt-name">Excel</div>
-                  <div class="export-fmt-sub">With formatting · .xlsx</div>
-                </div>
-              </div>
-              <div class="export-fmt-card" id="fmt-json" onclick="selectFormat('json')">
-                <div class="export-fmt-icon json">
-                  <!-- Code curly braces -->
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                </div>
-                <div>
-                  <div class="export-fmt-name">JSON</div>
-                  <div class="export-fmt-sub">For developers · .json</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ── Export Options ── -->
+          <!-- ── Export Options ── -->
         <div class="card card-p" style="margin-bottom:14px">
           <div style="margin-bottom:14px">
             <div class="card-title" style="margin-bottom:2px">Export Options</div>
@@ -1848,7 +1546,7 @@
               <div class="export-option-title">Remove burst duplicates</div>
               <div class="export-option-sub">Keep only the highest-confidence image from each burst — other frames in the same group will not appear in the output</div>
             </div>
-            <span class="export-option-badge" id="export-option-duplicates-badge" style="background:#FEFCBF;color:#744210">&#8722;8,462 rows</span>
+            <span class="export-option-badge" id="badge-burst-rows" style="background:#FEFCBF;color:#744210">&#8722;8,462 rows</span>
           </div>
 
           <div class="export-option-row checked" id="opt-humans" onclick="toggleExportOption(this,'opt-humans')">
@@ -1857,7 +1555,7 @@
               <div class="export-option-title">Exclude human detections</div>
               <div class="export-option-sub">Remove images where a person was detected — recommended to protect individual privacy</div>
             </div>
-            <span class="export-option-badge" id="export-option-humans-badge" style="background:#FED7D7;color:#C53030">&#8722;75 rows</span>
+            <span class="export-option-badge" id="badge-human-rows" style="background:#FED7D7;color:#C53030">&#8722;75 rows</span>
           </div>
 
           <div class="export-option-row" id="opt-split" onclick="toggleExportOption(this,'opt-split')">
@@ -1866,7 +1564,7 @@
               <div class="export-option-title">Split output by camera location</div>
               <div class="export-option-sub">Export 4 separate files — one per camera location — instead of one combined file</div>
             </div>
-            <span class="export-option-badge" id="export-option-split-badge" style="background:#EBF8FF;color:#2B6CB0">4 files</span>
+            <span class="export-option-badge" style="background:#EBF8FF;color:#2B6CB0">4 files</span>
           </div>
         </div>
 
@@ -1966,8 +1664,8 @@
             <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;background:#F7FAFC;border:1.5px solid var(--border);border-radius:10px;margin-bottom:14px" id="export-drive-account-row">
               <div>
                 <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:3px">Output Folder</div>
-                <div id="export-output-folder-name" style="font-size:13px;font-weight:500;color:var(--text)">UCI Campus Reserves / Wildlife Pipeline / Exports</div>
-                <div id="export-output-folder-email" style="font-size:11.5px;color:var(--muted);margin-top:2px">julie.coffey@uci.edu</div>
+                <div style="font-size:13px;font-weight:500;color:var(--text)">UCI Campus Reserves / Wildlife Pipeline / Exports</div>
+                <div style="font-size:11.5px;color:var(--muted);margin-top:2px"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="472d322b2e226924282121223e0732242e69222332">[email&#160;protected]</a></div>
               </div>
               <button onclick="showToast('Folder selection coming soon — ask your admin to change the default export path','warn')" style="padding:6px 14px;background:var(--card);border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;color:var(--blue);transition:background .15s" onmouseover="this.style.background='#EBF8FF'" onmouseout="this.style.background='var(--card)'">
                 Change
@@ -1976,9 +1674,13 @@
 
             <button class="export-main-btn" id="export-main-btn" onclick="startExport()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-              Export 44,869 Records to Google Drive
+              Export -- Records to Google Drive
             </button>
-            <div class="export-main-note" id="export-main-note">File will be saved as <strong id="export-filename-preview">uci_wildlife_2024_export_20260309.csv</strong></div>
+            <div class="export-filename-wrap" style="display:flex;align-items:center;gap:0;margin-bottom:8px">
+              <input class="export-filename-input" id="export-filename" type="text" value="uci_wildlife_2024_export" oninput="syncExportFilenamePreview()" style="flex:1;border:1.5px solid var(--border);border-radius:10px 0 0 10px;padding:10px 12px;font-size:13px;font-family:'Inter',sans-serif;color:var(--text);background:var(--card);outline:none">
+              <div class="export-filename-ext" style="padding:10px 12px;border:1.5px solid var(--border);border-left:none;border-radius:0 10px 10px 0;font-size:13px;color:var(--muted);background:#F7FAFC">.csv</div>
+            </div>
+            <div class="export-main-note" id="export-main-note">File will be saved as <strong id="export-filename-preview">uci_wildlife_2024_export.csv</strong></div>
 
             <!-- Progress bar (hidden until export starts) -->
             <div class="export-progress-wrap" id="export-progress-wrap">
@@ -2003,7 +1705,7 @@
           </div>
           <div class="export-modal-title">Export with validation issues?</div>
           <div class="export-modal-body" id="export-modal-body">Your dataset has 2 unresolved issues. The affected records will be <strong>automatically excluded</strong> from the export — you will not lose data.</div>
-          <div class="export-modal-issue" id="export-modal-issue">
+          <div class="export-modal-issue">
             <strong>52 images</strong> — ML processing incomplete &nbsp;&middot;&nbsp; will be excluded<br>
             <strong>23 images</strong> — outside deployment date range &nbsp;&middot;&nbsp; will be excluded
           </div>
@@ -2023,21 +1725,23 @@
 <!-- TOAST CONTAINER -->
 <div id="toast-container"></div>
 
-<script type="module" src="./app.js?v=20260328-2"></script>
+
 <!-- ── CONFIRMATION MODAL ── -->
 <div class="confirm-modal-overlay" id="confirm-modal-overlay" onclick="closeConfirmModal(event)">
   <div class="confirm-modal">
-    <div class="confirm-modal-icon" id="modal-icon">
-      <!-- icon injected by JS -->
-    </div>
+    <div class="confirm-modal-icon" id="modal-icon"></div>
     <div class="confirm-modal-title" id="modal-title">Are you sure?</div>
-    <div class="confirm-modal-body"  id="modal-body">This action cannot be undone.</div>
+    <div class="confirm-modal-body" id="modal-body"></div>
     <div class="confirm-modal-actions">
       <button class="confirm-modal-cancel" onclick="closeConfirmModal()">Cancel</button>
-      <button class="confirm-modal-ok"     id="modal-ok-btn" onclick="confirmModalOK()">Confirm</button>
+      <button class="confirm-modal-ok" id="modal-ok-btn" onclick="confirmModalOK()">Confirm</button>
     </div>
   </div>
 </div>
 
+<!-- TOAST CONTAINER -->
+<div id="toast-container"></div>
+
+<script src="app.js" type="module"></script>
 </body>
 </html>
