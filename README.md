@@ -4,6 +4,12 @@ Automated data pipeline for processing 100,000+ wildlife camera images from UCI 
 
 Live deployed UI: [https://uci-nature-pipeline.duckdns.org](https://uci-nature-pipeline.duckdns.org)
 
+## Documentation
+
+For full setup instructions, pipeline usage, and troubleshooting, see the documentation:
+
+ https://ralkhleef.github.io/UCI-NATURE/
+
 ## Problem
 
 Current workflow relies on manual review by student interns. Images accumulate faster than they can be processed, creating a backlog of 100,000+ unprocessed images. No project funding available for cloud services.
