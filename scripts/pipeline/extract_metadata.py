@@ -6,16 +6,20 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PIL import ExifTags, Image
+try:
+    from PIL import ExifTags, Image
+except ImportError:  # pragma: no cover - environment-dependent fallback
+    ExifTags = None
+    Image = None
 
 
 OUT_CSV_DEFAULT = Path("data/outputs/metadata.csv")
 ML_OUT_DEFAULT = Path("data/outputs/ml_outputs.csv")
 
-_EXIF_TAGS = {v: k for k, v in ExifTags.TAGS.items()}
+_EXIF_TAGS = {v: k for k, v in ExifTags.TAGS.items()} if ExifTags else {}
 
 
-def _get_exif_datetime_pillow(img: Image.Image) -> str:
+def _get_exif_datetime_pillow(img) -> str:
     try:
         exif = img.getexif()
         if not exif:
@@ -126,7 +130,7 @@ def extract_metadata_from_manifest(
 
         if local_path:
             p = Path(local_path)
-            if p.exists():
+            if p.exists() and Image is not None:
                 try:
                     with Image.open(p) as img:
                         exif_dt = _get_exif_datetime_pillow(img)

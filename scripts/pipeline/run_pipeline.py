@@ -201,7 +201,17 @@ def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
         )
     )
 
-    steps.append(("Run SpeciesNet", [PYTHON, "scripts/ml/run_speciesnet.py"]))
+    steps.append(
+        (
+            "Run SpeciesNet",
+            [
+                PYTHON,
+                "scripts/ml/run_speciesnet.py",
+                "--batch_size",
+                str(args.speciesnet_batch_size),
+            ],
+        )
+    )
     steps.append(
         (
             "Postprocess SpeciesNet",
@@ -328,6 +338,12 @@ def main() -> None:
         type=int,
         default=0,
         help="Optional batch manifest size (>0 to write batches).",
+    )
+    parser.add_argument(
+        "--speciesnet_batch_size",
+        type=int,
+        default=8,
+        help="Actual SpeciesNet inference batch size.",
     )
     parser.add_argument(
         "--cache",

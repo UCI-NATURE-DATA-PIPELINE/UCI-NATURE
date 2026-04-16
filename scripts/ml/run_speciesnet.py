@@ -4,10 +4,17 @@
 
 import argparse
 import json
+import sys
 import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Iterator, Optional
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.ml.speciesnet_parsing import resolve_prediction, safe_float
 
 
 STAGING_DIR = Path("data/staging")
@@ -26,16 +33,22 @@ def count_images(directory: Path) -> int:
     return count
 
 
-def parse_prediction_label(prediction_str: str) -> str:
-    if not prediction_str or not isinstance(prediction_str, str):
-        return "unknown"
+ANIMAL_CATEGORY = {"1", "animal"}
+PERSON_CATEGORY = {"2", "human"}
+DETECTION_THRESHOLD = 0.5
 
-    parts = [p.strip() for p in prediction_str.split(";")]
-    for value in reversed(parts):
-        if value:
-            return value.lower()
 
-    return "unknown"
+def _count_detections(detections: list[dict], categories: set[str], threshold: float) -> int:
+    count = 0
+    for detection in detections or []:
+        category = str(detection.get("category", "")).lower()
+        confidence = safe_float(
+            detection.get("conf", detection.get("confidence", 0.0)),
+            0.0,
+        )
+        if category in categories and confidence >= threshold:
+            count += 1
+    return count
 
 
 @contextmanager
@@ -161,6 +174,8 @@ def run_speciesnet_model(
 
     species_counts = {}
     classified_images = 0
+    resolved_species_rows = 0
+    unresolved_animal_rows = 0
 
     if out_json.exists():
         with open(out_json, "r", encoding="utf-8") as f:
@@ -170,12 +185,26 @@ def run_speciesnet_model(
         classified_images = len(predictions)
 
         for pred in predictions:
-            prediction_str = pred.get("prediction", "")
-            label = parse_prediction_label(prediction_str)
+            detections = pred.get("detections") or []
+            has_animal = _count_detections(detections, ANIMAL_CATEGORY, DETECTION_THRESHOLD) > 0
+            has_human = _count_detections(detections, PERSON_CATEGORY, DETECTION_THRESHOLD) > 0
+            resolved = resolve_prediction(
+                pred,
+                has_animal=has_animal,
+                has_human=has_human,
+            )
+            label = resolved.get("resolved_label", "") or "unknown"
             species_counts[label] = species_counts.get(label, 0) + 1
+            if has_animal:
+                if int(resolved.get("resolved_species_level", 0)):
+                    resolved_species_rows += 1
+                else:
+                    unresolved_animal_rows += 1
 
         print(f"\n✓ SpeciesNet complete")
         print(f"  Classified: {classified_images} images")
+        print(f"  Resolved species: {resolved_species_rows}")
+        print(f"  Unresolved animal / taxon rows: {unresolved_animal_rows}")
         print(f"\n  Species found:")
         for species, count in sorted(species_counts.items(), key=lambda x: (-x[1], x[0])):
             print(f"    {species}: {count}")
@@ -184,6 +213,9 @@ def run_speciesnet_model(
         "speciesnet_json": str(out_json),
         "classified_images": classified_images,
         "species_counts": species_counts,
+        "resolved_species_rows": resolved_species_rows,
+        "unresolved_animal_rows": unresolved_animal_rows,
+        "batch_size": batch_size,
         "used_cli_adapter": False,
     }
 

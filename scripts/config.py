@@ -32,7 +32,7 @@ SERVICE_ACCOUNT_FILE = os.getenv(
 
 FOLDER_ID = os.getenv("UCI_NATURE_FOLDER_ID", "")
 OUT_DIR = os.getenv("UCI_NATURE_OUT_DIR", "data/staging")
-MAX_DOWNLOADS = _env_int("UCI_NATURE_MAX_DOWNLOADS", 200)
+MAX_DOWNLOADS = _env_int("UCI_NATURE_MAX_DOWNLOADS", 500)
 
 PUBLIC_FRONTEND_ORIGIN = _normalize_origin(
     os.getenv("UCI_NATURE_PUBLIC_FRONTEND_ORIGIN", "")

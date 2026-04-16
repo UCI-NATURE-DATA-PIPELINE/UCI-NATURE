@@ -51,7 +51,8 @@ def resolve_pipeline_staging_dir(path: Optional[Union[Path, str]] = None) -> Pat
 
 @dataclass
 class PipelineRunConfig:
-    batch_size: int = 0
+    manifest_batch_size: int = 0
+    speciesnet_batch_size: int = 8
     confidence_threshold: int = 80
     remove_burst_duplicates: bool = True
     exclude_humans: bool = True
@@ -134,7 +135,7 @@ def run_pipeline_service(
     manifest_result = build_manifest(
         staging=resolved_staging_dir,
         out=config.manifest_path,
-        batch_size=config.batch_size,
+        batch_size=config.manifest_batch_size,
     )
     manifest_path = Path(manifest_result["manifest_path"])
 
@@ -200,6 +201,7 @@ def run_pipeline_service(
     speciesnet_result = run_speciesnet_model(
         staging_dir=resolved_staging_dir,
         out_json=config.speciesnet_json_path,
+        batch_size=config.speciesnet_batch_size,
         progress_callback=speciesnet_progress_callback,
     )
 
