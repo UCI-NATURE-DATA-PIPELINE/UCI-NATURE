@@ -11,22 +11,6 @@ HUMAN_LABELS = {"human", "homo sapiens", "person"}
 VEHICLE_LABELS = {"vehicle", "car", "bike"}
 NON_ANIMAL_LABELS = BLANK_LABELS | HUMAN_LABELS | VEHICLE_LABELS
 
-NON_SPECIES_COMMON_LABELS = {
-    "animal",
-    "mammal",
-    "bird",
-    "rodent",
-    "rabbit",
-    "squirrel",
-    "deer",
-    "fox",
-    "canis species",
-    "canine family",
-    "carnivorous mammal",
-    "unknown",
-    "unknown mammal",
-}
-
 LABEL_ALIASES = {
     "canis latrans": "coyote",
     "urocyon cinereoargenteus": "fox",
@@ -60,10 +44,13 @@ LABEL_ALIASES = {
     "sciurus carolinensis": "squirrel",
     "eastern gray squirrel": "squirrel",
     "peromyscus species": "mouse",
+    "apodemus species": "mouse",
     "muridae family": "mouse",
     "cricetidae family": "mouse",
     "rodentia": "rodent",
     "canidae family": "canine",
+    "domestic cattle": "cow",
+    "bos taurus": "cow",
     "homo sapiens": "human",
 }
 
@@ -132,18 +119,20 @@ def label_from_taxonomy(raw_label: str) -> tuple[str, str]:
 
 def is_species_level(label: str, rank: str) -> bool:
     normalized = normalize_label(label)
-    if not normalized or normalized in NON_ANIMAL_LABELS or normalized == ANIMAL_UNCLASSIFIED:
+    if not normalized:
         return False
-    if rank == "species_binomial":
-        return True
-    if rank == "common":
-        return normalized not in NON_SPECIES_COMMON_LABELS
-    return False
+    if normalized in NON_ANIMAL_LABELS:
+        return False
+    if normalized in {"animal", "unknown", ANIMAL_UNCLASSIFIED}:
+        return False
+    return True
 
 
 def is_usable_taxon(label: str) -> bool:
     normalized = normalize_label(label)
-    return bool(normalized) and normalized not in (BLANK_LABELS | HUMAN_LABELS | VEHICLE_LABELS | {"animal", "unknown"})
+    return bool(normalized) and normalized not in (
+        BLANK_LABELS | HUMAN_LABELS | VEHICLE_LABELS | {"animal", "unknown"}
+    )
 
 
 def parse_prediction_label(raw_label: str) -> dict[str, Any]:
