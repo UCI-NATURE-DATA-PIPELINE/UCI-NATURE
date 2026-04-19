@@ -180,7 +180,8 @@ def run_pipeline_service(
             f"{resolved_source_dir} not found. Place images in {resolved_source_dir} before starting the pipeline."
         )
 
-    threshold = max(0.0, min(1.0, float(config.confidence_threshold) / 100.0))
+    count_threshold = max(0.0, min(1.0, 0.5))
+    presence_threshold = min(count_threshold, 0.15)
     burst_export = "first" if config.remove_burst_duplicates else config.burst_export
     started = time.time()
 
@@ -251,7 +252,9 @@ def run_pipeline_service(
             "started_at": _timestamp_from_epoch(started),
             "finished_at": _timestamp_from_epoch(started + elapsed),
             "elapsed_seconds": round(elapsed, 2),
-            "threshold_used": threshold,
+            "threshold_used": count_threshold,
+            "presence_threshold_used": presence_threshold,
+            "count_threshold_used": count_threshold,
             "skipped": True,
             "steps": {
                 "manifest": manifest_result,
@@ -270,10 +273,15 @@ def run_pipeline_service(
         percent=28,
         message="Reading EXIF metadata from source images",
     )
+
     metadata_exif_result = extract_metadata_from_manifest(
-        manifest_path=process_manifest_path,
-        out_path=config.metadata_path,
-        merge_ml=False,
+    manifest_path=process_manifest_path,
+    out_path=config.metadata_path,
+    merge_ml=False,
+    )
+    print(
+    f"Metadata extraction complete: "
+    f"{metadata_exif_result.get('rows_written', 0)} rows -> {config.metadata_path}"
     )
 
     print("\n" + "=" * 80)
@@ -347,10 +355,12 @@ def run_pipeline_service(
         message="Converting SpeciesNet output into pipeline CSV results",
     )
     ml_outputs_result = run_speciesnet(
-        manifest_csv=process_manifest_path,
-        speciesnet_json=config.speciesnet_json_path,
-        out_csv=config.ml_outputs_path,
-        threshold=threshold,
+    manifest_csv=process_manifest_path,
+    speciesnet_json=config.speciesnet_json_path,
+    out_csv=config.ml_outputs_path,
+    threshold=count_threshold,
+    presence_threshold=presence_threshold,
+    count_threshold=count_threshold,
     )
 
     print("\n" + "=" * 80)
@@ -426,7 +436,9 @@ def run_pipeline_service(
         "started_at": _timestamp_from_epoch(started),
         "finished_at": _timestamp_from_epoch(started + elapsed),
         "elapsed_seconds": round(elapsed, 2),
-        "threshold_used": threshold,
+        "threshold_used": count_threshold,
+        "presence_threshold_used": presence_threshold,
+        "count_threshold_used": count_threshold,
         "steps": steps,
         "notes": notes,
     }

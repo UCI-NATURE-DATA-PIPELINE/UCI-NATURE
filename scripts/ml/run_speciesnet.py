@@ -75,11 +75,6 @@ def _emit_speciesnet_progress(
         "percentage": percentage,
         "status_text": status_text,
     }
-    print(
-        "SPECIESNET_PROGRESS "
-        + json.dumps(payload, ensure_ascii=False, sort_keys=True),
-        flush=True,
-    )
     if not progress_callback:
         return
     try:

@@ -143,6 +143,20 @@ def _normalize_species(value: str) -> str:
         text = text.replace("  ", " ")
     return text.replace(" ", "_") if text == "animal unclassified" else text
 
+def _display_species_name(species: str) -> tuple[str, str]:
+    normalized = _normalize_species(species)
+
+    if normalized in {"eastern cottontail", "european rabbit", "rabbit"}:
+        return "rabbit", ""
+
+    if normalized in {"northern raccoon", "raccoon"}:
+        return "raccoon", ""
+
+    if normalized == "wild boar":
+        return "coyote", "raw_model_label=wild boar; display_species_overridden_to=coyote"
+
+    return normalized, ""
+
 
 def _parse_bool(value) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "y"}
@@ -568,6 +582,10 @@ def generate_output_csvs(
 
             for record in visible_species_records:
                 species = _normalize_species(record.get("species", ""))
+                display_species, species_note = _display_species_name(species)
+                if display_species:
+                    species = display_species
+
                 species_level = bool(record.get("species_level"))
                 row_bucket = _classify_row(
                     has_animal=has_animal,
@@ -582,15 +600,22 @@ def generate_output_csvs(
                     species = "human"
                 elif row_bucket == "animal_unclassified" and not species:
                     species = ANIMAL_UNCLASSIFIED
-
+                
                 secondary_species = ""
                 if multiple_species:
-                    others = [
-                        _normalize_species(other.get("species", ""))
-                        for other in visible_species_records
-                        if _normalize_species(other.get("species", "")) != species
-                    ]
-                    secondary_species = "; ".join(other for other in others if other)
+                    other_display_species = []
+                    for other in visible_species_records:
+                        other_species = _normalize_species(other.get("species", ""))
+                        other_display, _ = _display_species_name(other_species)
+                        if other_display and other_display != species:
+                            other_display_species.append(other_display)
+
+                    seen = []
+                    for item in other_display_species:
+                        if item not in seen:
+                            seen.append(item)
+
+                    secondary_species = "; ".join(seen)
 
                 count_value = record.get("count") or metadata_row.get("count") or ""
                 if not count_value and row_bucket in {"resolved_species", "animal_unclassified"}:
@@ -625,7 +650,7 @@ def generate_output_csvs(
                     "PredictionSource": record.get("prediction_source", ""),
                     "ReviewStatus": review_status,
                     "ReviewReason": review_reason,
-                    "Notes": notes_value,
+                    "Notes": "; ".join(part for part in [notes_value, species_note] if part),
                     "_image_key": image_key,
                     "_timestamp": _parse_row_dt(date_value, time_value),
                 }

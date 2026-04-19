@@ -38,6 +38,8 @@ SUMMARY_JSON = LOG_DIR / "ml_summary.json"
 ANIMAL_CATEGORY = {"1", "animal"}
 PERSON_CATEGORY = {"2", "human"}
 DEFAULT_THRESHOLD = 0.5
+DEFAULT_PRESENCE_THRESHOLD = 0.15
+DEFAULT_COUNT_THRESHOLD = 0.5
 
 
 def _normalize_path(path_value: str) -> str:
@@ -164,6 +166,19 @@ def _max_detection_conf(detections: list[dict], categories: set[str], threshold:
     return best
 
 
+def _max_detection_conf_any(detections: list[dict], categories: set[str]) -> float:
+    best = 0.0
+    for detection in detections or []:
+        category = str(detection.get("category", "")).lower()
+        confidence = safe_float(
+            detection.get("conf", detection.get("confidence", 0.0)),
+            0.0,
+        )
+        if category in categories and confidence > best:
+            best = confidence
+    return best
+
+
 def _deduplicate_rows_by_file_id(rows: list[dict]) -> dict[str, dict]:
     deduped: dict[str, dict] = {}
     for row in rows:
@@ -171,6 +186,18 @@ def _deduplicate_rows_by_file_id(rows: list[dict]) -> dict[str, dict]:
         if not file_id:
             continue
         if file_id not in deduped:
+            deduped[file_id] = row
+            continue
+
+        current_has_animal = int(safe_float(deduped[file_id].get("has_animal", 0), 0.0))
+        new_has_animal = int(safe_float(row.get("has_animal", 0), 0.0))
+        if new_has_animal > current_has_animal:
+            deduped[file_id] = row
+            continue
+
+        current_species_level = int(safe_float(deduped[file_id].get("species_level", 0), 0.0))
+        new_species_level = int(safe_float(row.get("species_level", 0), 0.0))
+        if new_species_level > current_species_level:
             deduped[file_id] = row
             continue
 
@@ -232,10 +259,6 @@ def _build_species_records(
     if not species:
         return ""
 
-    # The current SpeciesNet JSON exposes image-level classifier rankings, not
-    # per-detection species labels. We therefore preserve a structured list with
-    # one record today, and make_output.py is prepared to expand multiple rows
-    # once a future model/output format supplies multiple labeled species.
     records = [
         {
             "species": species,
@@ -250,9 +273,19 @@ def _build_species_records(
     return json.dumps(records, ensure_ascii=False)
 
 
-def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, threshold: float) -> dict:
+def run_speciesnet(
+    manifest_csv: Path,
+    speciesnet_json: Path,
+    out_csv: Path,
+    threshold: float,
+    presence_threshold: float | None = None,
+    count_threshold: float | None = None,
+) -> dict:
     if not speciesnet_json.exists():
         raise FileNotFoundError(f"SpeciesNet results not found: {speciesnet_json}")
+
+    presence_threshold = threshold if presence_threshold is None else presence_threshold
+    count_threshold = threshold if count_threshold is None else count_threshold
 
     manifest_indexes = _read_manifest_indexes(manifest_csv)
 
@@ -281,10 +314,22 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
             continue
 
         detections = prediction.get("detections") or []
-        animal_count = _count_detections(detections, ANIMAL_CATEGORY, threshold)
-        human_count = _count_detections(detections, PERSON_CATEGORY, threshold)
-        has_animal = 1 if animal_count > 0 else 0
-        has_human = 1 if human_count > 0 else 0
+
+        animal_presence_count = _count_detections(
+            detections,
+            ANIMAL_CATEGORY,
+            presence_threshold,
+        )
+        human_presence_count = _count_detections(
+            detections,
+            PERSON_CATEGORY,
+            presence_threshold,
+        )
+        animal_count = _count_detections(detections, ANIMAL_CATEGORY, count_threshold)
+        human_count = _count_detections(detections, PERSON_CATEGORY, count_threshold)
+
+        has_animal = 1 if animal_presence_count > 0 else 0
+        has_human = 1 if human_presence_count > 0 else 0
 
         resolved = resolve_prediction(
             prediction,
@@ -327,19 +372,30 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
         species = resolved.get("resolved_label", "")
         species_level = int(bool(resolved.get("resolved_species_level")))
         model_certainty = safe_float(resolved.get("resolved_score", 0.0), 0.0)
-        row_count = animal_count if has_animal else human_count
+
+        presence_row_count = animal_presence_count if has_animal else human_presence_count
+        count_row_count = animal_count if has_animal else human_count
+        row_count = count_row_count if count_row_count > 0 else presence_row_count
 
         if has_human == 1 and has_animal == 0:
             species = "human"
             species_level = 0
             model_certainty = max(
                 model_certainty,
-                _max_detection_conf(detections, PERSON_CATEGORY, threshold),
+                _max_detection_conf(detections, PERSON_CATEGORY, presence_threshold),
+                _max_detection_conf_any(detections, PERSON_CATEGORY),
             )
 
         if has_animal == 1 and not species:
             species = ANIMAL_UNCLASSIFIED
             species_level = 0
+
+        if has_animal == 1:
+            model_certainty = max(
+                model_certainty,
+                _max_detection_conf(detections, ANIMAL_CATEGORY, presence_threshold),
+                _max_detection_conf_any(detections, ANIMAL_CATEGORY),
+            )
 
         rows.append(
             {
@@ -418,6 +474,8 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
         "human_only_rows": human_rows,
         "blank_or_vehicle_rows": blank_rows,
         "threshold": threshold,
+        "presence_threshold": presence_threshold,
+        "count_threshold": count_threshold,
         "out_csv": str(out_csv),
         "unmatched_csv": str(UNMATCHED_CSV),
     }
@@ -446,6 +504,9 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
     print(f"    Animal unclassified: {animal_unclassified_rows}")
     print(f"    Humans only: {human_rows}")
     print(f"    Blank/vehicle: {blank_rows}")
+    print(f"\n  Thresholds:")
+    print(f"    Presence threshold: {presence_threshold}")
+    print(f"    Count threshold: {count_threshold}")
     print("\n  Species / taxon breakdown:")
     for species, count in sorted(species_counts.items(), key=lambda item: (-item[1], item[0])):
         print(f"    {species}: {count}")
@@ -453,9 +514,19 @@ def run_speciesnet(manifest_csv: Path, speciesnet_json: Path, out_csv: Path, thr
     return summary
 
 
-def run_megadetector(manifest_csv: Path, md_json: Path, out_csv: Path, threshold: float) -> dict:
+def run_megadetector(
+    manifest_csv: Path,
+    md_json: Path,
+    out_csv: Path,
+    threshold: float,
+    presence_threshold: float | None = None,
+    count_threshold: float | None = None,
+) -> dict:
     if not md_json.exists():
         raise FileNotFoundError(f"MegaDetector results not found: {md_json}")
+
+    presence_threshold = threshold if presence_threshold is None else presence_threshold
+    count_threshold = threshold if count_threshold is None else count_threshold
 
     manifest_indexes = _read_manifest_indexes(manifest_csv)
 
@@ -485,13 +556,21 @@ def run_megadetector(manifest_csv: Path, md_json: Path, out_csv: Path, threshold
             continue
 
         detections = image.get("detections") or []
-        animal_count = _count_detections(detections, ANIMAL_CATEGORY, threshold)
-        human_count = _count_detections(detections, PERSON_CATEGORY, threshold)
-        animal_conf = _max_detection_conf(detections, ANIMAL_CATEGORY, threshold)
-        human_conf = _max_detection_conf(detections, PERSON_CATEGORY, threshold)
+        animal_presence_count = _count_detections(detections, ANIMAL_CATEGORY, presence_threshold)
+        human_presence_count = _count_detections(detections, PERSON_CATEGORY, presence_threshold)
+        animal_count = _count_detections(detections, ANIMAL_CATEGORY, count_threshold)
+        human_count = _count_detections(detections, PERSON_CATEGORY, count_threshold)
+        animal_conf = max(
+            _max_detection_conf(detections, ANIMAL_CATEGORY, presence_threshold),
+            _max_detection_conf_any(detections, ANIMAL_CATEGORY),
+        )
+        human_conf = max(
+            _max_detection_conf(detections, PERSON_CATEGORY, presence_threshold),
+            _max_detection_conf_any(detections, PERSON_CATEGORY),
+        )
 
-        has_animal = 1 if animal_count > 0 else 0
-        has_human = 1 if human_count > 0 else 0
+        has_animal = 1 if animal_presence_count > 0 else 0
+        has_human = 1 if human_presence_count > 0 else 0
 
         if has_animal == 0 and has_human == 0:
             rows.append(
@@ -521,7 +600,9 @@ def run_megadetector(manifest_csv: Path, md_json: Path, out_csv: Path, threshold
 
         species = "human" if has_human and not has_animal else ANIMAL_UNCLASSIFIED
         model_certainty = max(animal_conf, human_conf)
-        row_count = animal_count if has_animal else human_count
+        presence_row_count = animal_presence_count if has_animal else human_presence_count
+        count_row_count = animal_count if has_animal else human_count
+        row_count = count_row_count if count_row_count > 0 else presence_row_count
 
         rows.append(
             {
@@ -588,6 +669,8 @@ def run_megadetector(manifest_csv: Path, md_json: Path, out_csv: Path, threshold
         "human_only_rows": human_rows,
         "blank_or_vehicle_rows": blank_rows,
         "threshold": threshold,
+        "presence_threshold": presence_threshold,
+        "count_threshold": count_threshold,
         "out_csv": str(out_csv),
         "unmatched_csv": str(UNMATCHED_CSV),
     }
@@ -640,7 +723,19 @@ def main():
         "--threshold",
         type=float,
         default=DEFAULT_THRESHOLD,
-        help="Detection confidence threshold.",
+        help="Legacy/shared detection threshold. Used for both presence and count unless overridden.",
+    )
+    parser.add_argument(
+        "--presence_threshold",
+        type=float,
+        default=DEFAULT_PRESENCE_THRESHOLD,
+        help="Lower threshold used to decide whether an image contains an animal or human.",
+    )
+    parser.add_argument(
+        "--count_threshold",
+        type=float,
+        default=DEFAULT_COUNT_THRESHOLD,
+        help="Threshold used when counting detections for animal_count and human_count.",
     )
     args = parser.parse_args()
 
@@ -653,6 +748,8 @@ def main():
             speciesnet_json=Path(args.speciesnet_json),
             out_csv=out_path,
             threshold=args.threshold,
+            presence_threshold=args.presence_threshold,
+            count_threshold=args.count_threshold,
         )
     else:
         run_megadetector(
@@ -660,6 +757,8 @@ def main():
             md_json=Path(args.megadetector_json),
             out_csv=out_path,
             threshold=args.threshold,
+            presence_threshold=args.presence_threshold,
+            count_threshold=args.count_threshold,
         )
 
 
