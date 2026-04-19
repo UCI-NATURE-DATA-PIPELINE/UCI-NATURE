@@ -1,14 +1,14 @@
-from typing import Optional
-# scripts/pipeline/run_pipeline.py
+from __future__ import annotations
 
 import argparse
-import csv
+import importlib.util
 import os
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -16,14 +16,24 @@ if str(REPO_ROOT) not in sys.path:
 
 os.chdir(REPO_ROOT)
 
-from ui.backend.services.pipeline_service import (  # noqa: E402
-    PipelineRunConfig as DirectPipelineConfig,
+from scripts.pipeline.pipeline_service import (  # noqa: E402
+    PipelineRunConfig,
+    ensure_python_311,
+    resolve_pipeline_staging_dir,
     run_pipeline_service,
 )
 
 PYTHON = sys.executable
 STAGING_DIR = Path("data/staging")
-STAGING_BACKUP = Path("data/staging_full_backup")
+
+
+def resolve_repo_path(path_value: Optional[str]) -> Optional[Path]:
+    if not path_value:
+        return None
+    path = Path(path_value).expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    return (REPO_ROOT / path).resolve()
 
 
 def parse_id_list(value: Optional[str]) -> list[str]:
@@ -51,236 +61,145 @@ def infer_index_path(args: argparse.Namespace) -> str:
     return "data/outputs/drive_index.csv"
 
 
-def ensure_python_311() -> None:
-    if sys.version_info[:2] != (3, 11):
-        raise RuntimeError(
-            "This pipeline must be run with Python 3.11 to match dependencies. "
-            f"Current Python: {sys.version}"
-        )
-
-
 def run_step(name: str, cmd: list[str]) -> None:
-    print("\n" + "=" * 80)
-    print(f"STEP: {name}")
-    print("CMD:", " ".join(cmd))
-    print("=" * 80)
-    res = subprocess.run(cmd, text=True)
+    print("\n" + "=" * 80, flush=True)
+    print(f"STEP: {name}", flush=True)
+    print("CMD:", " ".join(cmd), flush=True)
+    print("=" * 80, flush=True)
+    child_env = os.environ.copy()
+    child_env.setdefault("PYTHONUNBUFFERED", "1")
+    res = subprocess.run(cmd, text=True, cwd=str(REPO_ROOT), env=child_env)
     if res.returncode != 0:
         raise RuntimeError(f"Step failed: {name} (exit code {res.returncode})")
 
 
-def copy_staging_backup() -> None:
-    if not STAGING_DIR.exists():
-        return
-    STAGING_BACKUP.parent.mkdir(parents=True, exist_ok=True)
-    if STAGING_BACKUP.exists():
-        shutil.rmtree(STAGING_BACKUP)
-    shutil.copytree(STAGING_DIR, STAGING_BACKUP)
+def warn_missing_dependencies(args: argparse.Namespace) -> None:
+    if importlib.util.find_spec("PIL") is None:
+        print(
+            "WARNING: Pillow is not installed in this Python environment; "
+            "extract_metadata.py will write metadata.csv but EXIF/dimensions will be blank.",
+            flush=True,
+        )
+
+    if importlib.util.find_spec("speciesnet") is None:
+        print(
+            "WARNING: speciesnet is not installed in this Python environment; "
+            "the pipeline will fail at the SpeciesNet step until that dependency is installed.",
+            flush=True,
+        )
+
+    if args.mode == "auto" and importlib.util.find_spec("googleapiclient") is None:
+        print(
+            "WARNING: googleapiclient is not installed in this Python environment; "
+            "auto-mode Drive indexing/downloading will fail until that dependency is installed.",
+            flush=True,
+        )
 
 
-def restore_staging_backup() -> None:
-    if not STAGING_BACKUP.exists():
-        return
-    if STAGING_DIR.exists():
-        shutil.rmtree(STAGING_DIR)
-    shutil.copytree(STAGING_BACKUP, STAGING_DIR)
+def run_pipeline_direct(config: Optional[PipelineRunConfig] = None) -> dict:
+    return run_pipeline_service(config or PipelineRunConfig())
 
 
-def manifest_has_rows(path: str) -> bool:
-    p = Path(path)
-    if not p.exists():
-        return False
-    try:
-        with p.open("r", newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for _ in reader:
-                return True
-    except Exception:
-        return False
-    return False
-
-
-def run_pipeline_direct(config: Optional[DirectPipelineConfig] = None) -> dict:
-    return run_pipeline_service(config or DirectPipelineConfig())
-
-
-def resolve_manifest_to_process(args: argparse.Namespace) -> str:
-    manifest_to_process = (
-        args.new_manifest
-        if (args.mode == "auto" and args.use_new_manifest_for_outputs)
-        else "data/outputs/manifest.csv"
-    )
-    if (
-        args.mode == "auto"
-        and args.use_new_manifest_for_outputs
-        and not manifest_has_rows(manifest_to_process)
-    ):
-        manifest_to_process = "data/outputs/manifest.csv"
-    return manifest_to_process
-
-
-def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
-    steps: list[tuple[str, list[str]]] = []
+def resolve_source_root(args: argparse.Namespace) -> tuple[str, Path]:
+    default_staging = resolve_pipeline_staging_dir(STAGING_DIR)
 
     if args.mode == "auto":
-        if args.index:
-            # Skip indexing if user explicitly provided an existing index
-            download_index_path = args.index
-        else:
-            index_cmd = [PYTHON, "scripts/pipeline/build_index.py"]
-            if args.drive_root:
-                index_cmd += ["--drive_root", args.drive_root]
-            if args.start_folders:
-                index_cmd += ["--start_folders", args.start_folders]
-            if args.out_index:
-                index_cmd += ["--out", args.out_index]
-            if args.per_folder:
-                index_cmd += ["--per_folder"]
-            if args.resume:
-                index_cmd += ["--resume"]
-            if args.max_files is not None:
-                index_cmd += ["--max_files", str(args.max_files)]
+        return "google_drive", default_staging
 
-            steps.append(("Index Drive", index_cmd))
-            download_index_path = infer_index_path(args)
+    if args.mode == "staging":
+        source_root = resolve_repo_path(args.folder) or default_staging
+        if not source_root.exists():
+            raise FileNotFoundError(f"Staging folder does not exist: {source_root}")
+        return "existing_staging", source_root
 
-        download_cmd = [
-            PYTHON,
-            "scripts/pipeline/download_drive.py",
-            "--index",
-            download_index_path,
-        ]
+    if not args.folder:
+        raise ValueError("--folder is required in manual mode.")
+
+    source_root = resolve_repo_path(args.folder)
+    if source_root is None or not source_root.exists():
+        raise FileNotFoundError(f"Folder does not exist: {args.folder}")
+
+    if source_root.resolve() == default_staging.resolve():
+        return "existing_staging", source_root
+
+    return "direct_local_folder", source_root
+
+
+def prepare_google_drive_source(args: argparse.Namespace) -> Path:
+    index_path = infer_index_path(args)
+
+    if not args.index:
+        index_cmd = [PYTHON, "scripts/pipeline/build_index.py"]
+        if args.drive_root:
+            index_cmd += ["--drive_root", args.drive_root]
+        if args.start_folders:
+            index_cmd += ["--start_folders", args.start_folders]
+        if args.out_index:
+            index_cmd += ["--out", args.out_index]
+        if args.per_folder:
+            index_cmd += ["--per_folder"]
         if args.resume:
-            download_cmd += ["--resume"]
-        if args.max_downloads is not None:
-            download_cmd += ["--max_downloads", str(args.max_downloads)]
+            index_cmd += ["--resume"]
+        if args.max_files is not None:
+            index_cmd += ["--max_files", str(args.max_files)]
+        run_step("Index Drive", index_cmd)
 
-        steps.append(("Download Images", download_cmd))
-
-    if args.mode == "auto":
-        steps.append(
-            (
-                "Create Manifest (new-only)",
-                [
-                    PYTHON,
-                    "scripts/pipeline/make_manifest.py",
-                    "--cache",
-                    args.cache,
-                    "--new_out",
-                    args.new_manifest,
-                    "--write_new_only",
-                    "--batch_size",
-                    str(args.batch_size),
-                ],
-            )
-        )
-    else:
-        steps.append(
-            (
-                "Create Manifest",
-                [
-                    PYTHON,
-                    "scripts/pipeline/make_manifest.py",
-                    "--batch_size",
-                    str(args.batch_size),
-                ],
-            )
-        )
-
-    manifest_to_process = resolve_manifest_to_process(args)
-
-    steps.append(
-        (
-            "Extract Metadata (EXIF)",
-            [
-                PYTHON,
-                "scripts/pipeline/extract_metadata.py",
-                "--manifest",
-                manifest_to_process,
-            ],
-        )
-    )
-
-    steps.append(
-        (
-            "Run SpeciesNet",
-            [
-                PYTHON,
-                "scripts/ml/run_speciesnet.py",
-                "--batch_size",
-                str(args.speciesnet_batch_size),
-            ],
-        )
-    )
-    steps.append(
-        (
-            "Postprocess SpeciesNet",
-            [
-                PYTHON,
-                "scripts/ml/postprocess_speciesnet.py",
-                "--burst_window",
-                str(args.ml_burst_window),
-            ],
-        )
-    )
-    steps.append(
-        (
-            "Parse ML Results",
-            [PYTHON, "scripts/ml/run_inference.py", "--provider", "speciesnet"],
-        )
-    )
-
-    # Re-run metadata after ml_outputs.csv exists so metadata.csv includes merged ML fields.
-    steps.append(
-        (
-            "Extract Metadata (merge ML)",
-            [
-                PYTHON,
-                "scripts/pipeline/extract_metadata.py",
-                "--manifest",
-                manifest_to_process,
-            ],
-        )
-    )
-
-    output_cmd = [
+    download_cmd = [
         PYTHON,
-        "scripts/pipeline/make_output.py",
-        "--manifest",
-        manifest_to_process,
-        "--metadata",
-        "data/outputs/metadata.csv",
-        "--drive_index",
-        infer_index_path(args),
-        "--out_dir",
-        "data/outputs/by_location",
-        "--burst_seconds",
-        str(args.burst_seconds),
-        "--burst_export",
-        args.burst_export,
+        "scripts/pipeline/download_drive.py",
+        "--index",
+        index_path,
     ]
+    if args.resume:
+        download_cmd += ["--resume"]
+    if args.max_downloads is not None:
+        download_cmd += ["--max_downloads", str(args.max_downloads)]
+    run_step("Download Images", download_cmd)
 
-    if args.exclude_humans:
-        output_cmd += ["--exclude_humans"]
+    resolved_index_path = resolve_repo_path(index_path)
+    if resolved_index_path is None:
+        raise RuntimeError("Unable to resolve drive index path.")
+    return resolved_index_path
 
-    steps.append(("Generate Output CSVs", output_cmd))
 
-    if args.upload:
-        upload_cmd = [
-            PYTHON,
-            "scripts/drive_upload/upload_to_drive.py",
-            "--mode",
-            "dynamic",
-        ]
-        if args.overwrite:
-            upload_cmd += ["--overwrite"]
-        if args.upload_as_csv:
-            upload_cmd += ["--as-csv"]
-        if args.legacy_map:
-            upload_cmd += ["--legacy-map", args.legacy_map]
-        steps.append(("Upload Results to Drive", upload_cmd))
+def resolve_drive_index_for_run(
+    args: argparse.Namespace,
+    source_mode: str,
+    source_root: Path,
+) -> Optional[Path]:
+    if source_mode == "google_drive":
+        return resolve_repo_path(infer_index_path(args))
 
-    return steps
+    if source_mode == "existing_staging":
+        if args.index:
+            return resolve_repo_path(args.index)
+
+        default_staging = resolve_pipeline_staging_dir(STAGING_DIR)
+        candidate = resolve_repo_path(infer_index_path(args))
+        if (
+            source_root.resolve() == default_staging.resolve()
+            and candidate is not None
+            and candidate.exists()
+        ):
+            return candidate
+
+    return None
+
+
+def run_upload_step(args: argparse.Namespace) -> None:
+    upload_cmd = [
+        PYTHON,
+        "scripts/drive_upload/upload_to_drive.py",
+        "--mode",
+        "dynamic",
+    ]
+    if args.overwrite:
+        upload_cmd += ["--overwrite"]
+    if args.upload_as_csv:
+        upload_cmd += ["--as-csv"]
+    if args.legacy_map:
+        upload_cmd += ["--legacy-map", args.legacy_map]
+    run_step("Upload Results to Drive", upload_cmd)
 
 
 def main() -> None:
@@ -289,13 +208,20 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         default="auto",
-        choices=["auto", "manual"],
-        help="Auto: index+download+process NEW images with caching. Manual: process selected folder only.",
+        choices=["auto", "manual", "staging"],
+        help=(
+            "auto: Google Drive index+download flow; "
+            "manual: process a direct local folder path; "
+            "staging: process an existing staging folder without copying."
+        ),
     )
     parser.add_argument(
         "--folder",
         default=None,
-        help="Manual mode only: local folder path of images to stage.",
+        help=(
+            "Source folder for manual mode, or optional staging folder path for staging mode. "
+            "Manual mode now processes the provided folder directly."
+        ),
     )
 
     parser.add_argument("--drive_root", default=None, help="Drive root folder ID (auto mode).")
@@ -353,24 +279,24 @@ def main() -> None:
     parser.add_argument(
         "--new_manifest",
         default="data/outputs/manifest_new.csv",
-        help="Output path for new-only manifest.",
+        help="Output path for the auto-mode new-only manifest.",
     )
     parser.add_argument(
         "--use_new_manifest_for_outputs",
         action="store_true",
-        help="Use new-only manifest for metadata+output steps (falls back if empty).",
+        help="Legacy no-op. Auto mode now always processes the new-only manifest when rows exist.",
     )
 
     parser.add_argument(
         "--ml_burst_window",
         type=int,
-        default=300,
+        default=15,
         help="Burst window seconds for SpeciesNet postprocess.",
     )
     parser.add_argument(
         "--burst_seconds",
         type=int,
-        default=300,
+        default=15,
         help="Burst duration seconds for output.",
     )
     parser.add_argument(
@@ -410,38 +336,51 @@ def main() -> None:
 
     ensure_python_311()
     os.chdir(REPO_ROOT)
+    print(f"Python executable: {PYTHON}", flush=True)
+    print(f"Working directory: {REPO_ROOT}", flush=True)
+    warn_missing_dependencies(args)
 
-    if args.mode == "manual":
-        if not args.folder:
-            raise ValueError("--folder is required in manual mode.")
-        src = Path(args.folder)
-        if not src.exists():
-            raise FileNotFoundError(f"Folder does not exist: {src}")
+    source_mode, source_root = resolve_source_root(args)
+    print(f"Resolved source mode: {source_mode}", flush=True)
+    print(f"Resolved source root: {source_root}", flush=True)
 
-        copy_staging_backup()
+    drive_index_path = (
+        prepare_google_drive_source(args)
+        if source_mode == "google_drive"
+        else resolve_drive_index_for_run(args, source_mode, source_root)
+    )
 
-        STAGING_DIR.mkdir(parents=True, exist_ok=True)
-        for p in src.glob("*"):
-            if p.is_file():
-                shutil.copy2(p, STAGING_DIR / p.name)
+    config = PipelineRunConfig(
+        manifest_batch_size=args.batch_size,
+        speciesnet_batch_size=args.speciesnet_batch_size,
+        exclude_humans=args.exclude_humans,
+        ml_burst_window=args.ml_burst_window,
+        burst_seconds=args.burst_seconds,
+        burst_export=args.burst_export,
+        staging_dir=source_root,
+        drive_index_path=drive_index_path,
+        cache_path=Path(args.cache),
+        new_manifest_path=Path(args.new_manifest),
+        process_new_only=(source_mode == "google_drive"),
+        update_cache_on_success=(source_mode == "google_drive"),
+    )
 
-    steps = build_steps(args)
     start = time.time()
-
-    try:
-        for name, cmd in steps:
-            run_step(name, cmd)
-    finally:
-        if args.mode == "manual":
-            restore_staging_backup()
-
+    result = run_pipeline_service(config)
     elapsed = time.time() - start
     print(f"\nDONE in {elapsed / 60:.1f} minutes")
 
-    if args.mode != "manual":
-        if STAGING_DIR.exists():
-            shutil.rmtree(STAGING_DIR)
-            print(f"Cleared {STAGING_DIR} (outputs preserved in data/outputs/)")
+    if args.upload and not result.get("skipped"):
+        run_upload_step(args)
+
+    if source_mode == "google_drive":
+        resolved_staging_dir = resolve_pipeline_staging_dir(STAGING_DIR)
+        if resolved_staging_dir.exists():
+            shutil.rmtree(resolved_staging_dir)
+            print(
+                f"Cleared {resolved_staging_dir} (outputs preserved in data/outputs/)",
+                flush=True,
+            )
 
 
 if __name__ == "__main__":
