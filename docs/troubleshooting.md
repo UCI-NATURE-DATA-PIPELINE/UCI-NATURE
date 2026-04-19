@@ -3,7 +3,7 @@
 ## `pip` not found
 
 ```bash
-python3 -m pip install -r requirements/requirements.txt
+python3 -m pip install -r requirements
 ```
 
 ## Venv not activating
@@ -64,7 +64,7 @@ python -m pip install google-auth google-api-python-client
 Or reinstall the project requirements:
 
 ```bash
-python -m pip install -r requirements/requirements.txt
+python -m pip install -r requirements
 ```
 
 ## Script path issues
@@ -234,5 +234,7 @@ head -n 5 data/outputs/by_location/*.csv
 Example:
 
 ```bash
+
 ./run_batch.sh batch_0001.csv
+
 ```
