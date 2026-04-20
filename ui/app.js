@@ -425,7 +425,13 @@ function showPage(pageName) {
     void loadPageData(pageName);
   }
 
-  if (pageName === "statistics") { setTimeout(() => loadStatistics(), 300); }
+  if (pageName === "statistics") {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        loadStatistics();
+      });
+    });
+  }
   if (pageName !== "model" && pipelineStatus?.status !== "running") {
     stopPipelineStatusPolling();
   }
@@ -3710,24 +3716,29 @@ async function loadStatistics() {
     document.getElementById('stat-species-count').textContent = data.species_count ?? '—';
     document.getElementById('stat-cameras-count').textContent = data.cameras_count ?? '—';
 
+    const c1 = document.getElementById('chart-species');
+    const c2 = document.getElementById('chart-timeline');
+    c1.width = 500; c1.height = 300;
+    c2.width = 500; c2.height = 300;
+
     if (chartSpecies) chartSpecies.destroy();
-    chartSpecies = new Chart(document.getElementById('chart-species'), {
+    chartSpecies = new Chart(c1, {
       type: 'bar',
       data: {
         labels: data.species_labels,
         datasets: [{ label: 'Detections', data: data.species_values, backgroundColor: '#0064A4', borderRadius: 6 }]
       },
-      options: { responsive: true, plugins: { legend: { display: false } } }
+      options: { responsive: false, plugins: { legend: { display: false } } }
     });
 
     if (chartTimeline) chartTimeline.destroy();
-    chartTimeline = new Chart(document.getElementById('chart-timeline'), {
+    chartTimeline = new Chart(c2, {
       type: 'line',
       data: {
         labels: data.timeline_labels,
         datasets: [{ label: 'Detections', data: data.timeline_values, borderColor: '#7AB800', backgroundColor: 'rgba(122,184,0,0.1)', fill: true, tension: 0.3 }]
       },
-      options: { responsive: true }
+      options: { responsive: false }
     });
   } catch (err) {
     console.error('Statistics load error:', err);
