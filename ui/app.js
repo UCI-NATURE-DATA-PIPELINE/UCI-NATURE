@@ -3694,6 +3694,10 @@ window.showToast = showToast;
 let chartSpecies = null;
 let chartTimeline = null;
 
+function getToken() {
+  return localStorage.getItem("token") || "";
+}
+
 async function loadStatistics() {
   const token = getToken();
   try {
@@ -3706,21 +3710,22 @@ async function loadStatistics() {
     document.getElementById('stat-species-count').textContent = data.species_count ?? '—';
     document.getElementById('stat-cameras-count').textContent = data.cameras_count ?? '—';
 
-    // Species bar chart
     if (chartSpecies) chartSpecies.destroy();
     chartSpecies = new Chart(document.getElementById('chart-species'), {
       type: 'bar',
       data: {
         labels: data.species_labels,
-        datasets: [{ label: 'Detections', data: data.species        datasets: [{ label: 'Detections', dat, b        datasets: [{ label: 'Detections', data: data.species        datasets: [{ label: 'Detections', dat, b        datasets: [{ label: 'De
-                        ha                  ();
-    c    c    c    c    c    c    c  t.    c    c    c    c    meline'), {
+        datasets: [{ label: 'Detections', data: data.species_values, backgroundColor: '#0064A4', borderRadius: 6 }]
+      },
+      options: { responsive: true, plugins: { legend: { display: false } } }
+    });
+
+    if (chartTimeline) chartTimeline.destroy();
+    chartTimeline = new Chart(document.getElementById('chart-timeline'), {
       type: 'line',
       data: {
         labels: data.timeline_labels,
-        datasets: [{ label: 'Detections', data: data.timeline_values,
-          borderColor: '#7AB800', backgroundColor: 'rgba(122,184,0,0.1)',
-          fill: true, tension: 0.3 }]
+        datasets: [{ label: 'Detections', data: data.timeline_values, borderColor: '#7AB800', backgroundColor: 'rgba(122,184,0,0.1)', fill: true, tension: 0.3 }]
       },
       options: { responsive: true }
     });
