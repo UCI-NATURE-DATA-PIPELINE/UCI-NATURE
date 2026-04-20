@@ -196,6 +196,11 @@
         <span class="nav-label">Export</span>
         <span class="nav-tooltip">Export</span>
       </button>
+      <button class="nav-item" data-page="statistics" data-label="Statistics">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
+        <span class="nav-label">Statistics</span>
+        <span class="nav-tooltip">Statistics</span>
+      </button>
     </nav>
 
     <div class="sidebar-footer">
@@ -1716,6 +1721,17 @@
         </div>
       </div>
 
+      <div id="page-statistics" class="page">
+        <div class="stats-grid">
+          <div class="stat-card"><div><div class="stat-label">Total Detections</div><div class="stat-value" id="stat-total-detections">—</div><div class="stat-sub">Animal images</div></div></div>
+          <div class="stat-card"><div><div class="stat-label">Species Found</div><div class="stat-value" id="stat-species-count">—</div><div class="stat-sub">Unique species</div></div></div>
+          <div class="stat-card"><div><div class="stat-label">Cameras</div><div class="stat-value" id="stat-cameras-count">—</div><div class="stat-sub">Active locations</div></div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px">
+          <div class="card card-p"><div class="card-title">Species Distribution</div><canvas id="chart-species" height="300"></canvas></div>
+          <div class="card card-p"><div class="card-title">Detections Over Time</div><canvas id="chart-timeline" height="300"></canvas></div>
+        </div>
+      </div>
     </main>
   </div>
 </div>
@@ -1742,6 +1758,7 @@
 <!-- TOAST CONTAINER -->
 <div id="toast-container"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="app.js" type="module"></script>
 </body>
 </html>

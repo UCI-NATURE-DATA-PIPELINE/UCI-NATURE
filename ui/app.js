@@ -414,7 +414,8 @@ function showPage(pageName) {
     model: "Run Model",
     review: "Review & Modify",
     validate: "Validate",
-    export: "Export"
+    export: "Export",
+    statistics: "Statistics"
   };
 
   const titleEl = document.getElementById("page-title");
@@ -424,6 +425,7 @@ function showPage(pageName) {
     void loadPageData(pageName);
   }
 
+  if (pageName === "statistics") { loadStatistics(); }
   if (pageName !== "model" && pipelineStatus?.status !== "running") {
     stopPipelineStatusPolling();
   }
@@ -3687,3 +3689,44 @@ window.pickDate = pickDate;
 window.closeConfirmModal = closeConfirmModal;
 window.confirmModalOK = confirmModalOK;
 window.showToast = showToast;
+
+// ── STATISTICS PAGE ──────────────────────────────────────
+let chartSpecies = null;
+let chartTimeline = null;
+
+async function loadStatistics() {
+  const token = getToken();
+  try {
+    const res = await fetch('/api/statistics/summary', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+
+    document.getElementById('stat-total-detections').textContent = data.total_detections ?? '—';
+    document.getElementById('stat-species-count').textContent = data.species_count ?? '—';
+    document.getElementById('stat-cameras-count').textContent = data.cameras_count ?? '—';
+
+    // Species bar chart
+    if (chartSpecies) chartSpecies.destroy();
+    chartSpecies = new Chart(document.getElementById('chart-species'), {
+      type: 'bar',
+      data: {
+        labels: data.species_labels,
+        datasets: [{ label: 'Detections', data: data.species        datasets: [{ label: 'Detections', dat, b        datasets: [{ label: 'Detections', data: data.species        datasets: [{ label: 'Detections', dat, b        datasets: [{ label: 'De
+                        ha                  ();
+    c    c    c    c    c    c    c  t.    c    c    c    c    meline'), {
+      type: 'line',
+      data: {
+        labels: data.timeline_labels,
+        datasets: [{ label: 'Detections', data: data.timeline_values,
+          borderColor: '#7AB800', backgroundColor: 'rgba(122,184,0,0.1)',
+          fill: true, tension: 0.3 }]
+      },
+      options: { responsive: true }
+    });
+  } catch (err) {
+    console.error('Statistics load error:', err);
+  }
+}
+
+window.loadStatistics = loadStatistics;

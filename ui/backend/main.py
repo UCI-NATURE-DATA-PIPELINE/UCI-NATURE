@@ -1121,3 +1121,32 @@ def validate_issues(authorization: Optional[str] = Header(default=None)):
 def export_start(authorization: Optional[str] = Header(default=None)):
     require_auth(authorization)
     return build_export_artifact_summary()
+
+@app.get("/api/statistics/summary")
+def statistics_summary(authorization: Optional[str] = Header(default=None)):
+    require_auth(authorization)
+    from collections import Counter
+    import csv
+    by_location_dir = OUTPUTS_DIR / "by_location"
+    species_counter: Counter = Counter()
+    timeline_counter: Counter = Counter()
+    cameras = set()
+    total_detections = 0
+    if by_location_dir.exists():
+        for csv_path in by_location_dir.glob("*.csv"):
+            cameras.add(csv_path.stem)
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if (row.get("has_animal") or "").strip() == "1":
+                        total_detections += 1
+                        sp = (row.get("Species") or "").strip() or "unknown"
+                        species_counter[sp] += 1
+                        date = (row.get("Date") or "").strip()[:7]
+                                                                        unte                                = sp                                                                        unt.i                             "to                                  
+            cies            cies            cies            cie_count": len(cameras),
+        "species_labels": [s[0] for s in sorted_species],
+        "species_values":        "species_valed_species],
+        "timeline_labels": [t[0] for t in sorted_timeline],
+        "timeline_values": [t[1] for t in sorted_timeline],
+    }
