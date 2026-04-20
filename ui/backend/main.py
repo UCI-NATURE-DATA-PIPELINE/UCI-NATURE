@@ -224,25 +224,16 @@ def get_staging_image_files(staging_dir: Path) -> List[Path]:
 
 def read_pipeline_log_summary(log_path: Optional[Union[Path, str]]) -> dict:
     if not log_path:
-        return {
-            "current_step": None,
-            "latest_log_line": None,
-        }
+        return {"current_step": None, "latest_log_line": None}
 
     path = Path(log_path)
     if not path.exists():
-        return {
-            "current_step": None,
-            "latest_log_line": None,
-        }
+        return {"current_step": None, "latest_log_line": None}
 
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        return {
-            "current_step": None,
-            "latest_log_line": None,
-        }
+        return {"current_step": None, "latest_log_line": None}
 
     current_step = None
     latest_log_line = None
@@ -255,10 +246,7 @@ def read_pipeline_log_summary(log_path: Optional[Union[Path, str]]) -> dict:
             current_step = line.replace("STEP:", "", 1).strip()
         latest_log_line = line
 
-    return {
-        "current_step": current_step,
-        "latest_log_line": latest_log_line,
-    }
+    return {"current_step": current_step, "latest_log_line": latest_log_line}
 
 
 def set_pipeline_progress(
@@ -473,7 +461,11 @@ def build_dashboard_summary_data(project_name: str) -> dict:
     if isinstance(latest_pipeline_state.get("result"), dict):
         last_duration = latest_pipeline_state["result"].get("elapsed_seconds")
 
-    batch_count = len(list((OUTPUTS_DIR / "batches").glob("batch_*.csv"))) if (OUTPUTS_DIR / "batches").exists() else 0
+    batch_count = (
+        len(list((OUTPUTS_DIR / "batches").glob("batch_*.csv")))
+        if (OUTPUTS_DIR / "batches").exists()
+        else 0
+    )
 
     return {
         "project": project_name,
@@ -1122,11 +1114,11 @@ def export_start(authorization: Optional[str] = Header(default=None)):
     require_auth(authorization)
     return build_export_artifact_summary()
 
+
 @app.get("/api/statistics/summary")
 def statistics_summary(authorization: Optional[str] = Header(default=None)):
     require_auth(authorization)
     from collections import Counter
-    import csv
     by_location_dir = OUTPUTS_DIR / "by_location"
     species_counter: Counter = Counter()
     timeline_counter: Counter = Counter()
@@ -1143,10 +1135,16 @@ def statistics_summary(authorization: Optional[str] = Header(default=None)):
                         sp = (row.get("Species") or "").strip() or "unknown"
                         species_counter[sp] += 1
                         date = (row.get("Date") or "").strip()[:7]
-                                                                        unte                                = sp                                                                        unt.i                             "to                                  
-            cies            cies            cies            cie_count": len(cameras),
+                        if date:
+                            timeline_counter[date] += 1
+    sorted_species = species_counter.most_common(10)
+    sorted_timeline = sorted(timeline_counter.items())
+    return {
+        "total_detections": total_detections,
+        "species_count": len(species_counter),
+        "cameras_count": len(cameras),
         "species_labels": [s[0] for s in sorted_species],
-        "species_values":        "species_valed_species],
+        "species_values": [s[1] for s in sorted_species],
         "timeline_labels": [t[0] for t in sorted_timeline],
         "timeline_values": [t[1] for t in sorted_timeline],
     }
