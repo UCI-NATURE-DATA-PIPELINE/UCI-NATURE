@@ -2188,3 +2188,11 @@ input[type=range].model-slider::-webkit-slider-thumb:hover {
   color:var(--text);
   font-weight:700;
 }
+#page-statistics .card {
+  min-height: 300px;
+}
+
+#page-statistics canvas {
+  width: 100% !important;
+  height: 280px !important;
+}
