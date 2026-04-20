@@ -425,7 +425,7 @@ function showPage(pageName) {
     void loadPageData(pageName);
   }
 
-  if (pageName === "statistics") { loadStatistics(); }
+  if (pageName === "statistics") { setTimeout(() => loadStatistics(), 300); }
   if (pageName !== "model" && pipelineStatus?.status !== "running") {
     stopPipelineStatusPolling();
   }
