@@ -3705,44 +3705,75 @@ function getToken() {
 }
 
 async function loadStatistics() {
+  const c1 = document.getElementById('chart-species');
+  const c2 = document.getElementById('chart-timeline');
+
+  if (!c1 || !c2) {
+    console.warn("Charts not found in DOM");
+    return;
+  }
+
+  if (c1.offsetWidth === 0 || c1.offsetHeight === 0) {
+    requestAnimationFrame(loadStatistics);
+    return;
+  }
+
   const token = getToken();
+
   try {
     const res = await fetch('/api/statistics/summary', {
       headers: { Authorization: `Bearer ${token}` }
     });
+
     const data = await res.json();
 
-    document.getElementById('stat-total-detections').textContent = data.total_detections ?? '—';
-    document.getElementById('stat-species-count').textContent = data.species_count ?? '—';
-    document.getElementById('stat-cameras-count').textContent = data.cameras_count ?? '—';
+    document.getElementById('stat-total-detections').textContent = data.total_detections ?? '0';
+    document.getElementById('stat-species-count').textContent = data.species_count ?? '0';
+    document.getElementById('stat-cameras-count').textContent = data.cameras_count ?? '0';
 
-    const c1 = document.getElementById('chart-species');
-    const c2 = document.getElementById('chart-timeline');
-    c1.width = 500; c1.height = 300;
-    c2.width = 500; c2.height = 300;
+    if (window.chartSpecies) window.chartSpecies.destroy();
+    if (window.chartTimeline) window.chartTimeline.destroy();
 
-    if (chartSpecies) chartSpecies.destroy();
-    chartSpecies = new Chart(c1, {
+    if (!data.species_labels?.length) {
+      c1.parentElement.innerHTML = "<p>No data available</p>";
+      return;
+    }
+
+    window.chartSpecies = new Chart(c1, {
       type: 'bar',
       data: {
         labels: data.species_labels,
-        datasets: [{ label: 'Detections', data: data.species_values, backgroundColor: '#0064A4', borderRadius: 6 }]
+        datasets: [{
+          label: 'Detections',
+          data: data.species_values,
+          backgroundColor: '#0064A4'
+        }]
       },
-      options: { responsive: false, plugins: { legend: { display: false } } }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false
+      }
     });
 
-    if (chartTimeline) chartTimeline.destroy();
-    chartTimeline = new Chart(c2, {
+    window.chartTimeline = new Chart(c2, {
       type: 'line',
       data: {
         labels: data.timeline_labels,
-        datasets: [{ label: 'Detections', data: data.timeline_values, borderColor: '#7AB800', backgroundColor: 'rgba(122,184,0,0.1)', fill: true, tension: 0.3 }]
+        datasets: [{
+          label: 'Detections',
+          data: data.timeline_values,
+          borderColor: '#7AB800',
+          fill: true
+        }]
       },
-      options: { responsive: false }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false
+      }
     });
+
   } catch (err) {
     console.error('Statistics load error:', err);
+    c1.parentElement.innerHTML = "<p>Failed to load statistics</p>";
   }
 }
-
-window.loadStatistics = loadStatistics;
