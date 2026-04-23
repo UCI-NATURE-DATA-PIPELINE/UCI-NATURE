@@ -1,11 +1,20 @@
 # scripts/ml/postprocess_speciesnet.py
 
+from __future__ import annotations
+
 import argparse
 import csv
 import json
+import sys
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path, PurePosixPath
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.ml.speciesnet_parsing import resolve_prediction, safe_float
 
 
 IN_JSON = Path("data/outputs/speciesnet_results.json")
@@ -21,95 +30,75 @@ THRESH_NORMAL = 0.90
 THRESH_GENERIC = 0.97
 MARGIN_MIN = 0.20
 BURST_WINDOW_SECONDS = 300
+DETECTION_THRESHOLD = 0.5
 
-GENERIC_EXACT = {
-    "no cv result",
-    "animal",
-    "mammal",
-    "rodent",
-    "carnivorous mammal",
-    "canis species",
-}
+ANIMAL_CATEGORY = {"1", "animal"}
+PERSON_CATEGORY = {"2", "human"}
 
 
-def normalize_path(p: str) -> str:
-    p = (p or "").strip().replace("\\", "/")
-    while "//" in p:
-        p = p.replace("//", "/")
-    if p.startswith("./"):
-        p = p[2:]
-    return p
+def normalize_path(path_value: str) -> str:
+    path_value = (path_value or "").strip().replace("\\", "/")
+    while "//" in path_value:
+        path_value = path_value.replace("//", "/")
+    if path_value.startswith("./"):
+        path_value = path_value[2:]
+    return path_value
 
 
-def tail_key(fp: str, n_parts: int) -> str:
-    pp = PurePosixPath(normalize_path(fp))
-    parts = pp.parts
+def tail_key(filepath: str, n_parts: int) -> str:
+    pure_path = PurePosixPath(normalize_path(filepath))
+    parts = pure_path.parts
     if len(parts) <= n_parts:
-        return str(pp)
+        return str(pure_path)
     return str(PurePosixPath(*parts[-n_parts:]))
 
 
-def folder_key_from_filepath(fp: str) -> str:
-    fp = normalize_path(fp)
-    parts = fp.split("/")
+def folder_key_from_filepath(filepath: str) -> str:
+    parts = normalize_path(filepath).split("/")
     if len(parts) >= 2:
         return parts[-2]
     return "unknown_folder"
 
 
-def safe_float(x, default=0.0):
-    try:
-        return float(x)
-    except Exception:
-        return default
+def load_manifest_localpath_by_fileid(manifest_csv: Path = MANIFEST_CSV):
+    manifest_csv = Path(manifest_csv)
+    if not manifest_csv.exists():
+        raise FileNotFoundError(f"Missing {manifest_csv}")
+
+    with open(manifest_csv, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fieldnames = [name.strip() for name in (reader.fieldnames or [])]
+
+        def pick_col(options):
+            for column in fieldnames:
+                if column.lower() in options:
+                    return column
+            return None
+
+        fileid_col = pick_col({"file_id", "fileid", "id"})
+        path_col = pick_col({"local_path", "filepath", "path"})
+
+        if not fileid_col or not path_col:
+            raise ValueError(
+                f"{manifest_csv} must have file_id/id + local_path/filepath/path. Found: {fieldnames}"
+            )
+
+        output = {}
+        for row in reader:
+            file_id = (row.get(fileid_col) or "").strip()
+            local_path = (row.get(path_col) or "").strip()
+            if file_id and local_path:
+                output[file_id] = normalize_path(local_path)
+
+        return output
 
 
-def common_name_from_pred(pred: str) -> str:
-    parts = pred.split(";") if pred else []
-    if len(parts) >= 7 and parts[6].strip():
-        return parts[6].strip().lower()
-    for i in range(min(6, len(parts) - 1), 0, -1):
-        if parts[i].strip():
-            return parts[i].strip().lower()
-    return "unknown"
-
-
-def is_generic(label: str) -> bool:
-    l = (label or "").lower()
-    return (
-        l in GENERIC_EXACT
-        or l.endswith(" family")
-        or l.endswith(" species")
-        or l == "unknown"
-    )
-
-
-def top2(scores):
-    if not scores:
-        return (0.0, 0.0)
-
-    vals = []
-    for x in scores:
-        try:
-            vals.append(float(x))
-        except Exception:
-            pass
-
-    if not vals:
-        return (0.0, 0.0)
-
-    vals.sort(reverse=True)
-    p1 = vals[0]
-    p2 = vals[1] if len(vals) > 1 else 0.0
-    return p1, p2
-
-
-def parse_datetime_loose(s: str):
-    if not s:
+def parse_datetime_loose(value: str):
+    if not value:
         return None
 
-    s = str(s).strip()
-    fmts = [
+    value = str(value).strip()
+    formats = [
         "%Y-%m-%d %H:%M:%S",
         "%Y:%m:%d %H:%M:%S",
         "%Y-%m-%dT%H:%M:%S",
@@ -117,14 +106,14 @@ def parse_datetime_loose(s: str):
         "%Y-%m-%dT%H:%M:%S%z",
     ]
 
-    for fmt in fmts:
+    for fmt in formats:
         try:
-            return datetime.strptime(s, fmt)
+            return datetime.strptime(value, fmt)
         except Exception:
             pass
 
-    if "." in s:
-        base = s.split(".", 1)[0]
+    if "." in value:
+        base = value.split(".", 1)[0]
         for fmt in [
             "%Y-%m-%d %H:%M:%S",
             "%Y:%m:%d %H:%M:%S",
@@ -138,52 +127,19 @@ def parse_datetime_loose(s: str):
     return None
 
 
-def load_manifest_localpath_by_fileid(manifest_csv: Path = MANIFEST_CSV):
-    manifest_csv = Path(manifest_csv)
-    if not manifest_csv.exists():
-        raise FileNotFoundError(f"Missing {manifest_csv}")
-
-    with open(manifest_csv, newline="", encoding="utf-8") as f:
-        r = csv.DictReader(f)
-        fieldnames = [x.strip() for x in (r.fieldnames or [])]
-
-        def pick_col(options):
-            for c in fieldnames:
-                if c.lower() in options:
-                    return c
-            return None
-
-        fileid_col = pick_col({"file_id", "fileid", "id"})
-        path_col = pick_col({"local_path", "filepath", "path"})
-
-        if not fileid_col or not path_col:
-            raise ValueError(
-                f"{manifest_csv} must have file_id/id + local_path/filepath/path. Found: {fieldnames}"
-            )
-
-        out = {}
-        for row in r:
-            fid = (row.get(fileid_col) or "").strip()
-            lp = (row.get(path_col) or "").strip()
-            if fid and lp:
-                out[fid] = normalize_path(lp)
-
-        return out
-
-
 def load_exif_dt_by_fileid(metadata_csv: Path = METADATA_CSV):
     metadata_csv = Path(metadata_csv)
     if not metadata_csv.exists():
         raise FileNotFoundError(f"Missing {metadata_csv}")
 
     with open(metadata_csv, newline="", encoding="utf-8") as f:
-        r = csv.DictReader(f)
-        fieldnames = [x.strip() for x in (r.fieldnames or [])]
+        reader = csv.DictReader(f)
+        fieldnames = [name.strip() for name in (reader.fieldnames or [])]
 
         def pick_col(options):
-            for c in fieldnames:
-                if c.lower() in options:
-                    return c
+            for column in fieldnames:
+                if column.lower() in options:
+                    return column
             return None
 
         fileid_col = pick_col({"file_id", "fileid", "id"})
@@ -194,143 +150,174 @@ def load_exif_dt_by_fileid(metadata_csv: Path = METADATA_CSV):
         date_col = pick_col({"date"})
         time_col = pick_col({"time"})
 
-        out = {}
-        for row in r:
-            fid = (row.get(fileid_col) or "").strip()
-            if not fid:
+        output = {}
+        for row in reader:
+            file_id = (row.get(fileid_col) or "").strip()
+            if not file_id:
                 continue
 
             dt = None
-
             if exif_col:
                 dt = parse_datetime_loose(row.get(exif_col, ""))
 
             if dt is None and date_col and time_col:
-                d = (row.get(date_col) or "").strip()
-                t = (row.get(time_col) or "").strip()
-                if d and t:
-                    if len(d) == 8 and d.isdigit():
-                        d_fmt = f"{d[0:4]}-{d[4:6]}-{d[6:8]}"
-                        dt = parse_datetime_loose(f"{d_fmt} {t}")
-                    else:
-                        dt = parse_datetime_loose(f"{d} {t}")
+                date_value = (row.get(date_col) or "").strip()
+                time_value = (row.get(time_col) or "").strip()
+                if date_value and time_value:
+                    if len(date_value) == 8 and date_value.isdigit():
+                        date_value = f"{date_value[0:4]}-{date_value[4:6]}-{date_value[6:8]}"
+                    dt = parse_datetime_loose(f"{date_value} {time_value}")
 
             if dt:
-                out[fid] = dt
+                output[file_id] = dt
 
-        return out
+        return output
 
 
-def decision_needs_review(label, score, margin):
+def top2(scores):
+    values = []
+    for score in scores or []:
+        try:
+            values.append(float(score))
+        except Exception:
+            pass
+
+    if not values:
+        return (0.0, 0.0)
+
+    values.sort(reverse=True)
+    p1 = values[0]
+    p2 = values[1] if len(values) > 1 else 0.0
+    return p1, p2
+
+
+def _count_detections(detections: list[dict], categories: set[str], threshold: float) -> int:
+    count = 0
+    for detection in detections or []:
+        category = str(detection.get("category", "")).lower()
+        confidence = safe_float(
+            detection.get("conf", detection.get("confidence", 0.0)),
+            0.0,
+        )
+        if category in categories and confidence >= threshold:
+            count += 1
+    return count
+
+
+def _is_unresolved_label(label: str, species_level: bool) -> bool:
+    normalized = (label or "").strip().lower()
+    if normalized in {"blank", "human"}:
+        return False
+    return not bool(species_level)
+
+
+def decision_needs_review(label: str, score: float, margin: float, species_level: bool):
     is_blank = label == "blank"
     is_human = label == "human"
-    generic = is_generic(label)
-    thresh = THRESH_GENERIC if generic else THRESH_NORMAL
+    unresolved = _is_unresolved_label(label, species_level)
+    threshold = THRESH_GENERIC if unresolved else THRESH_NORMAL
 
     needs_review = False
+    reasons = []
 
-    if is_blank or is_human:
-        if score < 0.85 or margin < 0.10:
-            needs_review = True
-    else:
-        if score < thresh:
-            needs_review = True
-        if margin < MARGIN_MIN:
-            needs_review = True
-        if generic:
-            needs_review = True
-
-    final_label = label
-
-    reason = []
     if is_blank or is_human:
         if score < 0.85:
-            reason.append("low_score_for_blank_or_human")
+            needs_review = True
+            reasons.append("low_score_for_blank_or_human")
         if margin < 0.10:
-            reason.append("low_margin_for_blank_or_human")
+            needs_review = True
+            reasons.append("low_margin_for_blank_or_human")
     else:
-        if score < thresh:
-            reason.append(f"low_score<{thresh}")
+        if score < threshold:
+            needs_review = True
+            reasons.append(f"low_score<{threshold}")
         if margin < MARGIN_MIN:
-            reason.append(f"low_margin<{MARGIN_MIN}")
-        if generic:
-            reason.append("generic_label")
+            needs_review = True
+            reasons.append(f"low_margin<{MARGIN_MIN}")
+        if unresolved:
+            needs_review = True
+            reasons.append("generic_label")
 
-    return needs_review, final_label, ";".join(reason) if reason else "uncertain"
+    return needs_review, label, ";".join(reasons) if reasons else "uncertain"
 
 
-def burst_vote(items):
-    for it in items:
-        if it["label_raw"] == "human" and it["score"] >= 0.85:
-            return "human"
+def burst_vote(items: list[dict]) -> tuple[str, bool]:
+    for item in items:
+        if item["label"] == "human" and item["score"] >= 0.85:
+            return "human", False
 
-    blank_weight = sum(it["score"] for it in items if it["label_raw"] == "blank")
+    blank_weight = sum(item["score"] for item in items if item["label"] == "blank")
     if blank_weight >= 0.85 * max(1, len(items)) * 0.7:
-        return "blank"
+        return "blank", False
 
     weights = defaultdict(float)
-    for it in items:
-        lab = it["label_raw"]
-        w = float(it["score"])
-        if is_generic(lab) and lab not in ("blank", "human"):
-            w *= 0.15
-        weights[lab] += w
+    species_level_by_label = defaultdict(bool)
+
+    for item in items:
+        label = item["label"]
+        weight = float(item["score"])
+        if not item["species_level"] and label not in ("blank", "human"):
+            weight *= 0.25
+        weights[label] += weight
+        species_level_by_label[label] = species_level_by_label[label] or bool(
+            item["species_level"]
+        )
 
     if not weights:
-        return "unknown"
+        return "animal_unclassified", False
 
-    best_label, best_w = max(weights.items(), key=lambda x: x[1])
+    sorted_items = sorted(weights.items(), key=lambda item: item[1], reverse=True)
+    best_label, best_weight = sorted_items[0]
 
-    sorted_items = sorted(weights.items(), key=lambda x: x[1], reverse=True)
-    if is_generic(best_label) and best_label not in ("blank", "human"):
-        for lab, w in sorted_items[1:]:
-            if not is_generic(lab) and (w >= 0.75 * best_w):
-                return lab
+    if not species_level_by_label[best_label]:
+        for label, weight in sorted_items[1:]:
+            if species_level_by_label[label] and weight >= 0.75 * best_weight:
+                return label, True
 
-    return best_label
+    return best_label, bool(species_level_by_label[best_label])
 
 
 def make_bursts(pred_rows, burst_window_seconds: int = BURST_WINDOW_SECONDS):
     burst_window_seconds = max(10, min(300, int(burst_window_seconds)))
     by_folder = defaultdict(list)
 
-    for i, pr in enumerate(pred_rows):
-        fp = pr["filepath"]
-        dt = pr.get("dt")
+    for index, pred_row in enumerate(pred_rows):
+        filepath = pred_row["filepath"]
+        dt = pred_row.get("dt")
         if dt is None:
-            by_folder[(folder_key_from_filepath(fp), "NO_DT")].append((dt, i))
+            by_folder[(folder_key_from_filepath(filepath), "NO_DT")].append((dt, index))
         else:
-            by_folder[folder_key_from_filepath(fp)].append((dt, i))
+            by_folder[folder_key_from_filepath(filepath)].append((dt, index))
 
     bursts = []
-    win = timedelta(seconds=burst_window_seconds)
+    window = timedelta(seconds=burst_window_seconds)
 
-    for key, arr in by_folder.items():
+    for key, rows in by_folder.items():
         if isinstance(key, tuple) and key[1] == "NO_DT":
-            for _, idx in arr:
-                bursts.append([idx])
+            for _, index in rows:
+                bursts.append([index])
             continue
 
-        arr.sort(key=lambda x: x[0])
-        cur = []
+        rows.sort(key=lambda item: item[0])
+        current = []
         last_dt = None
 
-        for dt, idx in arr:
-            if not cur:
-                cur = [idx]
+        for dt, index in rows:
+            if not current:
+                current = [index]
                 last_dt = dt
                 continue
 
-            if (dt - last_dt) <= win:
-                cur.append(idx)
+            if (dt - last_dt) <= window:
+                current.append(index)
                 last_dt = dt
             else:
-                bursts.append(cur)
-                cur = [idx]
+                bursts.append(current)
+                current = [index]
                 last_dt = dt
 
-        if cur:
-            bursts.append(cur)
+        if current:
+            bursts.append(current)
 
     return bursts
 
@@ -361,7 +348,7 @@ def postprocess_speciesnet_results(
     with open(in_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    preds = data if isinstance(data, list) else data.get("predictions", [])
+    predictions = data if isinstance(data, list) else data.get("predictions", [])
 
     fileid_to_path = load_manifest_localpath_by_fileid(manifest_csv)
     fileid_to_dt = load_exif_dt_by_fileid(metadata_csv)
@@ -370,157 +357,210 @@ def postprocess_speciesnet_results(
     basename_to_candidates = defaultdict(list)
     tail_to_dt = {}
 
-    for fid, dt in fileid_to_dt.items():
-        lp = fileid_to_path.get(fid)
-        if not lp:
+    for file_id, dt in fileid_to_dt.items():
+        local_path = fileid_to_path.get(file_id)
+        if not local_path:
             continue
 
-        lp_n = normalize_path(lp)
-        exact_path_to_dt[lp_n] = dt
+        normalized_path = normalize_path(local_path)
+        exact_path_to_dt[normalized_path] = dt
 
-        bn = PurePosixPath(lp_n).name
-        if bn:
-            basename_to_candidates[bn].append((lp_n, dt))
+        basename = PurePosixPath(normalized_path).name
+        if basename:
+            basename_to_candidates[basename].append((normalized_path, dt))
 
-        for n in (3, 4, 5):
-            tail_to_dt[tail_key(lp_n, n)] = dt
+        for n_parts in (3, 4, 5):
+            tail_to_dt[tail_key(normalized_path, n_parts)] = dt
 
-    def lookup_dt(fp: str):
-        fp_n = normalize_path(fp)
-        if not fp_n:
+    def lookup_dt(filepath: str):
+        normalized_path = normalize_path(filepath)
+        if not normalized_path:
             return None
 
-        if fp_n in exact_path_to_dt:
-            return exact_path_to_dt[fp_n]
+        if normalized_path in exact_path_to_dt:
+            return exact_path_to_dt[normalized_path]
 
-        for n in (3, 4, 5):
-            t = tail_key(fp_n, n)
-            if t in tail_to_dt:
-                return tail_to_dt[t]
+        for n_parts in (3, 4, 5):
+            key = tail_key(normalized_path, n_parts)
+            if key in tail_to_dt:
+                return tail_to_dt[key]
 
-        bn = PurePosixPath(fp_n).name
-        cands = basename_to_candidates.get(bn, [])
-        if len(cands) == 1:
-            return cands[0][1]
+        basename = PurePosixPath(normalized_path).name
+        candidates = basename_to_candidates.get(basename, [])
+        if len(candidates) == 1:
+            return candidates[0][1]
 
-        folder = folder_key_from_filepath(fp_n)
-        for fullp, dt in cands:
-            if folder_key_from_filepath(fullp) == folder:
+        folder = folder_key_from_filepath(normalized_path)
+        for full_path, dt in candidates:
+            if folder_key_from_filepath(full_path) == folder:
                 return dt
 
         return None
 
     pred_rows = []
-    for p in preds:
-        fp = normalize_path(p.get("filepath", ""))
-        pred_str = p.get("prediction", "")
-        score = safe_float(p.get("prediction_score", 0.0), 0.0)
+    for prediction in predictions:
+        filepath = normalize_path(prediction.get("filepath", ""))
+        raw_score = safe_float(prediction.get("prediction_score", 0.0), 0.0)
 
-        label = common_name_from_pred(pred_str)
-        scores = ((p.get("classifications") or {}).get("scores", []) or [])
-        p1, p2 = top2(scores)
+        detections = prediction.get("detections") or []
+        has_animal = _count_detections(detections, ANIMAL_CATEGORY, DETECTION_THRESHOLD) > 0
+        has_human = _count_detections(detections, PERSON_CATEGORY, DETECTION_THRESHOLD) > 0
+        resolved = resolve_prediction(
+            prediction,
+            has_animal=has_animal,
+            has_human=has_human,
+        )
+
+        classification_scores = (
+            (prediction.get("classifications") or {}).get("scores", []) or []
+        )
+        p1, p2 = top2(classification_scores)
         margin = p1 - p2
 
         pred_rows.append(
             {
-                "filepath": fp,
-                "label_raw": label,
-                "score": score,
+                "filepath": filepath,
+                "label_raw": resolved.get("raw_prediction_label", ""),
+                "score": raw_score,
+                "resolved_label": resolved.get("resolved_label", ""),
+                "resolved_score": safe_float(resolved.get("resolved_score", 0.0), 0.0),
+                "resolved_rank": resolved.get("resolved_rank", ""),
+                "resolved_species_level": bool(resolved.get("resolved_species_level")),
+                "resolved_source": resolved.get("resolved_source", ""),
+                "prediction_source": resolved.get("prediction_source", ""),
+                "candidate_labels_json": resolved.get("classification_candidates_json", "[]"),
                 "margin": margin,
-                "is_blank": int(label == "blank"),
-                "is_human": int(label == "human"),
-                "generic": int(is_generic(label)),
-                "dt": lookup_dt(fp),
+                "is_blank": int(resolved.get("resolved_label") == "blank"),
+                "is_human": int(resolved.get("resolved_label") == "human"),
+                "dt": lookup_dt(filepath),
             }
         )
 
     bursts = make_bursts(pred_rows, burst_window_seconds=burst_window_seconds)
 
     voted_label_by_idx = {}
+    voted_species_level_by_idx = {}
     for burst in bursts:
         items = [
             {
-                "label_raw": pred_rows[idx]["label_raw"],
-                "score": pred_rows[idx]["score"],
+                "label": pred_rows[index]["resolved_label"],
+                "score": pred_rows[index]["resolved_score"] or pred_rows[index]["score"],
+                "species_level": pred_rows[index]["resolved_species_level"],
             }
-            for idx in burst
+            for index in burst
         ]
-        voted = burst_vote(items)
-        for idx in burst:
-            voted_label_by_idx[idx] = voted
+        voted_label, voted_species_level = burst_vote(items)
+        for index in burst:
+            voted_label_by_idx[index] = voted_label
+            voted_species_level_by_idx[index] = voted_species_level
 
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     review_csv.parent.mkdir(parents=True, exist_ok=True)
 
     review_count = 0
+    generic_review_count = 0
+
     with open(out_csv, "w", newline="", encoding="utf-8") as f_out, open(
         review_csv, "w", newline="", encoding="utf-8"
-    ) as f_rev:
-        out_w = csv.DictWriter(
+    ) as f_review:
+        out_writer = csv.DictWriter(
             f_out,
             fieldnames=[
                 "filepath",
                 "label_raw",
                 "score",
+                "resolved_label",
+                "resolved_score",
+                "resolved_rank",
+                "resolved_source",
                 "p1_minus_p2",
                 "burst_label",
                 "is_blank",
                 "is_human",
                 "final_label",
                 "needs_review",
+                "prediction_source",
+                "candidate_labels_json",
             ],
         )
-        rev_w = csv.DictWriter(
-            f_rev,
+        review_writer = csv.DictWriter(
+            f_review,
             fieldnames=[
                 "filepath",
                 "label_raw",
                 "score",
+                "resolved_label",
+                "resolved_score",
+                "resolved_rank",
+                "resolved_source",
                 "p1_minus_p2",
                 "burst_label",
+                "final_label",
+                "needs_review",
                 "reason",
+                "prediction_source",
+                "candidate_labels_json",
             ],
         )
 
-        out_w.writeheader()
-        rev_w.writeheader()
+        out_writer.writeheader()
+        review_writer.writeheader()
 
-        for i, r in enumerate(pred_rows):
-            label = r["label_raw"]
-            score = r["score"]
-            margin = r["margin"]
-
-            burst_label = voted_label_by_idx.get(i, label)
-            working = burst_label or label
-
-            needs_review, final_label, reason = decision_needs_review(
-                working, score, margin
+        for index, row in enumerate(pred_rows):
+            score_for_review = row["resolved_score"] or row["score"]
+            burst_label = voted_label_by_idx.get(index, row["resolved_label"])
+            burst_species_level = voted_species_level_by_idx.get(
+                index,
+                row["resolved_species_level"],
             )
 
-            out_w.writerow(
+            needs_review, final_label, reason = decision_needs_review(
+                burst_label,
+                score_for_review,
+                row["margin"],
+                burst_species_level,
+            )
+
+            out_writer.writerow(
                 {
-                    "filepath": r["filepath"],
-                    "label_raw": label,
-                    "score": round(score, 6),
-                    "p1_minus_p2": round(margin, 6),
-                    "burst_label": working,
-                    "is_blank": r["is_blank"],
-                    "is_human": r["is_human"],
+                    "filepath": row["filepath"],
+                    "label_raw": row["label_raw"],
+                    "score": round(row["score"], 6),
+                    "resolved_label": row["resolved_label"],
+                    "resolved_score": round(score_for_review, 6),
+                    "resolved_rank": row["resolved_rank"],
+                    "resolved_source": row["resolved_source"],
+                    "p1_minus_p2": round(row["margin"], 6),
+                    "burst_label": burst_label,
+                    "is_blank": row["is_blank"],
+                    "is_human": row["is_human"],
                     "final_label": final_label,
                     "needs_review": int(needs_review),
+                    "prediction_source": row["prediction_source"],
+                    "candidate_labels_json": row["candidate_labels_json"],
                 }
             )
 
             if needs_review:
                 review_count += 1
-                rev_w.writerow(
+                if "generic_label" in reason.split(";"):
+                    generic_review_count += 1
+                review_writer.writerow(
                     {
-                        "filepath": r["filepath"],
-                        "label_raw": label,
-                        "score": round(score, 6),
-                        "p1_minus_p2": round(margin, 6),
-                        "burst_label": working,
+                        "filepath": row["filepath"],
+                        "label_raw": row["label_raw"],
+                        "score": round(row["score"], 6),
+                        "resolved_label": row["resolved_label"],
+                        "resolved_score": round(score_for_review, 6),
+                        "resolved_rank": row["resolved_rank"],
+                        "resolved_source": row["resolved_source"],
+                        "p1_minus_p2": round(row["margin"], 6),
+                        "burst_label": burst_label,
+                        "final_label": final_label,
+                        "needs_review": 1,
                         "reason": reason,
+                        "prediction_source": row["prediction_source"],
+                        "candidate_labels_json": row["candidate_labels_json"],
                     }
                 )
 
@@ -529,6 +569,8 @@ def postprocess_speciesnet_results(
     print(f"Burst window: {burst_window_seconds}s")
     print(f"Total predictions: {len(pred_rows)}")
     print(f"Total bursts: {len(bursts)}")
+    print(f"Review items: {review_count}")
+    print(f"Generic label review items: {generic_review_count}")
 
     return {
         "results_csv": str(out_csv),
@@ -536,6 +578,7 @@ def postprocess_speciesnet_results(
         "total_predictions": len(pred_rows),
         "total_bursts": len(bursts),
         "review_items": review_count,
+        "generic_label_review_items": generic_review_count,
         "burst_window_seconds": burst_window_seconds,
     }
 
@@ -562,4 +605,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    

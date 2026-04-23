@@ -1,6 +1,6 @@
 # Run
 
-The backend Python pipeline is the main workflow. Ignore the frontend, UI, Docker, and deployment files for this docs page.
+The backend Python pipeline is the main workflow. 
 
 ## A. Local SD card or local folder workflow
 
@@ -9,50 +9,64 @@ Use this when images were copied from an SD card or already exist in a local fol
 ### Step 1: activate the environment
 
 ```bash
-cd "/Users/ralkhleef/Desktop/UCI-NATURE"
+
+cd /path/to/UCI-NATURE
 source .venv311/bin/activate
+
 ```
 
 ### Step 2: create the local input folder
 
 ```bash
+
 mkdir -p data/local_input
 mkdir -p data/staging
+mkdir -p data/outputs/by_location
+
 ```
 
 Copy SD card images into:
 
 ```text
+
 data/local_input/
+
 ```
 
 ### Step 3: clean old outputs
 
 ```bash
+
 rm -rf data/staging/*
 rm -f data/outputs/manifest.csv
+rm -f data/outputs/manifest_new.csv
 rm -f data/outputs/metadata.csv
 rm -f data/outputs/ml_outputs.csv
 rm -f data/outputs/speciesnet_results.json
 rm -f data/outputs/speciesnet_results.csv
 rm -f data/outputs/speciesnet_review.csv
+rm -f data/outputs/logs/ml_summary.json
+rm -f data/outputs/logs/unmatched_predictions.csv
 rm -rf data/outputs/by_location
 mkdir -p data/outputs/by_location
+
 ```
 
 ### Step 4: run the pipeline in manual mode
 
 ```bash
-python scripts/pipeline/run_pipeline.py --mode manual --folder "/Users/ralkhleef/Desktop/UCI-NATURE/data/local_input"
-```
 
-This is the simplest local run path.
+python3 scripts/pipeline/run_pipeline.py --mode manual --folder "/path/to/UCI-NATURE/data/local_input"
+
+```
 
 The main outputs go to:
 
 ```text
+
 data/outputs/
 data/outputs/by_location/
+
 ```
 
 ## B. Google Drive workflow
@@ -62,32 +76,22 @@ Use this when the source images are still in Google Drive.
 ### Full run command
 
 ```bash
-cd "/Users/ralkhleef/Desktop/UCI-NATURE"
-source .venv311/bin/activate
-
-echo "Cleaning old outputs..."
-rm -f data/outputs/manifest.csv
-rm -f data/outputs/metadata.csv
-rm -f data/outputs/ml_outputs.csv
-rm -f data/outputs/speciesnet_results.json
-rm -f data/outputs/speciesnet_results.csv
-rm -f data/outputs/speciesnet_review.csv
-rm -f data/outputs/drive_index.csv
-rm -rf data/outputs/by_location
-mkdir -p data/outputs/by_location
 
 echo "Running full Drive pipeline..."
-python scripts/pipeline/run_pipeline.py
+python3 scripts/pipeline/run_pipeline.py
+
 ```
 
 ### Step by step command
 
 ```bash
-cd "/Users/ralkhleef/Desktop/UCI-NATURE"
+
+cd /path/to/UCI-NATURE
 source .venv311/bin/activate
-python scripts/pipeline/build_index.py
-python scripts/pipeline/download_drive.py --index data/outputs/drive_index.csv
-python scripts/pipeline/run_pipeline.py
+python3 scripts/pipeline/build_index.py
+python3 scripts/pipeline/download_drive.py --index data/outputs/drive_index.csv
+python3 scripts/pipeline/run_pipeline.py
+
 ```
 
 ### What the pipeline does internally
@@ -107,9 +111,11 @@ When the full Drive pipeline runs, it performs these steps:
 You can also run the Drive-based flow through the main entry point only:
 
 ```bash
-cd "/Users/ralkhleef/Desktop/UCI-NATURE"
+
+cd /path/to/UCI-NATURE
 source .venv311/bin/activate
-python scripts/pipeline/run_pipeline.py
+python3 scripts/pipeline/run_pipeline.py
+
 ```
 
 ## C. Testing and verification commands

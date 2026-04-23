@@ -6,16 +6,20 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PIL import ExifTags, Image
+try:
+    from PIL import ExifTags, Image
+except ImportError:
+    ExifTags = None
+    Image = None
 
 
 OUT_CSV_DEFAULT = Path("data/outputs/metadata.csv")
 ML_OUT_DEFAULT = Path("data/outputs/ml_outputs.csv")
 
-_EXIF_TAGS = {v: k for k, v in ExifTags.TAGS.items()}
+_EXIF_TAGS = {v: k for k, v in ExifTags.TAGS.items()} if ExifTags else {}
 
 
-def _get_exif_datetime_pillow(img: Image.Image) -> str:
+def _get_exif_datetime_pillow(img) -> str:
     try:
         exif = img.getexif()
         if not exif:
@@ -81,17 +85,62 @@ def load_ml_outputs(path: Path) -> tuple[dict[str, dict[str, str]], list[str]]:
     return out, fields
 
 
+def merge_metadata_with_ml_outputs(metadata_path: Path, ml_path: Path) -> dict[str, Any]:
+    metadata_path = Path(metadata_path)
+    ml_path = Path(ml_path)
+
+    if not metadata_path.exists():
+        raise FileNotFoundError(f"Metadata CSV not found: {metadata_path}")
+
+    metadata_rows = read_csv(metadata_path)
+    ml_map, ml_fields = load_ml_outputs(ml_path)
+
+    if not metadata_rows:
+        return {
+            "metadata_path": str(metadata_path),
+            "rows_written": 0,
+            "ml_fields_merged": len(ml_fields),
+        }
+
+    fieldnames = list(metadata_rows[0].keys())
+    for field in ml_fields:
+        if field not in fieldnames:
+            fieldnames.append(field)
+
+    out_rows = []
+    for row in metadata_rows:
+        out = dict(row)
+        fid = (row.get("file_id") or "").strip()
+        for field in ml_fields:
+            out.setdefault(field, "")
+        if fid and fid in ml_map:
+            for k, v in ml_map[fid].items():
+                out[k] = v
+        out_rows.append(out)
+
+    write_csv(metadata_path, out_rows, fieldnames)
+
+    return {
+        "metadata_path": str(metadata_path),
+        "rows_written": len(out_rows),
+        "ml_fields_merged": len(ml_fields),
+    }
+
+
 def extract_metadata_from_manifest(
     manifest_path: Path,
     out_path: Path = OUT_CSV_DEFAULT,
     ml_path: Path = ML_OUT_DEFAULT,
+    merge_ml: bool = True,
 ) -> dict[str, Any]:
     manifest_path = Path(manifest_path)
     out_path = Path(out_path)
     ml_path = Path(ml_path)
 
     manifest_rows = read_csv(manifest_path)
-    ml_map, ml_fields = load_ml_outputs(ml_path)
+    ml_map, ml_fields = ({}, [])
+    if merge_ml:
+        ml_map, ml_fields = load_ml_outputs(ml_path)
 
     base_fields = [
         "file_id",
@@ -126,7 +175,7 @@ def extract_metadata_from_manifest(
 
         if local_path:
             p = Path(local_path)
-            if p.exists():
+            if p.exists() and Image is not None:
                 try:
                     with Image.open(p) as img:
                         exif_dt = _get_exif_datetime_pillow(img)
@@ -186,12 +235,18 @@ def main() -> None:
         default=str(ML_OUT_DEFAULT),
         help="Optional ML outputs CSV to merge (keyed by file_id)",
     )
+    ap.add_argument(
+        "--no_merge_ml",
+        action="store_true",
+        help="Do not merge ML outputs during metadata extraction",
+    )
     args = ap.parse_args()
 
     extract_metadata_from_manifest(
         manifest_path=Path(args.manifest),
         out_path=Path(args.out),
         ml_path=Path(args.ml_outputs),
+        merge_ml=not args.no_merge_ml,
     )
 
 
