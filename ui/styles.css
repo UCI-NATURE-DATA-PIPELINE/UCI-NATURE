@@ -2192,7 +2192,23 @@ input[type=range].model-slider::-webkit-slider-thumb:hover {
   min-height: 300px;
 }
 
-#page-statistics canvas {
+.page {
+  display: none;
+}
+
+.page.active {
+  display: block;
+}
+
+.card {
+  height: 400px;
+}
+
+#page-statistics .card {
+  height: 400px;
+}
+
+#chart-species {
   width: 100% !important;
-  height: 280px !important;
+  height: 100% !important;
 }
