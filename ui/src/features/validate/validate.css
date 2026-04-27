@@ -1,0 +1,4 @@
+/* Validate style entrypoint that composes checks, date pickers, and error panels. */
+@import "./styles/validate-core.css";
+@import "./styles/validate-picker.css";
+@import "./styles/validate-errors.css";

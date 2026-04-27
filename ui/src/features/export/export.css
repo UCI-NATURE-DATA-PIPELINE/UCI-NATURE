@@ -1,0 +1,3 @@
+/* Export style entrypoint that composes export-specific styles from smaller files. */
+@import "./styles/export-core.css";
+@import "./styles/export-legacy.css";

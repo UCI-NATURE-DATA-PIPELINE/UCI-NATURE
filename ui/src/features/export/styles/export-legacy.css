@@ -1,0 +1,91 @@
+/* Export progress bar */
+.export-progress-wrap {
+  display:none; padding:14px 18px; border-radius:12px;
+  background:#F0FFF4; border:1.5px solid #9AE6B4; margin-top:12px;
+}
+.export-progress-wrap.visible { display:block; }
+.export-progress-label { font-size:13px; font-weight:600; color:#276749; margin-bottom:8px; display:flex; justify-content:space-between; }
+.export-progress-bar-bg {
+  height:8px; background:#C6F6D5; border-radius:4px; overflow:hidden;
+}
+.export-progress-bar-fill {
+  height:100%; background:linear-gradient(90deg,#38A169,#68D391);
+  border-radius:4px; width:0%; transition:width .4s ease;
+}
+.export-progress-sub { font-size:11.5px; color:#2F855A; margin-top:6px; }
+
+/* folder row old CSS kept for other pages */
+.folder-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; background: #F7FAFC;
+  border-radius: 10px; border: 1px solid var(--border); margin-bottom: 8px;
+}
+.folder-info { display: flex; align-items: center; gap: 10px; }
+.folder-icon { font-size: 22px; }
+.folder-name { font-size: 13.5px; font-weight: 600; }
+.folder-sub  { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.folder-actions { display: flex; align-items: center; gap: 10px; }
+.export-format-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+.format-card {
+  border: 2px solid var(--border); border-radius: 10px; padding: 14px;
+  cursor: pointer; transition: all .18s; text-align: center;
+}
+.format-card:hover    { border-color: var(--blue); background: #EBF8FF; }
+.format-card.selected { border-color: var(--blue); background: #EBF8FF; }
+.format-icon { font-size: 28px; margin-bottom: 6px; }
+.format-name { font-size: 13px; font-weight: 600; }
+
+/* Toggle switch */
+.toggle-wrap { display: flex; align-items: center; gap: 8px; }
+.toggle { position: relative; width: 40px; height: 22px; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0; cursor: pointer;
+  background: #CBD5E0; border-radius: 11px; transition: .2s;
+}
+.toggle-slider::before {
+  content: ''; position: absolute;
+  height: 16px; width: 16px; left: 3px; bottom: 3px;
+  background: white; border-radius: 50%; transition: .2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+}
+.toggle input:checked + .toggle-slider { background: var(--blue); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
+.toggle-label { font-size: 13px; color: var(--text); font-weight: 500; }
+
+/* Warn box */
+.warn-box { padding: 14px 16px; border-radius: 10px; border: 1px solid; }
+.warn-box.yellow { background: #FFFFF0; border-color: #F6E05E; }
+.warn-box.red    { background: #FFF5F5; border-color: #FEB2B2; }
+.warn-box.green  { background: #F0FFF4; border-color: #9AE6B4; }
+.warn-box-title  { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.warn-box-body   { font-size: 13px; margin-top: 6px; color: var(--muted); }
+
+/* upload queue */
+.upload-queue { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.queue-item { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--border); }
+.queue-item:last-child { border-bottom: none; }
+.queue-name { flex: 1; font-size: 13px; }
+.queue-size { font-size: 12px; color: var(--muted); }
+.queue-prog { width: 80px; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.queue-prog-fill { height: 100%; background: var(--blue); border-radius: 3px; }
+
+/* scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #CBD5E0; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #A0AEC0; }
+
+/* drive sync mode */
+.sync-tabs { display: flex; gap: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 16px; }
+.sync-tab {
+  flex: 1; padding: 10px 14px; background: #F7FAFC;
+  border: none; cursor: pointer; font-size: 13.5px; font-weight: 500;
+  font-family: 'Inter', sans-serif; color: var(--muted);
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  transition: all .18s; border-right: 1px solid var(--border);
+}
+.sync-tab:last-child { border-right: none; }
+.sync-tab:hover   { background: #EDF2F7; color: var(--text); }
+.sync-tab.active  { background: var(--blue); color: #fff; }
+

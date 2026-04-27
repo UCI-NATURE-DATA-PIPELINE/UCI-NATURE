@@ -1,0 +1,151 @@
+/* ─── REVIEW PAGE HI-FI ─────────────────────────────── */
+
+/* Progress bar */
+.review-progress-bar-wrap { height:5px; background:#E2E8F0; border-radius:3px; overflow:hidden; margin-bottom:14px; }
+.review-progress-bar-fill { height:100%; background:linear-gradient(90deg,var(--blue),#63B3ED); border-radius:3px; transition:width .6s; }
+
+/* Top control bar */
+.review-topbar { display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+.review-topbar-left { display:flex; align-items:center; gap:10px; flex:1; }
+.review-topbar-right { display:flex; align-items:center; gap:8px; }
+.review-stat-chip { font-size:12.5px; padding:5px 12px; border-radius:20px; font-weight:600; }
+.review-stat-chip.blue { background:#EBF8FF; color:var(--blue); }
+.review-stat-chip.gray { color:var(--muted); font-weight:400; }
+.review-filter-btn {
+  display:inline-flex; align-items:center; gap:5px;
+  padding:5px 12px; border-radius:8px; border:1px solid var(--border);
+  background:#fff; font-size:12.5px; color:var(--text); cursor:pointer;
+  font-family:'Inter',sans-serif; font-weight:500; transition:all .15s;
+}
+.review-filter-btn:hover { background:#F7FAFC; border-color:#CBD5E0; }
+.review-filter-btn.active { background:#EBF8FF; border-color:#90CDF4; color:var(--blue); }
+.review-human-chip {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:5px 12px; border-radius:8px; border:1.5px solid #FEB2B2;
+  background:#FFF5F5; font-size:12.5px; color:#C53030; font-weight:600;
+  cursor:pointer; font-family:'Inter',sans-serif; transition:all .15s;
+}
+.review-human-chip:hover { background:#FED7D7; }
+.review-human-chip.active { background:#FED7D7; border-color:#FC8181; }
+
+/* Filter status chips */
+.rfilter-group { display:flex; gap:4px; }
+.rfilter-chip {
+  padding:4px 10px; border-radius:20px; font-size:12px; cursor:pointer;
+  border:1px solid var(--border); background:#fff; color:var(--muted);
+  font-family:'Inter',sans-serif; transition:all .15s;
+}
+.rfilter-chip:hover { background:#F7FAFC; }
+.rfilter-chip.active { background:#1A202C; color:#fff; border-color:#1A202C; font-weight:600; }
+
+/* Main 3-col layout */
+.review-layout {
+  display:grid;
+  grid-template-columns: 252px 1fr 272px;
+  gap:12px;
+  height:calc(100vh - var(--header-h) - 130px);
+}
+
+/* Left — Queue Panel */
+.review-queue { overflow-y:auto; display:flex; flex-direction:column; gap:0; }
+.review-queue-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.review-queue-count { font-size:12px; color:var(--muted); }
+
+/* Individual queue item */
+.rq-item {
+  display:flex; align-items:center; gap:9px;
+  padding:9px 10px; border-radius:9px; cursor:pointer;
+  border:1px solid transparent; transition:all .14s; margin-bottom:3px;
+}
+.rq-item:hover    { background:#F7FAFC; border-color:var(--border); }
+.rq-item.selected { background:#EBF8FF; border-color:#90CDF4; }
+.rq-item.confirmed { opacity:.65; }
+.rq-thumb {
+  width:42px; height:42px; border-radius:7px; flex-shrink:0;
+  background:#2D3748; display:flex; align-items:center;
+  justify-content:center; font-size:22px; position:relative;
+}
+.rq-status-dot {
+  position:absolute; bottom:-2px; right:-2px;
+  width:11px; height:11px; border-radius:50%;
+  border:2px solid #fff; flex-shrink:0;
+}
+.rq-item-info { flex:1; min-width:0; }
+.rq-name { font-size:12px; font-weight:500; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.rq-label { font-size:11px; color:var(--muted); margin-top:2px; }
+.conf-high  { color:#38A169 !important; font-weight:600 !important; }
+.conf-med   { color:#D69E2E !important; font-weight:600 !important; }
+.conf-low   { color:#E53E3E !important; font-weight:600 !important; }
+
+/* Burst group item in queue */
+.rq-burst {
+  display:flex; align-items:center; gap:9px;
+  padding:9px 10px; border-radius:9px; cursor:pointer;
+  border:1.5px solid #FED7A0; background:#FFFAF0;
+  transition:all .14s; margin-bottom:3px;
+}
+.rq-burst:hover    { background:#FEFCF0; border-color:#F6AD55; }
+.rq-burst.selected { background:#FFF3E0; border-color:#ED8936; }
+.rq-burst-thumb {
+  width:42px; height:42px; border-radius:7px; flex-shrink:0;
+  background:#2D3748; display:flex; align-items:center;
+  justify-content:center; font-size:18px; position:relative;
+}
+.rq-burst-badge {
+  position:absolute; top:-5px; right:-5px;
+  background:#ED8936; color:#fff; font-size:9px; font-weight:700;
+  padding:2px 5px; border-radius:8px; border:1.5px solid #fff;
+}
+.rq-burst-label { font-size:11.5px; font-weight:600; color:#7B341E; }
+.rq-burst-sub   { font-size:10.5px; color:#C05621; margin-top:1px; }
+
+/* Center — Image Viewer */
+.review-viewer-wrap { display:flex; flex-direction:column; gap:10px; min-height:0; }
+.review-viewer {
+  flex:1; border-radius:14px; background:#1A202C;
+  display:flex; flex-direction:column; align-items:center;
+  justify-content:center; position:relative; overflow:hidden;
+  min-height:320px;
+}
+.review-viewer-img {
+  font-size:120px; line-height:1;
+  filter:drop-shadow(0 4px 24px rgba(0,0,0,.5));
+  user-select:none;
+}
+/* Confidence badge overlay */
+.review-conf-overlay {
+  position:absolute; top:14px; right:14px;
+  padding:6px 12px; border-radius:10px; font-size:13px; font-weight:700;
+  backdrop-filter:blur(8px); border:1.5px solid;
+}
+.review-conf-overlay.high { background:rgba(56,161,105,.2); border-color:rgba(56,161,105,.5); color:#9AE6B4; }
+.review-conf-overlay.med  { background:rgba(214,158,46,.2);  border-color:rgba(214,158,46,.5);  color:#FAF089; }
+.review-conf-overlay.low  { background:rgba(229,62,62,.2);   border-color:rgba(229,62,62,.5);   color:#FEB2B2; }
+/* Human flag overlay */
+.review-human-overlay {
+  position:absolute; top:14px; left:14px;
+  background:rgba(229,62,62,.85); color:#fff;
+  padding:5px 11px; border-radius:8px; font-size:12px; font-weight:700;
+  display:flex; align-items:center; gap:5px; backdrop-filter:blur(4px);
+}
+/* Image filename bottom strip */
+.review-viewer-footer {
+  position:absolute; bottom:0; left:0; right:0;
+  padding:10px 16px; background:linear-gradient(transparent,rgba(0,0,0,.7));
+  display:flex; align-items:center; justify-content:space-between;
+}
+.review-viewer-filename { font-size:12px; color:rgba(255,255,255,.8); font-weight:500; }
+.review-viewer-pos { font-size:12px; color:rgba(255,255,255,.5); }
+/* Prev / Next navigation */
+.review-nav-row { display:flex; align-items:center; justify-content:center; gap:12px; }
+.review-nav-btn {
+  display:flex; align-items:center; gap:5px;
+  padding:7px 16px; border-radius:9px; border:1px solid var(--border);
+  background:#fff; font-size:12.5px; color:var(--text); cursor:pointer;
+  font-family:'Inter',sans-serif; font-weight:500; transition:all .15s;
+}
+.review-nav-btn:hover { background:#F7FAFC; border-color:#CBD5E0; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+.review-nav-btn:disabled { opacity:.35; cursor:not-allowed; }
+.review-nav-counter { font-size:13px; color:var(--muted); min-width:60px; text-align:center; font-weight:500; }
+
+/* Right — Classification + Actions Panel */

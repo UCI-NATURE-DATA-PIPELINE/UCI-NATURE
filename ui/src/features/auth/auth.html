@@ -1,136 +1,137 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>UCI Nature — Wildlife Pipeline</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./src/styles/global.css">
-<link rel="stylesheet" href="./src/features/auth/auth.css">
-<link rel="stylesheet" href="./src/features/dashboard/dashboard.css">
-<link rel="stylesheet" href="./src/features/drive/drive.css">
-<link rel="stylesheet" href="./src/features/pipeline/pipeline.css">
-<link rel="stylesheet" href="./src/features/review/review.css">
-<link rel="stylesheet" href="./src/features/validate/validate.css">
-<link rel="stylesheet" href="./src/features/export/export.css">
-<link rel="stylesheet" href="./src/features/statistics/statistics.css">
-</head>
-<body>
-<div id="auth-root"></div>
-<div class="app" id="main-app" style="display:none">
+<!-- Login and Drive-confirmation markup for the authentication flow. -->
+<div id="login-screen">
+  <div class="login-card">
 
-  <!-- ── SIDEBAR ──────────────────────────── -->
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-logo" id="sidebar-logo">
-      <div class="logo-img">
+    <!-- Header -->
+    <div class="login-header">
+      <div class="login-logo">
         <img src="data:image/png;base64,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" alt="UCI Nature">
       </div>
-      <div class="logo-text">
-        <div class="name">
-          <span class="brand-uci">UCI</span><span class="brand-nature">Nature</span>
+      <div>
+        <div>
+          <span class="login-brand-uci">UCI</span>
+          <span class="login-brand-nature">Nature</span>
         </div>
-        <div class="sub">Wildlife Pipeline</div>
+        <div class="login-brand-sub">Wildlife Pipeline</div>
       </div>
     </div>
 
-    <nav class="sidebar-nav">
-      <button class="nav-item active" data-page="dashboard" data-label="Dashboard">
-        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
-        <span class="nav-label">Dashboard</span>
-        <span class="nav-tooltip">Dashboard</span>
-      </button>
-      <button class="nav-item" data-page="upload" data-label="Upload">
-        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>
-        <span class="nav-label">Upload</span>
-        <span class="nav-tooltip">Upload</span>
-      </button>
-      <button class="nav-item" data-page="model" data-label="Run Model">
-        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
-        <span class="nav-label">Run Model</span>
-        <span class="nav-tooltip">Run Model</span>
-      </button>
-      <button class="nav-item" data-page="review" data-label="Review & Modify">
-        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>
-        <span class="nav-label">Review &amp; Modify</span>
-        <span class="nav-tooltip">Review &amp; Modify</span>
-      </button>
-      <button class="nav-item" data-page="validate" data-label="Validate">
-        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
-        <span class="nav-label">Validate</span>
-        <span class="nav-tooltip">Validate</span>
-      </button>
-      <button class="nav-item" data-page="export" data-label="Export">
-        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
-        <span class="nav-label">Export</span>
-        <span class="nav-tooltip">Export</span>
-      </button>
-      <button class="nav-item" data-page="statistics" data-label="Statistics">
-        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
-        <span class="nav-label">Statistics</span>
-        <span class="nav-tooltip">Statistics</span>
-      </button>
-    </nav>
+    <!-- Body -->
+    <div class="login-body">
 
-    <div class="sidebar-footer">
-      <button class="collapse-btn" id="collapse-btn">
-        <span class="collapse-icon-wrap">
-          <svg class="collapse-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-        </span>
-        <span class="collapse-label">Collapse</span>
-      </button>
-    </div>
-  </aside>
-
-  <!-- ── MAIN ─────────────────────────────── -->
-  <div class="main">
-
-    <!-- HEADER -->
-    <header class="header">
-      <div class="header-left">
-        <h1 id="page-title">Dashboard</h1>
-        <p>UCI Campus Reserves · Wildlife Camera Processing</p>
-      </div>
-      <div class="header-actions">
-        <div class="backend-badge offline" id="backend-badge">
-          <span class="backend-dot off" id="backend-dot"></span>
-          <span id="backend-text">Checking backend…</span>
+      <!-- Step indicator -->
+      <div class="login-steps">
+        <div class="login-step-item active" id="lstep-1">
+          <div class="step-num">1</div>
+          <span>Select Project</span>
         </div>
-        <div class="drive-badge disconnected" id="drive-badge" onclick="openDriveModal()">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="#4285F4"/>
-            <path d="M2 17L12 22L22 17" stroke="#34A853" stroke-width="2.2" stroke-linecap="round"/>
-            <path d="M2 12L12 17L22 12" stroke="#FBBC05" stroke-width="2.2" stroke-linecap="round"/>
-          </svg>
-          <span class="drive-dot off" id="drive-dot"></span>
-          <div id="drive-badge-text">
-            <span id="drive-text" style="color:var(--muted)">Connect Google Drive</span>
+        <div class="step-connector"></div>
+        <div class="login-step-item" id="lstep-2">
+          <div class="step-num">2</div>
+          <span>Connect Drive</span>
+        </div>
+        <div class="step-connector"></div>
+        <div class="login-step-item" id="lstep-3">
+          <div class="step-num">3</div>
+          <span>Confirm</span>
+        </div>
+      </div>
+
+      <!-- Step 1: Project Select (visible first) -->
+      <div id="login-step1">
+        <div class="login-section-title">Choose a Project</div>
+        <div class="login-section-sub">Select the wildlife camera project you want to work on.</div>
+
+        <div class="project-cards">
+          <!-- UCI Campus Reserves — selectable -->
+          <div class="project-card selected" id="proj-uci" onclick="selectProject(this)">
+            <div class="project-card-icon" style="background:#EBF8FF">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0064A4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
+            </div>
+            <div>
+              <div class="project-card-name">UCI Campus Reserves</div>
+              <div class="project-card-drive">Wildlife Camera Photo Database</div>
+            </div>
+            <div class="project-card-check">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+          </div>
+
+          <!-- Desert Wildlife — coming soon -->
+          <div class="project-card disabled" id="proj-desert">
+            <div class="project-card-icon" style="background:#FFFBEB">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#D69E2E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+              </svg>
+            </div>
+            <div>
+              <div class="project-card-name">Desert Wildlife Cameras</div>
+              <div class="project-card-drive">Future project — not yet configured</div>
+            </div>
+            <span class="coming-soon-badge">Coming Soon</span>
           </div>
         </div>
+
+        <button class="oauth-btn" id="continue-btn" onclick="goToStep2()">
+          Continue
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
       </div>
-    </header>
 
-    <!-- CONTENT -->
-    <main class="content" id="feature-content"></main>
-  </div>
-</div>
+      <!-- Step 2: Connect Drive (hidden initially) -->
+      <div id="login-step2" style="display:none">
+        <div class="login-section-title">Connect Google Drive</div>
+        <div class="login-section-sub">Sign in with the Google account that has access to the <strong>Wildlife Camera Photo Database</strong>.</div>
 
-<div id="toast-container"></div>
+        <button class="oauth-btn" id="oauth-btn" onclick="simulateOAuth()">
+          <svg width="18" height="18" viewBox="0 0 24 24">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+          </svg>
+          Sign in with Google
+        </button>
+      </div>
 
-<div class="confirm-modal-overlay" id="confirm-modal-overlay" onclick="closeConfirmModal(event)">
-  <div class="confirm-modal">
-    <div class="confirm-modal-icon" id="modal-icon"></div>
-    <div class="confirm-modal-title" id="modal-title">Are you sure?</div>
-    <div class="confirm-modal-body" id="modal-body"></div>
-    <div class="confirm-modal-actions">
-      <button class="confirm-modal-cancel" onclick="closeConfirmModal()">Cancel</button>
-      <button class="confirm-modal-ok" id="modal-ok-btn" onclick="confirmModalOK()">Confirm</button>
     </div>
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script type="module" src="./src/main.js"></script>
-</body>
-</html>
+<!-- ══════════════════════════════════════════
+     DRIVE CONFIRM MODAL
+══════════════════════════════════════════════ -->
+<div class="modal-overlay" id="drive-modal">
+  <div class="confirm-modal">
+    <div class="modal-drive-icon">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+        <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="#4285F4"/>
+        <path d="M2 17L12 22L22 17" stroke="#34A853" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M2 12L12 17L22 12" stroke="#FBBC05" stroke-width="2.2" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="modal-title" id="drive-modal-title">Confirm Drive Connection</div>
+    <div class="modal-sub" id="drive-modal-sub">We found the following Google Drive. Please confirm this is the correct project drive before continuing.</div>
+
+    <div class="drive-confirm-box">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="drive-confirm-dot"></div>
+          <div class="drive-confirm-name" id="drive-confirm-name">Wildlife Camera Photo Database</div>
+        </div>
+        <div class="drive-confirm-account" id="drive-confirm-account" style="margin-left:18px"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="a2c8d7cecbc78cc1cdc4c4c7dbe2d7c1cb8cc7c6d7">[email&#160;protected]</a> · UCI Campus Reserves</div>
+      </div>
+    </div>
+
+    <div class="modal-btn-row">
+      <button class="btn-confirm" id="drive-confirm-btn" onclick="confirmDrive()">
+        Confirm &amp; Enter Dashboard
+      </button>
+      <button class="btn-switch-account" onclick="switchAccount()">
+        Use a Different Account
+      </button>
+    </div>
+  </div>
+</div>

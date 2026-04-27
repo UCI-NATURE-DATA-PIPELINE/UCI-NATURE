@@ -1,0 +1,5 @@
+/* Global style entrypoint that composes the shared shell styles in smaller chunks. */
+@import "./segments/global-shell.css";
+@import "./segments/global-workspace.css";
+@import "./segments/global-overlays.css";
+@import "./segments/global-legacy.css";

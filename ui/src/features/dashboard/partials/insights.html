@@ -1,0 +1,51 @@
+<!-- Dashboard insight cards for run summaries, detection mix, and activity. -->
+<div class="charts-row" style="margin-bottom:14px">
+  <div class="card card-p">
+    <div class="card-title">Last Run Summary</div>
+    <div class="donut-wrap">
+      <div class="donut-svg-wrap">
+        <svg width="130" height="130" viewBox="0 0 130 130">
+          <circle cx="65" cy="65" r="52" fill="none" stroke="#E2E8F0" stroke-width="14"/>
+          <circle cx="65" cy="65" r="52" fill="none" stroke="#48BB78" stroke-width="14" stroke-dasharray="0 327" stroke-dashoffset="82" stroke-linecap="round" id="run-circle"/>
+        </svg>
+        <div class="donut-center"><div class="donut-val" id="run-pct">0%</div><div class="donut-sub">Success</div></div>
+      </div>
+      <div class="run-stats-list">
+        <div class="run-stat-row"><span class="run-stat-label">Processed</span><span class="run-stat-val" id="run-success-count">--</span></div>
+        <div class="run-stat-row"><span class="run-stat-label">Success rate</span><span class="run-stat-val" id="run-success-rate">--</span></div>
+        <div class="run-stat-row"><span class="run-stat-label">Failures</span><span class="run-stat-val" id="run-failure-count">--</span></div>
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:11px;margin-top:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px">Cameras Processed</div>
+      <div id="dashboard-camera-chip-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+  </div>
+
+  <div class="card card-p">
+    <div class="card-title">Detection Breakdown</div>
+    <div class="donut-wrap">
+      <div class="donut-svg-wrap">
+        <svg width="130" height="130" viewBox="0 0 130 130" id="species-svg"><circle cx="65" cy="65" r="52" fill="none" stroke="#E2E8F0" stroke-width="14"/></svg>
+        <div class="donut-center"><div class="donut-val" id="species-total">--</div><div class="donut-sub" id="species-total-label">Animals</div></div>
+      </div>
+      <div id="species-legend-list" style="flex:1"></div>
+    </div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+  <div class="card card-p">
+    <div class="card-title">Camera Locations</div>
+    <div id="dashboard-camera-status-list" style="display:flex;flex-direction:column;gap:8px">
+      <div class="empty-state" style="color:var(--muted);font-size:13px;padding:16px 0">Loading camera locations…</div>
+    </div>
+  </div>
+
+  <div class="card card-p">
+    <div class="card-title">Recent Activity</div>
+    <div class="activity-list" id="dashboard-activity-list">
+      <div class="empty-state" style="color:var(--muted);font-size:13px;padding:16px 0">Loading recent activity…</div>
+    </div>
+  </div>
+</div>

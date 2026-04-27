@@ -1,0 +1,43 @@
+<!-- Validate setup markup for deployment ranges and time-correction tools. -->
+<div class="val-summary-strip">
+  <div class="val-summary-card total"><div class="val-summary-val" id="val-total">--</div><div class="val-summary-lbl">Total Records</div></div>
+  <div class="val-summary-card valid"><div class="val-summary-val" id="val-valid">--</div><div class="val-summary-lbl">Valid</div></div>
+  <div class="val-summary-card warning"><div class="val-summary-val" id="val-warnings">310</div><div class="val-summary-lbl">Warnings</div></div>
+  <div class="val-summary-card error"><div class="val-summary-val" id="val-errors">52</div><div class="val-summary-lbl">Errors</div></div>
+</div>
+
+<div class="card card-p" style="margin-bottom:14px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><div><div class="card-title" style="margin-bottom:2px">Deployment Date Range</div><div style="font-size:12px;color:var(--muted)">Images outside this range will be flagged as warnings</div></div></div>
+  <div class="val-date-grid">
+    <div class="val-date-field">
+      <label class="field-label">Deployment Start</label>
+      <div class="dp-wrap" id="dp-wrap-start"><div class="dp-input-row" id="dp-row-start" onclick="openDP('start')"><input type="text" class="dp-text-input" id="dp-text-start" readonly placeholder="Select start date" value="Jan 15, 2024"><button class="dp-cal-btn" type="button" tabindex="-1" onclick="event.stopPropagation();openDP('start')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button></div><div class="dp-popup" id="dp-popup-start"></div></div>
+      <div class="val-date-error" id="date-start-error"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Start date cannot be in the future — images must already exist</div>
+    </div>
+    <div class="val-date-field">
+      <label class="field-label">Deployment End</label>
+      <div class="dp-wrap" id="dp-wrap-end"><div class="dp-input-row" id="dp-row-end" onclick="openDP('end')"><input type="text" class="dp-text-input" id="dp-text-end" readonly placeholder="Select end date" value="May 30, 2024"><button class="dp-cal-btn" type="button" tabindex="-1" onclick="event.stopPropagation();openDP('end')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button></div><div class="dp-popup" id="dp-popup-end"></div></div>
+      <div class="val-date-error" id="date-range-error"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>End date must be after the start date</div>
+    </div>
+  </div>
+
+  <div class="val-range-warn" id="range-warn-box">
+    <div class="val-range-warn-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D69E2E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+    <div style="flex:1;min-width:0"><div class="val-range-warn-title" id="range-warn-title">23 images outside deployment range</div><div class="val-range-warn-body" id="range-warn-body">Images with timestamps before <strong id="warn-start-label">Jan 15</strong> or after <strong id="warn-end-label">May 30</strong> — likely due to incorrect camera clock settings. Use Batch Time Correction below to adjust.</div><button class="val-range-warn-link" id="affected-toggle-btn" onclick="toggleAffectedPanel()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" id="affected-btn-chevron"><polyline points="9 18 15 12 9 6"/></svg>View affected images</button></div>
+  </div>
+
+  <div class="affected-panel" id="affected-panel">
+    <div class="affected-panel-header"><div><div class="affected-panel-title" id="affected-panel-title">Affected images</div><div class="affected-panel-sub" id="affected-panel-sub">Timestamps compared against deployment range</div></div><button class="affected-panel-close" onclick="toggleAffectedPanel()">&#215;</button></div>
+    <div class="affected-table-wrap"><table class="affected-table"><thead><tr><th>Filename</th><th>Camera</th><th>Timestamp</th><th>Issue</th></tr></thead><tbody id="affected-table-body"></tbody></table></div>
+  </div>
+</div>
+
+<div class="card card-p" style="margin-bottom:14px">
+  <div style="margin-bottom:14px"><div class="card-title" style="margin-bottom:2px">Batch Time Correction</div><div style="font-size:12px;color:var(--muted)">Apply a time offset to correct camera clock drift</div></div>
+  <div class="val-correction-grid">
+    <div><label class="field-label">Select Images</label><select class="model-select" id="time-correct-select"><option>All images outside range (23)</option><option>Images before deployment start (8)</option><option>Images after deployment end (15)</option><option>All images</option></select></div>
+    <div><label class="field-label">Time Offset (hours)</label><input type="number" class="val-date-input" value="1" min="-12" max="12" id="offset-input" oninput="updateTimePreview(this.value)" style="font-variant-numeric:tabular-nums"></div>
+    <div><label class="field-label">Preview</label><div class="val-preview-box"><div class="val-preview-before">Before: 2024-03-10 01:30:00</div><div class="val-preview-after" id="time-preview-after">After:&nbsp; 2024-03-10 02:30:00</div></div></div>
+  </div>
+  <div class="val-correction-btns"><button class="val-run-btn" style="font-size:13px;padding:9px 18px" onclick="showToast('Time correction applied to 23 images','success')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Apply Correction</button><button class="btn btn-outline btn-sm" onclick="showToast('Previewing changes…','')">Preview Changes</button></div>
+</div>

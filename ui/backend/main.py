@@ -12,9 +12,10 @@ import traceback
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from scripts.config import PIPELINE_DRIVE_CACHE_POLICY
+from scripts.config import APP_ENV, PIPELINE_DRIVE_CACHE_POLICY
 from scripts.pipeline.validate_output import validate_csv
 from ui.backend.auth.routes import get_google_auth_state, router as google_auth_router
 from ui.backend.auth.routes_drive import (
@@ -546,6 +547,31 @@ def build_export_artifact_summary() -> dict:
     }
 
 
+def build_pipeline_results_summary(session_key: Optional[str] = None) -> dict:
+    status = serialize_pipeline_state(session_key) if session_key else _latest_pipeline_state()
+    export_summary = build_export_artifact_summary()
+
+    result = status.get("result") if isinstance(status.get("result"), dict) else {}
+    source = result.get("source") if isinstance(result.get("source"), dict) else {}
+
+    return {
+        "run_id": status.get("run_id"),
+        "pipeline_status": status.get("status") or "idle",
+        "finished_at": status.get("finished_at"),
+        "status": "ready" if export_summary.get("status") == "ready" else "empty",
+        "message": export_summary.get("message"),
+        "output_dir": export_summary.get("output_dir"),
+        "file_count": export_summary.get("file_count", 0),
+        "total_rows": export_summary.get("total_rows", 0),
+        "files": export_summary.get("files", []),
+        "integration_mode": status.get("integration_mode"),
+        "source_mode": source.get("mode"),
+        "image_count": source.get("image_count"),
+        "review_items": ((result.get("steps") or {}).get("postprocess") or {}).get("review_items", 0),
+        "note": export_summary.get("note"),
+    }
+
+
 def validate_pipeline_prerequisites(
     session: dict,
     source_mode: str,
@@ -989,6 +1015,31 @@ def root():
     return {"message": "Backend running"}
 
 
+@app.get("/api/health")
+def api_health():
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    runtime_ready = (3, 11) <= sys.version_info[:2] < (3, 13) and importlib.util.find_spec("speciesnet") is not None
+
+    if not ((3, 11) <= sys.version_info[:2] < (3, 13)):
+        runtime_detail = (
+            "Pipeline runtime requires Python 3.11 or 3.12 because SpeciesNet is not "
+            f"compatible with Python {python_version}."
+        )
+    elif importlib.util.find_spec("speciesnet") is None:
+        runtime_detail = "SpeciesNet is not installed in the active backend environment."
+    else:
+        runtime_detail = "Backend ready for pipeline requests."
+
+    return {
+        "status": "ok",
+        "app_env": APP_ENV,
+        "backend": "connected",
+        "python_version": python_version,
+        "pipeline_runtime_ready": runtime_ready,
+        "pipeline_runtime_detail": runtime_detail,
+    }
+
+
 @app.post("/api/auth/login")
 def login(data: LoginRequest):
     token = create_session_token()
@@ -1095,6 +1146,22 @@ def run_pipeline(
 def pipeline_status(authorization: Optional[str] = Header(default=None)):
     session_key, _ = require_auth_context(authorization)
     return serialize_pipeline_state(session_key)
+
+
+@app.get("/api/pipeline/results")
+def pipeline_results(authorization: Optional[str] = Header(default=None)):
+    session_key, _ = require_auth_context(authorization)
+    return build_pipeline_results_summary(session_key)
+
+
+@app.get("/api/pipeline/results/download/{file_name}")
+def download_pipeline_result(file_name: str, authorization: Optional[str] = Header(default=None)):
+    require_auth(authorization)
+    safe_name = Path(file_name).name
+    file_path = BY_LOCATION_DIR / safe_name
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail=f"Result file not found: {safe_name}")
+    return FileResponse(file_path, media_type="text/csv", filename=safe_name)
 
 
 @app.get("/api/review/items")

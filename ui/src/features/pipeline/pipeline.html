@@ -1,0 +1,179 @@
+<!-- Run Model page markup for pipeline settings, progress, and history. -->
+      <div id="page-model" class="page">
+
+        <!-- Settings Card -->
+        <div class="card card-p" style="margin-bottom:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+            <div class="card-title" style="margin-bottom:0">Analysis Settings</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:11.5px;color:var(--muted);background:#F0F7FF;border:1px solid #BEE3F8;padding:3px 9px;border-radius:6px;font-weight:500">MegaDetector v5.0-a</span>
+              <span style="font-size:11.5px;color:var(--muted);background:#FAF5FF;border:1px solid #D6BCFA;padding:3px 9px;border-radius:6px;font-weight:500">SpeciesNet</span>
+            </div>
+          </div>
+
+          <div class="model-settings-grid">
+
+            <!-- Confidence Threshold -->
+            <div class="slider-field-wrap">
+              <div class="slider-label-row">
+                <label class="field-label" style="margin-bottom:0">Confidence Threshold</label>
+                <span class="has-tooltip">
+                  <span class="help-icon help-icon-blue">?</span>
+                  <span class="tooltip-box">A higher threshold reduces false positives but may increase missed detections. 80% is recommended for wildlife cameras.</span>
+                </span>
+              </div>
+              <div class="slider-track-wrap">
+                <input type="range" class="model-slider" id="threshold-slider" min="1" max="99" value="80"
+                  oninput="updateSlider(this)">
+              </div>
+              <!-- Polished Low / High range indicators -->
+              <div class="slider-range-row">
+                <span class="slider-range-label slider-range-label-low">
+                  <span class="slider-range-dot slider-range-dot-low"></span>
+                  Low
+                </span>
+                <span class="slider-val-pill" id="threshold-val">80%</span>
+                <span class="slider-range-label slider-range-label-high">
+                  <span class="slider-range-dot slider-range-dot-high"></span>
+                  High
+                </span>
+              </div>
+            </div>
+
+            <!-- Batch Size -->
+            <div>
+              <div style="display:flex;align-items:center;margin-bottom:6px">
+                <label class="field-label" style="margin-bottom:0">Batch Size</label>
+                <span class="has-tooltip">
+                  <span class="help-icon help-icon-yellow">!</span>
+                  <span class="tooltip-box">Selecting a larger batch size may require significant memory. Selecting 'All images' may take a very long time or cause the system to freeze.</span>
+                </span>
+              </div>
+              <select class="model-select" id="batch-select">
+                <option value="1000" selected>1,000 images per batch</option>
+                <option value="5000">5,000 images per batch</option>
+                <option value="10000">10,000 images per batch</option>
+                <option value="30000">30,000 images per batch</option>
+                <option value="50000">50,000 images per batch</option>
+                <option value="all">All images</option>
+              </select>
+              <div class="slider-hint" style="margin-top:6px">Affects processing speed and memory usage</div>
+            </div>
+
+          </div>
+
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:#F7FAFC;margin-bottom:18px">
+            <div>
+              <div style="font-size:11.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)">Pipeline Source</div>
+              <div id="pipeline-source-name" style="font-size:14px;font-weight:600;color:var(--text);margin-top:4px">Local staging</div>
+              <div id="pipeline-source-sub" style="font-size:12px;color:var(--muted);margin-top:4px;line-height:1.45">Current local-only pipeline flow remains available</div>
+            </div>
+          </div>
+
+                    <!-- Run / Stop button row — extra breathing room above divider -->
+          <div style="display:flex;align-items:center;gap:12px;padding-top:18px;padding-bottom:4px;border-top:1px solid var(--border);margin-top:6px">
+            <button class="run-model-btn idle" id="run-btn" onclick="toggleRunModel()">
+              <span class="run-btn-icon" id="run-btn-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+              </span>
+              <span id="run-btn-label">Run Detection &amp; Classification</span>
+            </button>
+            <span style="font-size:12.5px;color:var(--muted)" id="run-ready-note">-- images ready to process</span>
+          </div>
+
+
+          <!-- Drive source run button — shown when Drive is the pipeline source -->
+          <div style="display:flex;align-items:center;gap:12px;padding-top:12px;display:none" id="drive-run-row">
+            <button class="run-model-btn idle" id="drive-run-btn" onclick="toggleDriveRunModel()">
+              <span class="run-btn-icon" id="drive-run-btn-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+              </span>
+              <span id="drive-run-btn-label">Run Pipeline (Drive Source)</span>
+            </button>
+            <span style="font-size:12.5px;color:var(--muted)" id="drive-run-note"></span>
+          </div>
+
+                    <!-- Progress panel — hidden until run starts -->
+          <div class="run-progress-panel" id="run-progress" style="display:none;margin-top:20px">
+            <div class="run-progress-header">
+              <div class="run-progress-label">
+                <div class="proc-dot"></div>
+                Processing images…
+              </div>
+              <span class="run-progress-eta" id="run-eta">~18 min remaining</span>
+            </div>
+            <div class="run-prog-track">
+              <div class="run-prog-fill" id="run-fill" style="width:44%"></div>
+            </div>
+            <div class="run-stat-grid">
+              <div class="run-stat-cell">
+                <div class="run-stat-cell-val" id="rs-processed">--</div>
+                <div class="run-stat-cell-lbl">Processed</div>
+              </div>
+              <div class="run-stat-cell">
+                <div class="run-stat-cell-val" id="rs-remaining">--</div>
+                <div class="run-stat-cell-lbl">Remaining</div>
+              </div>
+              <div class="run-stat-cell">
+                <div class="run-stat-cell-val">3.2</div>
+                <div class="run-stat-cell-lbl">img / sec</div>
+              </div>
+              <div class="run-stat-cell">
+                <div class="run-stat-cell-val" style="color:#E53E3E">12</div>
+                <div class="run-stat-cell-lbl">Failures</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Run History Card -->
+        <div class="card card-p">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div class="card-title" style="margin-bottom:0">Run History</div>
+            <span style="font-size:12px;color:var(--muted)" id="run-history-note">Last 4 runs</span>
+          </div>
+          <table class="run-history-table">
+            <thead>
+              <tr>
+                <th>Batch</th>
+                <th>Date</th>
+                <th>Images</th>
+                <th>Duration</th>
+                <th>Status</th>
+                <th>Failures</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="run-history-body"></tbody>
+          </table>
+        </div>
+
+        <div class="card card-p" style="margin-top:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div class="card-title" style="margin-bottom:0">Pipeline Results</div>
+            <span style="font-size:12px;color:var(--muted)" id="pipeline-results-note">Run the pipeline to generate export-ready CSV files.</span>
+          </div>
+          <div id="pipeline-results-summary" style="font-size:12px;color:var(--muted);margin-bottom:12px">No completed pipeline results are available yet.</div>
+          <table class="run-history-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Rows</th>
+                <th>Path</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="pipeline-results-body">
+              <tr><td colspan="4" style="padding:14px 12px;color:var(--muted)">No export CSV files are available yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div><!-- /model -->
+
+      <!-- ══════════════════════════════════
+           REVIEW PAGE

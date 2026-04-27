@@ -1,0 +1,164 @@
+/* ─── CONFIRMATION MODAL ─────────────────────────────── */
+.confirm-modal-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,.45);
+  display:flex; align-items:center; justify-content:center;
+  z-index:1000; opacity:0; pointer-events:none;
+  transition:opacity .18s;
+}
+.confirm-modal-overlay.open { opacity:1; pointer-events:all; }
+.confirm-modal {
+  background:#fff; border-radius:16px; padding:28px 28px 22px;
+  width:360px; box-shadow:0 20px 60px rgba(0,0,0,.18);
+  transform:scale(.95) translateY(8px);
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1);
+}
+.confirm-modal-overlay.open .confirm-modal { transform:scale(1) translateY(0); }
+.confirm-modal-icon {
+  width:44px; height:44px; border-radius:12px;
+  display:flex; align-items:center; justify-content:center;
+  margin-bottom:14px;
+}
+.confirm-modal-icon.flag   { background:#FFF5F5; }
+.confirm-modal-icon.burst  { background:#FFFAF0; }
+.confirm-modal-icon.danger { background:#FFF5F5; }
+.confirm-modal-title { font-size:15px; font-weight:700; color:var(--text); margin-bottom:6px; }
+.confirm-modal-body  { font-size:13px; color:var(--muted); line-height:1.55; margin-bottom:20px; }
+.confirm-modal-actions { display:flex; gap:8px; justify-content:flex-end; }
+.confirm-modal-cancel {
+  padding:9px 18px; border-radius:9px; border:1px solid var(--border);
+  background:#fff; color:var(--text); font-size:13px; font-weight:500;
+  cursor:pointer; font-family:'Inter',sans-serif; transition:background .15s;
+}
+.confirm-modal-cancel:hover { background:#F7FAFC; }
+.confirm-modal-ok {
+  padding:9px 18px; border-radius:9px; border:none;
+  font-size:13px; font-weight:700;
+  cursor:pointer; font-family:'Inter',sans-serif; transition:all .15s;
+}
+.confirm-modal-ok.flag   { background:#E53E3E; color:#fff; }
+.confirm-modal-ok.flag:hover  { background:#C53030; }
+.confirm-modal-ok.burst-keep    { background:#276749; color:#fff; }
+.confirm-modal-ok.burst-keep:hover { background:#22543D; }
+.confirm-modal-ok.burst-exclude { background:#E53E3E; color:#fff; }
+.confirm-modal-ok.burst-exclude:hover { background:#C53030; }
+
+/* Burst result state — after action applied */
+.burst-result-banner {
+  display:none; flex-direction:column; gap:6px;
+  padding:12px 14px; border-radius:10px; border:1.5px solid;
+}
+.burst-result-banner.keep    { background:#F0FFF4; border-color:#9AE6B4; display:flex; }
+.burst-result-banner.exclude { background:#FFF5F5; border-color:#FEB2B2; display:flex; }
+.burst-result-banner.expand  { background:#EBF8FF; border-color:#90CDF4; display:flex; }
+.burst-result-title { font-size:13px; font-weight:700; }
+.burst-result-banner.keep    .burst-result-title { color:#276749; }
+.burst-result-banner.exclude .burst-result-title { color:#C53030; }
+.burst-result-banner.expand  .burst-result-title { color:var(--blue); }
+.burst-result-sub  { font-size:12px; color:var(--muted); line-height:1.4; }
+.burst-result-undo {
+  font-size:12px; font-weight:600; color:var(--blue);
+  background:none; border:none; cursor:pointer; font-family:'Inter',sans-serif;
+  padding:0; text-decoration:underline; align-self:flex-start;
+}
+
+/* Undo toast strip */
+.undo-toast {
+  display:none; align-items:center; justify-content:space-between;
+  padding:10px 14px; border-radius:10px; border:1px solid #BEE3F8;
+  background:#EBF8FF; margin-bottom:10px; gap:12px;
+}
+.undo-toast.visible { display:flex; }
+.undo-toast-msg  { font-size:12.5px; color:var(--blue); font-weight:500; }
+.undo-toast-btn  {
+  font-size:12px; font-weight:700; color:var(--blue);
+  background:none; border:1px solid #90CDF4; border-radius:7px;
+  padding:4px 10px; cursor:pointer; font-family:'Inter',sans-serif;
+  white-space:nowrap; transition:background .15s;
+}
+.undo-toast-btn:hover { background:#BEE3F8; }
+
+/* Validation checks */
+/* ─── ACTION BUTTON ICONS ───────────────────────────── */
+/* Shared icon wrapper — handles bounce / press animations */
+.btn-icon {
+  display:inline-flex; align-items:center; justify-content:center;
+  transition: transform .18s cubic-bezier(.34,1.56,.64,1);
+}
+/* Upload arrow bounces upward on hover */
+.btn-upload:hover .btn-icon-upload { transform: translateY(-2px); }
+.btn-upload:active                 { transform: scale(.96); }
+.btn-upload { transition: background .18s, transform .12s, box-shadow .18s; }
+.btn-upload:hover { box-shadow: 0 4px 12px rgba(0,100,164,.25); }
+
+/* Pause bars slightly compress on hover */
+.btn-pause:hover .btn-icon-pause { transform: scaleY(.88); }
+.btn-pause:active                { transform: scale(.96); }
+.btn-pause { transition: background .18s, border-color .18s, transform .12s; }
+
+/* Sync icon spin animation */
+@keyframes spin-once {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
+}
+.btn-sync-icon { display:inline-flex; align-items:center; justify-content:center; transition:transform .18s; }
+.btn-sync:hover .btn-sync-icon { animation: spin-once .55s cubic-bezier(.4,0,.2,1) forwards; }
+.btn-sync:active                { transform: scale(.96); }
+.btn-sync { transition: background .18s, box-shadow .18s, transform .12s; }
+.btn-sync:hover { box-shadow: 0 4px 12px rgba(0,100,164,.25); }
+
+/* Drive tab active — also works for the Drive (light) variant */
+.upload-mode-tab.active-drive {
+  background: #EBF8FF;
+  color: #0064A4;
+  border-bottom: 2px solid var(--blue);
+}
+
+.drive-sync-banner { display:flex; align-items:center; gap:14px; padding:14px 18px; border-radius:12px; border:1.5px solid; margin-bottom:18px; }
+.drive-sync-banner.connected    { background:#F0FFF4; border-color:#9AE6B4; }
+.drive-sync-banner.disconnected { background:#FFFAF0; border-color:#F6AD55; }
+.drive-sync-banner-icon { width:36px; height:36px; border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+.drive-sync-banner.connected    .drive-sync-banner-icon { background:#C6F6D5; }
+.drive-sync-banner.disconnected .drive-sync-banner-icon { background:#FEEBC8; }
+.drive-sync-banner-title { font-size:13.5px; font-weight:600; }
+.drive-sync-banner.connected    .drive-sync-banner-title { color:#22543D; }
+.drive-sync-banner.disconnected .drive-sync-banner-title { color:#7B341E; }
+.drive-sync-banner-sub { font-size:12px; color:var(--muted); margin-top:2px; }
+.drive-sync-reconnect-btn { margin-left:auto; flex-shrink:0; padding:7px 14px; border-radius:8px; background:#ED8936; color:#fff; border:none; font-size:12.5px; font-weight:600; cursor:pointer; font-family:'Inter',sans-serif; transition:background .18s; }
+.drive-sync-reconnect-btn:hover { background:#c07530; }
+
+.upload-action-bar { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; background:var(--card); border:1px solid var(--border); border-radius:12px; margin-top:16px; }
+.upload-action-bar-info { font-size:13px; color:var(--muted); }
+.upload-action-bar-info strong { color:var(--text); }
+.upload-action-btns { display:flex; gap:10px; }
+
+/* ─── TOOLTIP SYSTEM ────────────────────────────────── */
+.has-tooltip { position:relative; display:inline-flex; align-items:center; }
+.has-tooltip .tooltip-box {
+  position:absolute; top:calc(100% + 8px); left:50%; transform:translateX(-50%) translateY(-4px);
+  background:#1A202C; color:#fff; font-size:12px; line-height:1.5;
+  padding:8px 12px; border-radius:8px; white-space:normal; width:230px;
+  pointer-events:none; opacity:0;
+  transition:opacity .18s, transform .18s;
+  box-shadow:0 6px 20px rgba(0,0,0,.22); z-index:200; font-weight:400;
+}
+/* Arrow points UP toward the icon */
+.has-tooltip .tooltip-box::after {
+  content:''; position:absolute; bottom:100%; left:50%; transform:translateX(-50%);
+  border:5px solid transparent; border-bottom-color:#1A202C;
+}
+.has-tooltip:hover .tooltip-box { opacity:1; transform:translateX(-50%) translateY(0); }
+
+/* Help badge icons */
+.help-icon {
+  width:16px; height:16px; border-radius:50%;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-size:10px; font-weight:700; cursor:default;
+  flex-shrink:0; margin-left:5px; line-height:1;
+  transition:transform .15s, box-shadow .15s;
+}
+.help-icon:hover { transform:scale(1.15); }
+.help-icon-blue { background:#BEE3F8; color:#2B6CB0; }
+.help-icon-blue:hover { box-shadow:0 0 0 3px rgba(66,153,225,.2); }
+.help-icon-yellow { background:#FEFCBF; color:#92400E; }
+.help-icon-yellow:hover { box-shadow:0 0 0 3px rgba(236,201,75,.25); }
+

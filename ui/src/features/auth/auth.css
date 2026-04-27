@@ -1,0 +1,185 @@
+/* ─── LOGIN SCREEN ──────────────────────────────────── */
+#login-screen {
+  position: fixed; inset: 0; z-index: 1000;
+  background: linear-gradient(145deg, #0d2a52 0%, #1B3D6D 45%, #163461 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Inter', sans-serif;
+  transition: opacity .5s var(--ease), transform .5s var(--ease);
+}
+#login-screen.exit {
+  opacity: 0; transform: scale(1.04); pointer-events: none;
+}
+
+.login-card {
+  background: rgba(255,255,255,.97);
+  border-radius: 20px;
+  width: 480px; max-width: calc(100vw - 40px);
+  box-shadow: 0 32px 80px rgba(0,0,0,.35);
+  overflow: hidden;
+}
+.login-header {
+  background: var(--dark);
+  padding: 28px 32px 24px;
+  display: flex; align-items: center; gap: 14px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.login-logo {
+  width: 44px; height: 44px; border-radius: 10px; overflow: hidden;
+  border: 1.5px solid rgba(255,255,255,.25); flex-shrink: 0;
+}
+.login-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.login-brand-uci    { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: .3px; }
+.login-brand-nature { font-size: 20px; font-weight: 400; color: rgba(255,255,255,.88); margin-left: 5px; }
+.login-brand-sub    { font-size: 11px; color: rgba(255,255,255,.4); margin-top: 3px; text-transform: uppercase; letter-spacing: .5px; }
+
+.login-body { padding: 28px 32px 32px; }
+
+/* Step indicator */
+.login-steps {
+  display: flex; align-items: center; gap: 0;
+  margin-bottom: 26px;
+}
+.login-step-item {
+  display: flex; align-items: center; gap: 6px; font-size: 12px;
+  color: var(--muted); font-weight: 500;
+}
+.login-step-item.active { color: var(--blue); }
+.login-step-item.done   { color: #38A169; }
+.step-num {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; flex-shrink: 0;
+  background: #E2E8F0; color: var(--muted);
+  transition: all .25s;
+}
+.login-step-item.active .step-num { background: var(--blue); color: #fff; }
+.login-step-item.done   .step-num { background: #48BB78; color: #fff; }
+.step-connector { flex: 1; height: 1px; background: #E2E8F0; margin: 0 6px; }
+
+.login-section-title {
+  font-size: 16px; font-weight: 700; color: var(--dark); margin-bottom: 6px;
+}
+.login-section-sub {
+  font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5;
+}
+
+/* Project cards */
+.project-cards { display: flex; flex-direction: column; gap: 10px; margin-bottom: 22px; }
+.project-card {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; border-radius: 12px;
+  border: 2px solid var(--border); background: #F7FAFC;
+  cursor: pointer; transition: all .2s;
+  position: relative;
+}
+.project-card:hover:not(.disabled) { border-color: var(--blue); background: #EBF8FF; }
+.project-card.selected { border-color: var(--blue); background: #EBF8FF; }
+.project-card.disabled { opacity: .52; cursor: default; }
+.project-card-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.project-card-name  { font-size: 14px; font-weight: 600; color: var(--dark); }
+.project-card-drive { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.project-card-check {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--blue); display: none;
+  align-items: center; justify-content: center;
+}
+.project-card.selected .project-card-check { display: flex; }
+.coming-soon-badge {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  background: #EDF2F7; color: var(--muted);
+  font-size: 10.5px; font-weight: 600; padding: 3px 8px; border-radius: 6px;
+  text-transform: uppercase; letter-spacing: .4px;
+}
+
+/* OAuth button */
+.oauth-btn {
+  width: 100%; padding: 13px; border-radius: 10px;
+  background: #fff; border: 1.5px solid var(--border);
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  font-size: 14px; font-weight: 600; color: #3c4043;
+  cursor: pointer; transition: all .2s; font-family: 'Inter', sans-serif;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+}
+.oauth-btn:hover { background: #f8f9fa; border-color: #c7cdd6; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.oauth-btn:disabled { opacity: .6; cursor: not-allowed; }
+.oauth-btn.loading { background: #f8f9fa; }
+
+/* loading spinner for oauth */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2.5px solid #E2E8F0; border-top-color: var(--blue);
+  animation: spin .7s linear infinite; flex-shrink: 0;
+}
+
+/* ─── DRIVE CONFIRM MODAL ───────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(15,30,55,.55);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s;
+}
+.modal-overlay.visible { opacity: 1; pointer-events: all; }
+
+.confirm-modal {
+  background: #fff; border-radius: 18px;
+  width: 400px; max-width: calc(100vw - 32px);
+  box-shadow: 0 24px 60px rgba(0,0,0,.28);
+  padding: 28px;
+  transform: translateY(12px) scale(.97);
+  transition: transform .28s cubic-bezier(.34,1.56,.64,1);
+}
+.modal-overlay.visible .confirm-modal { transform: translateY(0) scale(1); }
+
+.modal-drive-icon {
+  width: 52px; height: 52px; border-radius: 14px;
+  background: #EBF8FF; display: flex; align-items: center; justify-content: center;
+  margin-bottom: 16px;
+}
+.modal-title { font-size: 17px; font-weight: 700; color: var(--dark); margin-bottom: 6px; }
+.modal-sub   { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+
+.drive-confirm-box {
+  background: #F0FFF4; border: 1.5px solid #9AE6B4;
+  border-radius: 12px; padding: 14px 16px;
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 20px;
+}
+.drive-confirm-dot { width: 10px; height: 10px; border-radius: 50%; background: #48BB78; flex-shrink: 0; }
+.drive-confirm-name { font-size: 14px; font-weight: 600; color: #22543D; }
+.drive-confirm-account { font-size: 12px; color: #38A169; margin-top: 2px; }
+
+.modal-btn-row { display: flex; flex-direction: column; gap: 8px; }
+.btn-confirm {
+  width: 100%; padding: 12px; border-radius: 10px;
+  background: var(--blue); color: #fff;
+  border: none; font-size: 14px; font-weight: 600;
+  cursor: pointer; font-family: 'Inter', sans-serif;
+  transition: background .18s;
+}
+.btn-confirm:hover { background: #0055a0; }
+.btn-switch-account {
+  width: 100%; padding: 10px; border-radius: 10px;
+  background: none; color: var(--muted); border: 1px solid var(--border);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  font-family: 'Inter', sans-serif; transition: all .18s;
+}
+.btn-switch-account:hover { background: #F7FAFC; color: var(--text); }
+
+/* Updated drive badge — shows drive name not email */
+.drive-name-text { color: #22543D; font-weight: 600; font-size: 13px; }
+.drive-account-text { color: #38A169; font-size: 11.5px; }
+
+/* Drive disconnected warning state */
+.drive-badge.warning { background: #FFFAF0; border-color: #F6AD55; }
+.drive-badge.warning:hover { background: #FEECCC; }
+.drive-dot.warn { background: #ED8936; box-shadow: 0 0 0 3px rgba(237,137,54,.2); animation: pulse-warn 1.8s ease-in-out infinite; }
+@keyframes pulse-warn { 0%,100%{box-shadow:0 0 0 3px rgba(237,137,54,.2)} 50%{box-shadow:0 0 0 6px rgba(237,137,54,.08)} }
+
