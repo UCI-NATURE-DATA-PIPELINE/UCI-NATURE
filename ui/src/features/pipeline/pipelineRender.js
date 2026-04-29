@@ -1,5 +1,5 @@
-/** Pipeline rendering for run status surfaces and backend run history. */
-import { escapeHtml, formatNumber, formatTimestampLabel } from "../../utils/format.js";
+import { escapeHtml, formatDecimal, formatNumber, formatTimestampLabel } from "../../utils/format.js";
+import { getPipelineMetrics } from "../../utils/helpers.js";
 
 export function createPipelineRender(app, stateApi) {
   function setPipelineDetailValue(element, value, fallback = "—") {
@@ -13,6 +13,8 @@ export function createPipelineRender(app, stateApi) {
   function applyPipelineStatusToSurface(surface, status) {
     const state = status?.status || "idle";
     const snapshot = stateApi.getPipelinePanelSnapshot(status);
+    const throughputValue = document.getElementById("rs-throughput");
+    const failuresValue = document.getElementById("rs-failures");
     const button = document.getElementById(surface.buttonId);
     const label = document.getElementById(surface.labelId);
     const note = document.getElementById(surface.noteId);
@@ -62,6 +64,15 @@ export function createPipelineRender(app, stateApi) {
     setPipelineDetailValue(currentFile, snapshot.currentFile);
     setPipelineDetailValue(logPath, snapshot.logPath);
     setPipelineDetailValue(errorValue, snapshot.error);
+
+    const metrics = getPipelineMetrics(status);
+      if (throughputValue) {
+        throughputValue.textContent = metrics.throughput ? formatDecimal(metrics.throughput) : "—";
+    }
+    if (failuresValue) {
+      failuresValue.textContent = metrics.failureCount === null ? "—" : formatNumber(metrics.failureCount);
+      failuresValue.style.color = metrics.failureCount ? "#E53E3E" : "";
+    }
   }
 
   function applyPipelineStatus(status) {
