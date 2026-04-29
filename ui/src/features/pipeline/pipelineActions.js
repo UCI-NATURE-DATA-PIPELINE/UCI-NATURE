@@ -1,8 +1,17 @@
 /** Pipeline feature actions for slider updates, run submission, and history toggles. */
 export function createPipelineActions(app, api, renderApi, loadPipelineStatus, loadPipelineResults) {
   function updateSlider(slider) {
+    // const output = document.getElementById("threshold-val");
+    // if (output) output.textContent = `${Number(slider.value)}%`;
+    const value = Number(slider.value);
+    const min = Number(slider.min) || 0;
+    const max = Number(slider.max) || 100;
+    const percent = ((value - min) / (max - min)) * 100;
+
+    slider.style.background = `linear-gradient(to right, var(--blue) ${percent}%, #E2E8F0 ${percent}%)`;
+
     const output = document.getElementById("threshold-val");
-    if (output) output.textContent = `${Number(slider.value)}%`;
+    if (output) output.textContent = `${value}%`;
   }
 
   async function toggleRunModel(sourceModeOverride = null) {
