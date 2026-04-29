@@ -70,7 +70,7 @@
             </div>
           </div>
 
-                    <!-- Run / Stop button row — extra breathing room above divider -->
+          <!-- Run / Stop button row — extra breathing room above divider -->
           <div style="display:flex;align-items:center;gap:12px;padding-top:18px;padding-bottom:4px;border-top:1px solid var(--border);margin-top:6px">
             <button class="run-model-btn idle" id="run-btn" onclick="toggleRunModel()">
               <span class="run-btn-icon" id="run-btn-icon">
@@ -85,7 +85,7 @@
 
 
           <!-- Drive source run button — shown when Drive is the pipeline source -->
-          <div style="display:flex;align-items:center;gap:12px;padding-top:12px;display:none" id="drive-run-row">
+          <div style="align-items:center;gap:12px;padding-top:12px; display:none" id="drive-run-row">
             <button class="run-model-btn idle" id="drive-run-btn" onclick="toggleDriveRunModel()">
               <span class="run-btn-icon" id="drive-run-btn-icon">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
@@ -97,8 +97,8 @@
             <span style="font-size:12.5px;color:var(--muted)" id="drive-run-note"></span>
           </div>
 
-                    <!-- Progress panel — hidden until run starts -->
-          <div class="run-progress-panel" id="run-progress" style="display:none;margin-top:20px">
+          <!-- Progress panel — hidden until run starts -->
+          <div class="run-progress-panel" id="run-progress">
             <div class="run-progress-header">
               <div class="run-progress-label">
                 <div class="proc-dot"></div>
@@ -131,25 +131,27 @@
         </div>
 
         <!-- Run History Card -->
-        <div class="card card-p">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-            <div class="card-title" style="margin-bottom:0">Run History</div>
-            <span style="font-size:12px;color:var(--muted)" id="run-history-note">Last 4 runs</span>
+        <div id="run-history-wrap">
+          <div class="card card-p">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+              <div class="card-title" style="margin-bottom:0">Run History</div>
+              <span style="font-size:12px;color:var(--muted)" id="run-history-note">Last 4 runs</span>
+            </div>
+            <table class="run-history-table">
+              <thead>
+                <tr>
+                  <th>Batch</th>
+                  <th>Date</th>
+                  <th>Images</th>
+                  <th>Duration</th>
+                  <th>Status</th>
+                  <th>Failures</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="run-history-body"></tbody>
+            </table>
           </div>
-          <table class="run-history-table">
-            <thead>
-              <tr>
-                <th>Batch</th>
-                <th>Date</th>
-                <th>Images</th>
-                <th>Duration</th>
-                <th>Status</th>
-                <th>Failures</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="run-history-body"></tbody>
-          </table>
         </div>
 
         <div class="card card-p" style="margin-top:16px">

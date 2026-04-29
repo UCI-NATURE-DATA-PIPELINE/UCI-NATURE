@@ -45,7 +45,8 @@ export function createPipelineRender(app, stateApi) {
       else if (state === "failed") note.textContent = status.error ? `Last run ${status.run_id} failed: ${status.error}` : `Last run ${status.run_id} failed.`;
       else note.textContent = surface.kind === "drive" || app.state.uploadTab === "drive" ? app.features.drive.getDriveRunIdleNote() : "Ready to start a backend pipeline run";
     }
-    if (panel) panel.style.display = "block";
+  
+    if (panel) panel.style.display = (!status || state === "idle") ? "none" : "block";
     if (progressLabel) progressLabel.textContent = state === "running" ? status?.progress?.step || "Pipeline running in backend" : state === "completed" ? "Latest run completed" : state === "failed" ? "Latest run failed" : "No active pipeline run";
     if (eta) eta.textContent = state === "running" ? status?.progress?.message || status?.latest_log_line || "Backend log is updating" : state === "completed" ? `Completed ${formatTimestampLabel(status.finished_at)}` : state === "failed" ? status.error || "See backend log for details" : surface.kind === "drive" ? "Run becomes available once a Drive folder is selected" : "No active run";
     if (fill) fill.style.width = state === "completed" || state === "failed" ? "100%" : state === "running" ? `${app.features.drive.getDriveSyncStepPercent()}%` : "0%";
@@ -67,11 +68,18 @@ export function createPipelineRender(app, stateApi) {
     app.state.pipelineStatus = status;
     app.state.runningModel = (status?.status || "idle") === "running";
     stateApi.getRunSurfaceConfigs().forEach((surface) => applyPipelineStatusToSurface(surface, status));
+    const state = String(status?.status || "idle").toLowerCase();
+    const panelVisible = !!status && state !== "idle";
+    const historyWrap = document.getElementById("run-history-wrap");
+    if (historyWrap) historyWrap.classList.toggle("has-active-run", panelVisible);
+
     const historyBody = document.getElementById("run-history-body");
     const historyNote = document.getElementById("run-history-note");
     if (historyBody) historyBody.innerHTML = stateApi.buildRunHistoryRows(status);
     if (historyNote) historyNote.textContent = status?.run_id ? "Latest backend run" : "No real run history yet";
     app.features.drive.syncDriveUI();
+
+
   }
 
   function buildPipelineResultRows(files = []) {

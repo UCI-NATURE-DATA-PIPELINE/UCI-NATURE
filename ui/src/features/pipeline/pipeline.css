@@ -6,6 +6,10 @@
   margin-bottom:20px;
 }
 
+#run-history-wrap.has-active-run {
+  margin-top: 180px;
+}
+
 /* Slider hi-fi */
 .slider-field-wrap { display:flex; flex-direction:column; gap:6px; }
 .slider-label-row  { display:flex; align-items:center; gap:0; }
@@ -67,7 +71,9 @@ input[type=range].model-slider::-webkit-slider-thumb:hover {
 
 /* Progress panel */
 .run-progress-panel {
-  margin-top:18px; padding:18px 20px;
+  display: none;
+  width: 100%;
+  margin-top:90px; padding:18px 20px;
   background:#F0F7FF; border:1.5px solid #BEE3F8;
   border-radius:14px; animation:pageFade .3s ease;
 }
