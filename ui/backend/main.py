@@ -12,18 +12,10 @@ import traceback
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from scripts.config import PIPELINE_DRIVE_CACHE_POLICY
-from scripts.pipeline.make_output import generate_output_csvs
-from scripts.pipeline.review_decisions import (
-    REVIEW_DECISIONS_CSV,
-    load_review_decisions,
-    normalize_review_path,
-    normalize_review_species,
-    normalize_review_status,
-    upsert_review_decision,
-)
+from scripts.config import APP_ENV, PIPELINE_DRIVE_CACHE_POLICY
 from scripts.pipeline.validate_output import validate_csv
 from ui.backend.auth.routes import get_google_auth_state, router as google_auth_router
 from ui.backend.auth.routes_drive import (
@@ -277,25 +269,16 @@ def get_staging_image_files(staging_dir: Path) -> List[Path]:
 
 def read_pipeline_log_summary(log_path: Optional[Union[Path, str]]) -> dict:
     if not log_path:
-        return {
-            "current_step": None,
-            "latest_log_line": None,
-        }
+        return {"current_step": None, "latest_log_line": None}
 
     path = Path(log_path)
     if not path.exists():
-        return {
-            "current_step": None,
-            "latest_log_line": None,
-        }
+        return {"current_step": None, "latest_log_line": None}
 
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        return {
-            "current_step": None,
-            "latest_log_line": None,
-        }
+        return {"current_step": None, "latest_log_line": None}
 
     current_step = None
     latest_log_line = None
@@ -308,10 +291,7 @@ def read_pipeline_log_summary(log_path: Optional[Union[Path, str]]) -> dict:
             current_step = line.replace("STEP:", "", 1).strip()
         latest_log_line = line
 
-    return {
-        "current_step": current_step,
-        "latest_log_line": latest_log_line,
-    }
+    return {"current_step": current_step, "latest_log_line": latest_log_line}
 
 
 def set_pipeline_progress(
@@ -576,7 +556,11 @@ def build_dashboard_summary_data(project_name: str) -> dict:
     if isinstance(latest_pipeline_state.get("result"), dict):
         last_duration = latest_pipeline_state["result"].get("elapsed_seconds")
 
-    batch_count = len(list((OUTPUTS_DIR / "batches").glob("batch_*.csv"))) if (OUTPUTS_DIR / "batches").exists() else 0
+    batch_count = (
+        len(list((OUTPUTS_DIR / "batches").glob("batch_*.csv")))
+        if (OUTPUTS_DIR / "batches").exists()
+        else 0
+    )
 
     return {
         "project": project_name,
@@ -1149,6 +1133,31 @@ def root():
     return {"message": "Backend running"}
 
 
+@app.get("/api/health")
+def api_health():
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    runtime_ready = (3, 11) <= sys.version_info[:2] < (3, 13) and importlib.util.find_spec("speciesnet") is not None
+
+    if not ((3, 11) <= sys.version_info[:2] < (3, 13)):
+        runtime_detail = (
+            "Pipeline runtime requires Python 3.11 or 3.12 because SpeciesNet is not "
+            f"compatible with Python {python_version}."
+        )
+    elif importlib.util.find_spec("speciesnet") is None:
+        runtime_detail = "SpeciesNet is not installed in the active backend environment."
+    else:
+        runtime_detail = "Backend ready for pipeline requests."
+
+    return {
+        "status": "ok",
+        "app_env": APP_ENV,
+        "backend": "connected",
+        "python_version": python_version,
+        "pipeline_runtime_ready": runtime_ready,
+        "pipeline_runtime_detail": runtime_detail,
+    }
+
+
 @app.post("/api/auth/login")
 def login(data: LoginRequest):
     token = create_session_token()
@@ -1255,6 +1264,22 @@ def run_pipeline(
 def pipeline_status(authorization: Optional[str] = Header(default=None)):
     session_key, _ = require_auth_context(authorization)
     return serialize_pipeline_state(session_key)
+
+
+@app.get("/api/pipeline/results")
+def pipeline_results(authorization: Optional[str] = Header(default=None)):
+    session_key, _ = require_auth_context(authorization)
+    return build_pipeline_results_summary(session_key)
+
+
+@app.get("/api/pipeline/results/download/{file_name}")
+def download_pipeline_result(file_name: str, authorization: Optional[str] = Header(default=None)):
+    require_auth(authorization)
+    safe_name = Path(file_name).name
+    file_path = BY_LOCATION_DIR / safe_name
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail=f"Result file not found: {safe_name}")
+    return FileResponse(file_path, media_type="text/csv", filename=safe_name)
 
 
 @app.get("/api/review/items")

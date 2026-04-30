@@ -9,6 +9,7 @@ data/tmp/
 data/cache/
 data/test_runs/
 data/staging_all/
+data/staging_preprocessed/
 
 # pipeline outputs are transient — ignore everything except sample data
 data/outputs/*

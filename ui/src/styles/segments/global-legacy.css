@@ -1,0 +1,181 @@
+/* ─── MERGED FROM TEAM STYLES ─────────────────────── */
+
+.pill-red    { background: #FED7D7; color: #C53030; }
+
+.pill-slate  { background: #EDF2F7; color: #4A5568; }
+
+.drive-selection-card {
+  display:flex; align-items:flex-start; justify-content:space-between; gap:14px;
+  padding:12px 14px; border:1.5px solid var(--border); border-radius:10px;
+  background:#F7FAFC; margin-bottom:16px;
+}
+
+.drive-selection-label {
+  font-size:11.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--muted);
+}
+
+.drive-selection-name {
+  font-size:14px; font-weight:600; color:var(--text); margin-top:4px;
+}
+
+.drive-selection-meta {
+  font-size:12px; color:var(--muted); margin-top:4px; line-height:1.45;
+}
+
+.drive-sync-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+
+.drive-sync-status-card {
+  padding:14px 16px; border:1px solid #BEE3F8; background:#F7FBFF; border-radius:12px; margin-bottom:14px;
+}
+
+.drive-sync-status-title {
+  font-size:14px; font-weight:600; color:var(--dark);
+}
+
+.drive-sync-status-sub {
+  font-size:12px; color:var(--muted); margin-top:4px; line-height:1.5;
+}
+
+.drive-sync-progress-wrap {
+  display:flex; align-items:center; gap:10px; margin-top:14px;
+}
+
+.drive-sync-progress-bar {
+  flex:1; height:8px; background:#D9E8F5; border-radius:999px; overflow:hidden;
+}
+
+.drive-sync-progress-fill {
+  height:100%; background:linear-gradient(90deg, #3182CE, #2B6CB0); border-radius:999px;
+  transition:width .35s cubic-bezier(.4,0,.2,1);
+}
+
+.drive-sync-progress-pct {
+  min-width:42px; text-align:right; font-size:11px; color:var(--muted); font-weight:600;
+}
+
+.drive-run-inline {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+}
+
+.drive-run-note {
+  font-size:12.5px; color:var(--muted);
+}
+
+.drive-source-grid {
+  display:flex; flex-direction:column; gap:10px;
+}
+
+.drive-source-row {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+}
+
+.drive-source-status-row {
+  padding-top:8px; border-top:1px solid var(--border); margin-top:2px;
+}
+
+.drive-source-label {
+  font-size:12px; color:var(--muted);
+}
+
+.drive-source-value {
+  font-size:13px; font-weight:500; color:var(--text); text-align:right;
+}
+
+.drive-source-callout {
+  margin-top:14px; padding:13px 14px; border-radius:12px; background:#F7FAFC; border:1px solid var(--border);
+}
+
+.drive-source-callout-title {
+  font-size:13.5px; font-weight:600; color:var(--dark);
+}
+
+.drive-source-callout-sub {
+  font-size:12px; color:var(--muted); margin-top:5px; line-height:1.5;
+}
+
+.drive-last-sync-title {
+  font-size:13.5px; font-weight:600; color:var(--dark);
+}
+
+.drive-last-sync-meta {
+  font-size:12px; color:var(--muted); margin-top:6px; line-height:1.5;
+}
+
+.run-ml-progress {
+  display:none;
+  margin-top:12px;
+  padding:12px;
+  background:#fff;
+  border:1px solid #BEE3F8;
+  border-radius:10px;
+}
+
+.run-ml-progress-head {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:8px;
+  flex-wrap:wrap;
+}
+
+.run-ml-progress-title {
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.03em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+
+.run-ml-progress-summary {
+  font-size:12px;
+  font-weight:600;
+  color:var(--text);
+}
+
+.run-ml-progress-meta {
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top:8px;
+}
+
+.run-ml-progress-chip {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 10px;
+  border-radius:999px;
+  background:#F7FAFC;
+  border:1px solid var(--border);
+  font-size:11.5px;
+  color:var(--muted);
+}
+
+.run-ml-progress-chip strong {
+  color:var(--text);
+  font-weight:700;
+}
+#page-statistics .card {
+  min-height: 300px;
+}
+
+.page {
+  display: none;
+}
+
+.page.active {
+  display: block;
+}
+
+.card {
+  height: 400px;
+}
+
+#page-statistics .card {
+  height: 400px;
+}
+
+#chart-species {
+  width: 100% !important;
+  height: 100% !important;

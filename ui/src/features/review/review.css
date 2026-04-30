@@ -1,0 +1,4 @@
+/* Review style entrypoint that composes queue, viewer, and burst styles. */
+@import "./styles/review-layout.css";
+@import "./styles/review-panel.css";
+@import "./styles/review-burst.css";

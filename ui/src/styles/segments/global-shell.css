@@ -1,0 +1,198 @@
+/* ================================================================
+   UCI Nature Wildlife Pipeline — Stylesheet
+   wildlife-hifi-final.css
+   
+   TABLE OF CONTENTS
+   ─────────────────────────────────────────────────────────────────
+   01. Reset & Variables
+   02. Layout
+   03. Sidebar
+   04. Main & Header
+   05. Content & Cards
+   06. Stat Cards
+   07. Pipeline Progress
+   08. Dual Charts & Activity
+   09. Camera Status
+   10. Toast & Notifications
+   11. Dashboard (other)
+   12. Upload Page
+   13. Review Page Hi-Fi
+   14. Validate Page Hi-Fi
+   15. Export Page Hi-Fi
+   16. Login Screen
+   17. Drive Modal & Badge
+   18. Upload Page Hi-Fi
+   19. Action Button Icons
+   20. Tooltip System
+   21. Run Model Page Hi-Fi
+   ─────────────────────────────────────────────────────────────────
+*/
+
+/* ─── RESET & VARIABLES ─────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --blue:   #0064A4;
+  --dark:   #1B3D6D;
+  --green:  #7AB800;
+  --gold:   #FFD200;
+  --red:    #E53E3E;
+  --orange: #ED8936;
+  --purple: #805AD5;
+  --bg:     #F0F2F5;
+  --card:   #FFFFFF;
+  --border: #E2E8F0;
+  --text:   #1A202C;
+  --muted:  #718096;
+  --sidebar-w: 230px;
+  --sidebar-collapsed: 68px;
+  --header-h: 64px;
+  --ease: cubic-bezier(.4,0,.2,1);
+}
+
+html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+/* ─── LAYOUT ────────────────────────────────────────── */
+.app { display: flex; height: 100vh; overflow: hidden; }
+
+/* ─── SIDEBAR ───────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--dark);
+  display: flex; flex-direction: column;
+  flex-shrink: 0;
+  transition: width .3s var(--ease);
+  overflow: hidden;
+  position: relative;
+  z-index: 10;
+  box-shadow: 2px 0 8px rgba(0,0,0,.18);
+}
+.sidebar.collapsed { width: var(--sidebar-collapsed); }
+
+/* Logo zone */
+.sidebar-logo {
+  height: var(--header-h);
+  display: flex; align-items: center;
+  padding: 0 14px;
+  gap: 11px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  flex-shrink: 0;
+  overflow: hidden;
+  cursor: default;
+}
+.logo-img {
+  width: 38px; height: 38px; min-width: 38px;
+  border-radius: 9px; overflow: hidden;
+  border: 1.5px solid rgba(255,255,255,.22);
+  background: #253f6e;
+  box-shadow: 0 1px 4px rgba(0,0,0,.25);
+}
+.logo-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.logo-text {
+  overflow: hidden; white-space: nowrap;
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity .22s var(--ease), transform .22s var(--ease);
+}
+.sidebar.collapsed .logo-text {
+  opacity: 0;
+  transform: translateX(-6px);
+  pointer-events: none;
+}
+.logo-text .name { color: #fff; font-size: 15px; line-height: 1.2; display: flex; align-items: baseline; gap: 4px; }
+.brand-uci    { font-weight: 800; letter-spacing: .4px; color: #fff; }
+.brand-nature { font-weight: 400; color: rgba(255,255,255,.88); }
+.logo-text .sub { color: rgba(255,255,255,.38); font-size: 10.5px; margin-top: 2px; letter-spacing: .3px; text-transform: uppercase; }
+
+/* Nav */
+.sidebar-nav { flex: 1; padding: 10px 0 6px; overflow-y: auto; overflow-x: hidden; }
+.nav-item {
+  display: flex; align-items: center;
+  padding: 0 0 0 14px;
+  height: 42px;
+  color: rgba(255,255,255,.5);
+  cursor: pointer; border: none; background: none;
+  width: 100%; text-align: left;
+  border-left: 3px solid transparent;
+  transition: background .18s var(--ease), color .18s var(--ease), border-color .18s var(--ease);
+  white-space: nowrap;
+  position: relative;
+  gap: 0;
+}
+.nav-item:hover  { background: rgba(255,255,255,.07); color: rgba(255,255,255,.9); }
+.nav-item.active { background: rgba(255,255,255,.1);  color: #fff; border-left-color: var(--green); }
+
+/* Icon wrapper — fixed width so it stays centered when label fades */
+.nav-icon {
+  flex-shrink: 0;
+  width: 40px;          /* fills (68px sidebar − 3px border − 14px left-pad − 11px gap offset) → centered */
+  display: flex; align-items: center; justify-content: center;
+  transition: width .3s var(--ease);
+}
+.sidebar:not(.collapsed) .nav-icon { width: 36px; }
+
+/* Label */
+.nav-label {
+  font-size: 13.5px; font-weight: 500;
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity .2s var(--ease), transform .2s var(--ease);
+  white-space: nowrap; overflow: hidden;
+}
+.sidebar.collapsed .nav-label {
+  opacity: 0;
+  transform: translateX(-8px);
+  pointer-events: none;
+}
+
+/* Tooltip on hover when collapsed */
+.nav-tooltip {
+  position: absolute;
+  left: calc(var(--sidebar-collapsed) + 10px);
+  top: 50%; transform: translateY(-50%) scale(.94);
+  background: #1a3a68; color: #fff;
+  padding: 5px 11px; border-radius: 7px;
+  font-size: 12px; font-weight: 500;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .16s, transform .16s;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  z-index: 200;
+}
+.sidebar.collapsed .nav-item:hover .nav-tooltip {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+}
+
+/* Footer / collapse button */
+.sidebar-footer {
+  padding: 8px 0 10px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  flex-shrink: 0;
+}
+.collapse-btn {
+  display: flex; align-items: center;
+  padding: 0 0 0 14px;
+  height: 38px;
+  color: rgba(255,255,255,.32); background: none; border: none;
+  cursor: pointer; width: 100%;
+  transition: color .18s, background .18s;
+  white-space: nowrap; overflow: hidden;
+  gap: 0;
+}
+.collapse-btn:hover { color: rgba(255,255,255,.7); background: rgba(255,255,255,.05); }
+.collapse-icon-wrap {
+  flex-shrink: 0; width: 40px;
+  display: flex; align-items: center; justify-content: center;
+  transition: width .3s var(--ease);
+}
+.sidebar:not(.collapsed) .collapse-icon-wrap { width: 36px; }
+.collapse-chevron {
+  transition: transform .3s var(--ease);
+  display: block;
+}
+.sidebar.collapsed .collapse-chevron { transform: rotate(180deg); }
+.collapse-label { font-size: 13px; opacity: 1; transform: translateX(0); transition: opacity .2s var(--ease), transform .2s var(--ease); }
+.sidebar.collapsed .collapse-label { opacity: 0; transform: translateX(-8px); pointer-events: none; }
+
