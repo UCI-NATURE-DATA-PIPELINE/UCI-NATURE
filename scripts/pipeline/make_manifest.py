@@ -17,7 +17,6 @@ NEW_OUT = Path("data/outputs/manifest_new.csv")
 
 
 def split_local_name(local_file_name: str):
-    # expected "<file_id>__<original_name>"
     if "__" in local_file_name:
         file_id, original_name = local_file_name.split("__", 1)
         return file_id, original_name
@@ -30,6 +29,39 @@ def write_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         w.writerows(rows)
+
+
+def append_manifest_file_ids_to_cache(manifest_path: Path, cache_path: Path) -> dict:
+    manifest_path = Path(manifest_path)
+    cache_path = Path(cache_path)
+
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Manifest not found: {manifest_path}")
+
+    existing = set()
+    if cache_path.exists():
+        with cache_path.open("r", encoding="utf-8") as f:
+            existing = {line.strip() for line in f if line.strip()}
+
+    ids_to_add = []
+    with manifest_path.open("r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            fid = (row.get("file_id") or "").strip()
+            if fid and fid not in existing:
+                existing.add(fid)
+                ids_to_add.append(fid)
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    with cache_path.open("a", encoding="utf-8") as f:
+        for fid in ids_to_add:
+            f.write(fid + "\n")
+
+    return {
+        "manifest_path": str(manifest_path),
+        "cache_path": str(cache_path),
+        "ids_appended": len(ids_to_add),
+    }
 
 
 def build_manifest(
@@ -57,8 +89,6 @@ def build_manifest(
     for p in sorted(staging.rglob("*")):
         if not p.is_file():
             continue
-
-        # Skip hidden files, macOS resource forks, and non-images
         if p.name.startswith(".") or p.name.startswith("._"):
             continue
         if p.suffix.lower() not in image_extensions:
@@ -147,19 +177,8 @@ def build_manifest(
         result["new_rows_written"] = len(new_rows)
 
         if update_cache:
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-
-            existing = set(processed)
-            appended = 0
-            with open(cache_path, "a", encoding="utf-8") as f:
-                for r in new_rows:
-                    fid = (r.get("file_id") or "").strip()
-                    if fid and fid not in existing:
-                        existing.add(fid)
-                        f.write(fid + "\n")
-                        appended += 1
-
-            print(f"updated cache: appended {appended} ids -> {cache_path}")
+            cache_result = append_manifest_file_ids_to_cache(new_out, cache_path)
+            print(f"updated cache: appended {cache_result['ids_appended']} ids -> {cache_path}")
 
     return result
 

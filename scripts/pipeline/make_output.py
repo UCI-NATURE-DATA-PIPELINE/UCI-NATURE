@@ -1,30 +1,66 @@
-from typing import Optional
-# scripts/pipeline/make_output.py
+from __future__ import annotations
 
-import csv
-import re
+from typing import Optional
+
 import argparse
-from pathlib import Path
+import csv
+import json
+import re
+import sys
 from collections import defaultdict
 from datetime import datetime, timedelta
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.pipeline.review_decisions import (
+    REVIEW_DECISIONS_CSV,
+    load_review_decisions,
+    normalize_review_path,
+)
+
 
 MANIFEST = Path("data/outputs/manifest.csv")
 META = Path("data/outputs/metadata.csv")
 DRIVE_INDEX = Path("data/outputs/drive_index.csv")
 
 OUT_DIR = Path("data/outputs/by_location")
+ANIMAL_UNCLASSIFIED = "animal_unclassified"
+ALL_RESULTS_CSV = "all_results.csv"
+ANIMAL_REVIEW_CSV = "animal_unclassified.csv"
+EXCLUDED_REVIEW_CSV = "excluded_non_animal.csv"
+
+NON_ANIMAL_SPECIES = {"", "blank", "human", "vehicle", "no cv result"}
+NON_SPECIES_GROUPS = {
+    ANIMAL_UNCLASSIFIED,
+    "animal",
+    "mammal",
+    "bird",
+    "rodent",
+    "rabbit",
+    "squirrel",
+    "deer",
+    "fox",
+    "canis species",
+    "canine family",
+    "carnivorous mammal",
+    "unknown",
+    "unknown mammal",
+}
 
 
 def load_csv_by_key(path: Path, key: str) -> dict:
-    out = {}
+    output = {}
     if not path.exists():
-        return out
+        return output
     with open(path, "r", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            k = (row.get(key, "") or "").strip()
-            if k:
-                out[k] = row
-    return out
+            value = (row.get(key, "") or "").strip()
+            if value:
+                output[value] = row
+    return output
 
 
 def extract_image_number(filename: str) -> str:
@@ -58,9 +94,7 @@ def get_camera_name(drive_row: dict, manifest_row: Optional[dict] = None) -> str
     if manifest_row:
         local_path = (manifest_row.get("local_path") or "").strip()
         if local_path:
-            p = Path(local_path)
-            parent_name = p.parent.name.strip()
-
+            parent_name = Path(local_path).parent.name.strip()
             if parent_name and parent_name not in {"", ".", "staging", "data"}:
                 return _normalize_camera_label(parent_name)
 
@@ -72,7 +106,7 @@ def format_date(exif_datetime: str) -> str:
         return ""
     try:
         date_part = exif_datetime.split(" ")[0]
-        return date_part.replace(":", "")
+        return re.sub(r"[^0-9]", "", date_part)
     except Exception:
         return ""
 
@@ -92,15 +126,182 @@ def format_time(exif_datetime: str) -> str:
 def write_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames)
-        w.writeheader()
-        w.writerows(rows)
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def safe_filename(name: str) -> str:
     cleaned = re.sub(r'[\\/:*?"<>|]+', "_", name)
     cleaned = cleaned.strip().strip(".")
     return cleaned or "Unknown"
+
+
+def _normalize_species(value: str) -> str:
+    text = (value or "").strip().lower().replace("_", " ")
+    while "  " in text:
+        text = text.replace("  ", " ")
+    return text.replace(" ", "_") if text == "animal unclassified" else text
+
+def _display_species_name(species: str) -> tuple[str, str]:
+    normalized = _normalize_species(species)
+
+    if normalized in {"eastern cottontail", "european rabbit", "rabbit"}:
+        return "rabbit", ""
+
+    if normalized in {"northern raccoon", "raccoon"}:
+        return "raccoon", ""
+
+    if normalized == "wild boar":
+        return "coyote", "raw_model_label=wild boar; display_species_overridden_to=coyote"
+
+    return normalized, ""
+
+
+def _parse_bool(value) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def _normalize_date_token(value: str) -> str:
+    digits = re.sub(r"[^0-9]", "", str(value or ""))
+    if len(digits) == 8:
+        return digits
+    return ""
+
+
+def _normalize_time_token(value: str) -> str:
+    text = (value or "").strip()
+    if re.match(r"^\d{2}:\d{2}:\d{2}$", text):
+        return text
+    return ""
+
+
+def _parse_row_dt(date_value: str, time_value: str):
+    normalized_date = _normalize_date_token(date_value)
+    normalized_time = _normalize_time_token(time_value)
+    if not normalized_date or not normalized_time:
+        return None
+    try:
+        return datetime(
+            int(normalized_date[0:4]),
+            int(normalized_date[4:6]),
+            int(normalized_date[6:8]),
+            int(normalized_time[0:2]),
+            int(normalized_time[3:5]),
+            int(normalized_time[6:8]),
+        )
+    except Exception:
+        return None
+
+
+def _is_resolved_species(species: str, species_level: Optional[bool] = None, species_rank: str = "") -> bool:
+    normalized = _normalize_species(species)
+    if not normalized or normalized in NON_ANIMAL_SPECIES:
+        return False
+    if species_level is not None:
+        return bool(species_level)
+    if species_rank == "species_binomial":
+        return True
+    return normalized not in NON_SPECIES_GROUPS
+
+
+def _load_species_records(metadata_row: dict, review_decision: Optional[dict]) -> list[dict]:
+    records_json = (metadata_row.get("species_records_json") or "").strip()
+    records = []
+
+    if records_json:
+        try:
+            parsed = json.loads(records_json)
+            if isinstance(parsed, list):
+                for item in parsed:
+                    if not isinstance(item, dict):
+                        continue
+                    species = _normalize_species(item.get("species", ""))
+                    if not species:
+                        continue
+                    records.append(
+                        {
+                            "species": species,
+                            "species_raw": (item.get("species_raw") or "").strip(),
+                            "model_certainty": item.get("model_certainty", ""),
+                            "prediction_source": (item.get("prediction_source") or "").strip(),
+                            "species_rank": (item.get("species_rank") or "").strip(),
+                            "species_level": _parse_bool(item.get("species_level")),
+                            "count": _safe_int(
+                                item.get("count"),
+                                _safe_int(metadata_row.get("count"), 1),
+                            ),
+                        }
+                    )
+        except json.JSONDecodeError:
+            records = []
+
+    if not records:
+        species = _normalize_species(metadata_row.get("species", ""))
+        if species:
+            records = [
+                {
+                    "species": species,
+                    "species_raw": (metadata_row.get("species_raw") or "").strip(),
+                    "model_certainty": metadata_row.get("model_certainty", ""),
+                    "prediction_source": (metadata_row.get("resolved_source") or metadata_row.get("prediction_source") or "").strip(),
+                    "species_rank": (metadata_row.get("species_rank") or "").strip(),
+                    "species_level": _parse_bool(metadata_row.get("species_level")),
+                    "count": _safe_int(
+                        metadata_row.get("count"),
+                        _safe_int(metadata_row.get("animal_count"), 1),
+                    ),
+                }
+            ]
+
+    if review_decision and review_decision.get("reviewed_species"):
+        reviewed_species = _normalize_species(review_decision.get("reviewed_species", ""))
+        if reviewed_species:
+            records = [
+                {
+                    "species": reviewed_species,
+                    "species_raw": (metadata_row.get("species_raw") or reviewed_species).strip(),
+                    "model_certainty": metadata_row.get("model_certainty", ""),
+                    "prediction_source": "manual_review",
+                    "species_rank": "manual_review",
+                    "species_level": _is_resolved_species(reviewed_species),
+                    "count": max(
+                        1,
+                        _safe_int(metadata_row.get("animal_count"), 0)
+                        or _safe_int(metadata_row.get("count"), 1),
+                    ),
+                }
+            ]
+
+    return records
+
+
+def _classify_row(
+    *,
+    has_animal: str,
+    has_human: str,
+    species: str,
+    species_level: bool,
+) -> str:
+    normalized = _normalize_species(species)
+    if has_animal == "1":
+        if _is_resolved_species(normalized, species_level):
+            return "resolved_species"
+        return "animal_unclassified"
+    if has_human == "1" or normalized == "human":
+        return "human"
+    if normalized in {"", "blank"}:
+        return "blank"
+    if normalized in {"vehicle", "no cv result"}:
+        return "excluded"
+    return "excluded"
 
 
 def generate_output_csvs(
@@ -125,6 +326,7 @@ def generate_output_csvs(
     set_day: Optional[int] = None,
     offset_apply_to: str = "both",
     exclude_humans: bool = False,
+    review_decisions_path: Path = REVIEW_DECISIONS_CSV,
 ) -> dict:
     args = argparse.Namespace(
         manifest=str(manifest),
@@ -149,7 +351,6 @@ def generate_output_csvs(
         offset_apply_to=offset_apply_to,
         exclude_humans=exclude_humans,
     )
-
     args.burst_seconds = max(10, min(300, int(args.burst_seconds)))
 
     manifest_path = Path(args.manifest)
@@ -164,104 +365,31 @@ def generate_output_csvs(
 
     manifest_by_id = load_csv_by_key(manifest_path, "file_id")
     meta_by_id = load_csv_by_key(meta_path, "file_id")
-    drive_by_id = load_csv_by_key(drive_index_path, "file_id") if drive_index_path.exists() else {}
+    drive_by_id = (
+        load_csv_by_key(drive_index_path, "file_id") if drive_index_path.exists() else {}
+    )
+    review_decisions = load_review_decisions(review_decisions_path)
 
-    start_date = (args.start_date or "").strip()
-    end_date = (args.end_date or "").strip()
-    start_time = (args.start_time or "").strip()
-    end_time = (args.end_time or "").strip()
+    start_date = _normalize_date_token(args.start_date)
+    end_date = _normalize_date_token(args.end_date)
+    start_time = _normalize_time_token(args.start_time)
+    end_time = _normalize_time_token(args.end_time)
 
-    if start_date and not re.match(r"^\d{8}$", start_date):
-        raise ValueError("--start_date must be YYYYMMDD")
-    if end_date and not re.match(r"^\d{8}$", end_date):
-        raise ValueError("--end_date must be YYYYMMDD")
-    if start_time and not re.match(r"^\d{2}:\d{2}:\d{2}$", start_time):
-        raise ValueError("--start_time must be HH:MM:SS")
-    if end_time and not re.match(r"^\d{2}:\d{2}:\d{2}$", end_time):
-        raise ValueError("--end_time must be HH:MM:SS")
-
-    offset_start_date = (args.offset_start_date or "").strip()
-    offset_end_date = (args.offset_end_date or "").strip()
-    offset_start_time = (args.offset_start_time or "").strip()
-    offset_end_time = (args.offset_end_time or "").strip()
-
-    if offset_start_date and not re.match(r"^\d{8}$", offset_start_date):
-        raise ValueError("--offset_start_date must be YYYYMMDD")
-    if offset_end_date and not re.match(r"^\d{8}$", offset_end_date):
-        raise ValueError("--offset_end_date must be YYYYMMDD")
-    if offset_start_time and not re.match(r"^\d{2}:\d{2}:\d{2}$", offset_start_time):
-        raise ValueError("--offset_start_time must be HH:MM:SS")
-    if offset_end_time and not re.match(r"^\d{2}:\d{2}:\d{2}$", offset_end_time):
-        raise ValueError("--offset_end_time must be HH:MM:SS")
+    offset_start_date = _normalize_date_token(args.offset_start_date)
+    offset_end_date = _normalize_date_token(args.offset_end_date)
+    offset_start_time = _normalize_time_token(args.offset_start_time) or "00:00:00"
+    offset_end_time = _normalize_time_token(args.offset_end_time) or "23:59:59"
 
     total_flagged_outside_interval = 0
     total_missing_datetime_for_interval = 0
     total_processed = 0
-    total_skipped_blank = 0
     total_excluded_humans = 0
+    bucket_counts = defaultdict(int)
 
     rows_by_camera = defaultdict(list)
-
-    def _normalize_species(val: str) -> str:
-        return (val or "").strip().lower()
-
-    def _md_present(mrow: dict) -> bool:
-        ha = (mrow.get("has_animal", "") or "").strip()
-        hh = (mrow.get("has_human", "") or "").strip()
-        return ha in ("0", "1") or hh in ("0", "1")
-
-    def _sn_present(mrow: dict) -> bool:
-        sp = _normalize_species(mrow.get("species", ""))
-        return sp != ""
-
-    def _effective_mode(mrow: dict) -> str:
-        if args.filter_mode != "auto":
-            return args.filter_mode
-        if _md_present(mrow):
-            return "md"
-        if _sn_present(mrow):
-            return "speciesnet"
-        return "none"
-
-    def _keep_row(mrow: dict) -> bool:
-        mode = _effective_mode(mrow)
-        ha = (mrow.get("has_animal", "") or "").strip()
-        hh = (mrow.get("has_human", "") or "").strip()
-        sp = _normalize_species(mrow.get("species", ""))
-
-        if mode == "none":
-            return True
-        if mode == "md":
-            return ha == "1" or hh == "1"
-        if mode == "speciesnet":
-            return sp not in ("", "blank", "vehicle", "no cv result")
-        return True
-
-    def _is_human_only_row(mrow: dict) -> bool:
-        has_animal = (mrow.get("has_animal", "") or "").strip()
-        has_human = (mrow.get("has_human", "") or "").strip()
-        return has_human == "1" and has_animal != "1"
-
-    def _parse_row_dt(d: str, t: str):
-        d = (d or "").strip()
-        t = (t or "").strip()
-        if not d or not t:
-            return None
-        if not re.match(r"^\d{8}$", d):
-            return None
-        if not re.match(r"^\d{2}:\d{2}:\d{2}$", t):
-            return None
-        try:
-            return datetime(
-                int(d[0:4]),
-                int(d[4:6]),
-                int(d[6:8]),
-                int(t[0:2]),
-                int(t[3:5]),
-                int(t[6:8]),
-            )
-        except Exception:
-            return None
+    combined_rows = []
+    animal_unclassified_rows = []
+    non_animal_rows = []
 
     offset_enabled = bool(offset_start_date and offset_end_date) and (
         args.shift_minutes != 0
@@ -270,168 +398,13 @@ def generate_output_csvs(
         or args.set_day is not None
     )
 
-    offset_start_dt = None
-    offset_end_dt = None
-    if offset_enabled:
-        try:
-            st = offset_start_time if offset_start_time else "00:00:00"
-            et = offset_end_time if offset_end_time else "23:59:59"
-            offset_start_dt = _parse_row_dt(offset_start_date, st)
-            offset_end_dt = _parse_row_dt(offset_end_date, et)
-        except Exception:
-            offset_start_dt = None
-            offset_end_dt = None
-
-        if offset_start_dt is None or offset_end_dt is None or offset_end_dt < offset_start_dt:
-            offset_enabled = False
-
-    with open(manifest_path, "r", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            file_id = (row.get("file_id") or "").strip()
-            filename = (row.get("file_name") or row.get("local_file_name") or "").strip()
-
-            manifest_row = manifest_by_id.get(file_id, row) if file_id else row
-            m = meta_by_id.get(file_id, {})
-            d = drive_by_id.get(file_id, {})
-
-            total_processed += 1
-
-            has_animal = (m.get("has_animal", "") or "").strip()
-            has_human = (m.get("has_human", "") or "").strip()
-            species = (m.get("species", "") or "").strip()
-            count = (m.get("count", "") or "").strip()
-            model_certainty = (m.get("model_certainty", "") or "").strip()
-
-            sp_norm = species.lower()
-            if sp_norm in (
-                "animal",
-                "mammal",
-                "bird",
-                "canis species",
-                "canine family",
-                "rodent",
-                "carnivorous mammal",
-            ):
-                species = "unknown"
-
-            if not count and species and species.lower() not in ("blank", "vehicle", "no cv result"):
-                count = "1"
-
-            if args.exclude_humans and _is_human_only_row(m):
-                total_excluded_humans += 1
-                continue
-
-            if not _keep_row(m):
-                total_skipped_blank += 1
-                continue
-
-            camera_name = get_camera_name(d, manifest_row)
-            deployment_folder = (d.get("deployment_folder") or "").strip()
-            image_num = extract_image_number(filename)
-
-            date = (m.get("date", "") or "").strip()
-            time_val = (m.get("time", "") or "").strip()
-
-            if not date or not time_val:
-                exif_dt = (m.get("exif_datetime", "") or "").strip()
-                if not date:
-                    date = format_date(exif_dt)
-                if not time_val:
-                    time_val = format_time(exif_dt)
-
-            notes_val = ""
-
-            if start_date or end_date or start_time or end_time:
-                if not date or not time_val:
-                    total_missing_datetime_for_interval += 1
-                    notes_val = "WARNING: Missing date/time for interval check"
-                else:
-                    outside = False
-
-                    if start_date and date < start_date:
-                        outside = True
-                    if end_date and date > end_date:
-                        outside = True
-
-                    if start_date and end_date and start_date == end_date:
-                        if start_time and time_val < start_time:
-                            outside = True
-                        if end_time and time_val > end_time:
-                            outside = True
-                    else:
-                        if start_date and date == start_date and start_time and time_val < start_time:
-                            outside = True
-                        if end_date and date == end_date and end_time and time_val > end_time:
-                            outside = True
-
-                    if outside:
-                        total_flagged_outside_interval += 1
-                        notes_val = "WARNING: Date/time outside deployment interval"
-
-            corrected_date = ""
-            corrected_time = ""
-
-            if offset_enabled:
-                row_dt = _parse_row_dt(date, time_val)
-                if row_dt is not None and offset_start_dt is not None and offset_end_dt is not None:
-                    if offset_start_dt <= row_dt <= offset_end_dt:
-                        new_dt = row_dt
-                        try:
-                            y = args.set_year if args.set_year is not None else new_dt.year
-                            mo = args.set_month if args.set_month is not None else new_dt.month
-                            da = args.set_day if args.set_day is not None else new_dt.day
-                            new_dt = new_dt.replace(year=y, month=mo, day=da)
-                        except Exception:
-                            pass
-
-                        if args.shift_minutes != 0:
-                            try:
-                                new_dt = new_dt + timedelta(minutes=int(args.shift_minutes))
-                            except Exception:
-                                pass
-
-                        new_date_str = f"{new_dt.year:04d}{new_dt.month:02d}{new_dt.day:02d}"
-                        new_time_str = f"{new_dt.hour:02d}:{new_dt.minute:02d}:{new_dt.second:02d}"
-
-                        if args.offset_apply_to == "date":
-                            corrected_date = new_date_str
-                            date = corrected_date
-                        elif args.offset_apply_to == "time":
-                            corrected_time = new_time_str
-                            time_val = corrected_time
-                        else:
-                            corrected_date = new_date_str
-                            corrected_time = new_time_str
-                            date = corrected_date
-                            time_val = corrected_time
-
-                        notes_val = f"{notes_val}; OFFSET_APPLIED".strip("; ").strip() if notes_val else "OFFSET_APPLIED"
-
-            row_data = {
-                "CameraName": camera_name,
-                "DeploymentFolder": deployment_folder,
-                "Image#": image_num,
-                "Species": species,
-                "# of Individuals": count,
-                "CorrectedSpecies": "",
-                "Corrected# of Individuals": "",
-                "HasMultipleSpecies": "",
-                "SecondarySpecies": "",
-                "Secondary# of Individuals": "",
-                "Date": date,
-                "Time": time_val,
-                "CorrectedDate": corrected_date,
-                "CorrectedTime": corrected_time,
-                "ObservationID": "",
-                "BurstCount": "",
-                "BurstIndex": "",
-                "has_animal": has_animal,
-                "has_human": has_human,
-                "model_certainty": model_certainty,
-                "Notes": notes_val,
-            }
-
-            rows_by_camera[camera_name].append(row_data)
+    offset_start_dt = _parse_row_dt(offset_start_date, offset_start_time) if offset_enabled else None
+    offset_end_dt = _parse_row_dt(offset_end_date, offset_end_time) if offset_enabled else None
+    if (
+        offset_enabled
+        and (offset_start_dt is None or offset_end_dt is None or offset_end_dt < offset_start_dt)
+    ):
+        offset_enabled = False
 
     FINAL_FIELDS = [
         "CameraName",
@@ -454,147 +427,425 @@ def generate_output_csvs(
         "has_animal",
         "has_human",
         "model_certainty",
+        "RawSpeciesLabel",
+        "PredictionSource",
+        "ReviewStatus",
+        "ReviewReason",
         "Notes",
     ]
+
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            file_id = (row.get("file_id") or "").strip()
+            filename = (row.get("file_name") or row.get("local_file_name") or "").strip()
+
+            manifest_row = manifest_by_id.get(file_id, row) if file_id else row
+            metadata_row = meta_by_id.get(file_id, {})
+            drive_row = drive_by_id.get(file_id, {})
+
+            total_processed += 1
+
+            local_path = (
+                metadata_row.get("local_path")
+                or manifest_row.get("local_path")
+                or row.get("local_path")
+                or ""
+            ).strip()
+            review_decision = review_decisions.get(normalize_review_path(local_path))
+
+            has_animal = (metadata_row.get("has_animal", "") or "").strip()
+            has_human = (metadata_row.get("has_human", "") or "").strip()
+
+            if exclude_humans and has_human == "1" and has_animal != "1":
+                total_excluded_humans += 1
+                continue
+
+            camera_name = get_camera_name(drive_row, manifest_row)
+            deployment_folder = (drive_row.get("deployment_folder") or "").strip()
+            image_num = extract_image_number(filename)
+
+            date_value = (metadata_row.get("date", "") or "").strip()
+            time_value = (metadata_row.get("time", "") or "").strip()
+            if not _normalize_date_token(date_value) or not _normalize_time_token(time_value):
+                exif_dt = (metadata_row.get("exif_datetime", "") or "").strip()
+                if not _normalize_date_token(date_value):
+                    date_value = format_date(exif_dt)
+                if not _normalize_time_token(time_value):
+                    time_value = format_time(exif_dt)
+
+            notes_value = ""
+            compare_date = _normalize_date_token(date_value)
+            compare_time = _normalize_time_token(time_value)
+
+            if start_date or end_date or start_time or end_time:
+                if not compare_date or not compare_time:
+                    total_missing_datetime_for_interval += 1
+                    notes_value = "WARNING: Missing date/time for interval check"
+                else:
+                    outside = False
+                    if start_date and compare_date < start_date:
+                        outside = True
+                    if end_date and compare_date > end_date:
+                        outside = True
+                    if start_date and end_date and start_date == end_date:
+                        if start_time and compare_time < start_time:
+                            outside = True
+                        if end_time and compare_time > end_time:
+                            outside = True
+                    else:
+                        if start_date and compare_date == start_date and start_time and compare_time < start_time:
+                            outside = True
+                        if end_date and compare_date == end_date and end_time and compare_time > end_time:
+                            outside = True
+
+                    if outside:
+                        total_flagged_outside_interval += 1
+                        notes_value = "WARNING: Date/time outside deployment interval"
+
+            corrected_date = ""
+            corrected_time = ""
+            if offset_enabled:
+                row_dt = _parse_row_dt(compare_date, compare_time)
+                if row_dt is not None and offset_start_dt is not None and offset_end_dt is not None:
+                    if offset_start_dt <= row_dt <= offset_end_dt:
+                        new_dt = row_dt
+                        try:
+                            year = args.set_year if args.set_year is not None else new_dt.year
+                            month = args.set_month if args.set_month is not None else new_dt.month
+                            day = args.set_day if args.set_day is not None else new_dt.day
+                            new_dt = new_dt.replace(year=year, month=month, day=day)
+                        except Exception:
+                            pass
+
+                        if args.shift_minutes != 0:
+                            try:
+                                new_dt = new_dt + timedelta(minutes=int(args.shift_minutes))
+                            except Exception:
+                                pass
+
+                        new_date = f"{new_dt.year:04d}{new_dt.month:02d}{new_dt.day:02d}"
+                        new_time = f"{new_dt.hour:02d}:{new_dt.minute:02d}:{new_dt.second:02d}"
+
+                        if args.offset_apply_to == "date":
+                            corrected_date = new_date
+                            date_value = corrected_date
+                        elif args.offset_apply_to == "time":
+                            corrected_time = new_time
+                            time_value = corrected_time
+                        else:
+                            corrected_date = new_date
+                            corrected_time = new_time
+                            date_value = corrected_date
+                            time_value = corrected_time
+
+                        notes_value = (
+                            f"{notes_value}; OFFSET_APPLIED".strip("; ").strip()
+                            if notes_value
+                            else "OFFSET_APPLIED"
+                        )
+
+            review_status = (review_decision or {}).get("review_status", "")
+            review_reason = (review_decision or {}).get("review_reason", "")
+            species_records = _load_species_records(metadata_row, review_decision)
+
+            if not species_records:
+                species_records = [
+                    {
+                        "species": _normalize_species(metadata_row.get("species", "")),
+                        "species_raw": (metadata_row.get("species_raw") or "").strip(),
+                        "model_certainty": metadata_row.get("model_certainty", ""),
+                        "prediction_source": (metadata_row.get("resolved_source") or metadata_row.get("prediction_source") or "").strip(),
+                        "species_rank": (metadata_row.get("species_rank") or "").strip(),
+                        "species_level": _parse_bool(metadata_row.get("species_level")),
+                        "count": _safe_int(metadata_row.get("count"), 0),
+                    }
+                ]
+
+            visible_species_records = [
+                record for record in species_records if record.get("species") or has_animal == "1"
+            ]
+
+            image_key = file_id or local_path or filename
+            multiple_species = len(
+                [
+                    record
+                    for record in visible_species_records
+                    if _classify_row(
+                        has_animal=has_animal,
+                        has_human=has_human,
+                        species=record.get("species", ""),
+                        species_level=bool(record.get("species_level")),
+                    )
+                    in {"resolved_species", "animal_unclassified"}
+                ]
+            ) > 1
+
+            for record in visible_species_records:
+                species = _normalize_species(record.get("species", ""))
+                display_species, species_note = _display_species_name(species)
+                if display_species:
+                    species = display_species
+
+                species_level = bool(record.get("species_level"))
+                row_bucket = _classify_row(
+                    has_animal=has_animal,
+                    has_human=has_human,
+                    species=species,
+                    species_level=species_level,
+                )
+
+                if row_bucket == "blank" and not species:
+                    species = "blank"
+                elif row_bucket == "human" and not species:
+                    species = "human"
+                elif row_bucket == "animal_unclassified" and not species:
+                    species = ANIMAL_UNCLASSIFIED
+                
+                secondary_species = ""
+                if multiple_species:
+                    other_display_species = []
+                    for other in visible_species_records:
+                        other_species = _normalize_species(other.get("species", ""))
+                        other_display, _ = _display_species_name(other_species)
+                        if other_display and other_display != species:
+                            other_display_species.append(other_display)
+
+                    seen = []
+                    for item in other_display_species:
+                        if item not in seen:
+                            seen.append(item)
+
+                    secondary_species = "; ".join(seen)
+
+                count_value = record.get("count") or metadata_row.get("count") or ""
+                if not count_value and row_bucket in {"resolved_species", "animal_unclassified"}:
+                    count_value = max(
+                        1,
+                        _safe_int(metadata_row.get("animal_count"), 0)
+                        or _safe_int(metadata_row.get("count"), 1),
+                    )
+
+                row_data = {
+                    "CameraName": camera_name,
+                    "DeploymentFolder": deployment_folder,
+                    "Image#": image_num,
+                    "Species": species,
+                    "# of Individuals": count_value,
+                    "CorrectedSpecies": "",
+                    "Corrected# of Individuals": "",
+                    "HasMultipleSpecies": "1" if multiple_species else "",
+                    "SecondarySpecies": secondary_species,
+                    "Secondary# of Individuals": "",
+                    "Date": date_value,
+                    "Time": time_value,
+                    "CorrectedDate": corrected_date,
+                    "CorrectedTime": corrected_time,
+                    "ObservationID": "",
+                    "BurstCount": "",
+                    "BurstIndex": "",
+                    "has_animal": has_animal,
+                    "has_human": has_human,
+                    "model_certainty": record.get("model_certainty", ""),
+                    "RawSpeciesLabel": record.get("species_raw", ""),
+                    "PredictionSource": record.get("prediction_source", ""),
+                    "ReviewStatus": review_status,
+                    "ReviewReason": review_reason,
+                    "Notes": "; ".join(part for part in [notes_value, species_note] if part),
+                    "_image_key": image_key,
+                    "_timestamp": _parse_row_dt(date_value, time_value),
+                }
+
+                if row_bucket == "resolved_species":
+                    bucket_counts["resolved_species"] += 1
+                    rows_by_camera[camera_name].append(row_data)
+                elif row_bucket == "animal_unclassified":
+                    bucket_counts["animal_unclassified"] += 1
+                    row_data["Notes"] = (
+                        f"{row_data.get('Notes', '')}; routed_to_animal_unclassified".strip("; ")
+                    )
+                    animal_unclassified_rows.append(row_data)
+                else:
+                    bucket_counts[row_bucket] += 1
+                    row_data["Notes"] = (
+                        f"{row_data.get('Notes', '')}; routed_to_{row_bucket}".strip("; ")
+                    )
+                    non_animal_rows.append(row_data)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     for existing_csv in out_dir.glob("*.csv"):
         existing_csv.unlink()
 
     total_output = 0
-    export_rows = []
 
     for camera_name, rows in sorted(rows_by_camera.items()):
-        rows.sort(key=lambda r: (r.get("Date", ""), r.get("Time", ""), r.get("Image#", "")))
+        rows.sort(
+            key=lambda row: (
+                _normalize_date_token(row.get("Date", "")),
+                _normalize_time_token(row.get("Time", "")),
+                row.get("Image#", ""),
+                row.get("_image_key", ""),
+                row.get("Species", ""),
+            )
+        )
+
+        image_groups = []
+        current_key = None
+        current_rows = []
+        for row in rows:
+            row_key = row.get("_image_key")
+            if current_key is None or row_key != current_key:
+                if current_rows:
+                    image_groups.append(current_rows)
+                current_key = row_key
+                current_rows = [row]
+            else:
+                current_rows.append(row)
+        if current_rows:
+            image_groups.append(current_rows)
 
         obs_seq = 0
-        i = 0
         kept_rows = []
+        image_index = 0
 
-        def _to_seconds(r: dict) -> Optional[int]:
-            d = (r.get("Date", "") or "").strip()
-            t = (r.get("Time", "") or "").strip()
-            if not d or not t:
-                return None
-            m = re.match(r"^(\d{2}):(\d{2}):(\d{2})$", t)
-            if not m or not re.match(r"^\d{8}$", d):
-                return None
-            try:
-                dt = datetime(
-                    int(d[0:4]),
-                    int(d[4:6]),
-                    int(d[6:8]),
-                    int(m.group(1)),
-                    int(m.group(2)),
-                    int(m.group(3)),
-                )
-                return int((dt - datetime(1970, 1, 1)).total_seconds())
-            except Exception:
-                return None
+        while image_index < len(image_groups):
+            burst_start = image_index
+            burst_groups = [image_groups[image_index]]
+            burst_start_ts = image_groups[image_index][0].get("_timestamp")
+            prev_ts = burst_start_ts
+            image_index += 1
 
-        while i < len(rows):
-            start = i
-            start_sec = _to_seconds(rows[i])
-
-            if start_sec is None:
-                obs_seq += 1
-                burst_rows = rows[i:i + 1]
-                obs_id_date = (burst_rows[0].get("Date", "") or "").strip()
-                obs_id = f"{camera_name}_{obs_id_date}_{str(obs_seq).zfill(6)}"
-                burst_rows[0]["ObservationID"] = obs_id
-                burst_rows[0]["BurstCount"] = "1"
-                burst_rows[0]["BurstIndex"] = "1"
-                kept_rows.append(burst_rows[0])
-                i += 1
-                continue
-
-            j = i + 1
-            prev_sec = start_sec
-            while j < len(rows):
-                cur_sec = _to_seconds(rows[j])
-                if cur_sec is None:
+            while image_index < len(image_groups):
+                next_group = image_groups[image_index]
+                next_ts = next_group[0].get("_timestamp")
+                if prev_ts is None or next_ts is None:
                     break
-                if cur_sec - prev_sec <= args.burst_seconds:
-                    prev_sec = cur_sec
-                    j += 1
+                if int((next_ts - prev_ts).total_seconds()) <= args.burst_seconds:
+                    burst_groups.append(next_group)
+                    prev_ts = next_ts
+                    image_index += 1
                 else:
                     break
 
             obs_seq += 1
-            burst_rows = rows[start:j]
-            burst_count = len(burst_rows)
-            obs_id_date = (burst_rows[0].get("Date", "") or "").strip()
-            obs_id = f"{camera_name}_{obs_id_date}_{str(obs_seq).zfill(6)}"
+            burst_count = len(burst_groups)
+            obs_date = _normalize_date_token(burst_groups[0][0].get("Date", ""))
+            obs_id = f"{camera_name}_{obs_date}_{str(obs_seq).zfill(6)}"
 
-            for idx_in_burst, r in enumerate(burst_rows, start=1):
-                r["ObservationID"] = obs_id
-                r["BurstCount"] = str(burst_count)
-                r["BurstIndex"] = str(idx_in_burst)
+            for burst_index, group_rows in enumerate(burst_groups, start=1):
+                for row in group_rows:
+                    row["ObservationID"] = obs_id
+                    row["BurstCount"] = str(burst_count)
+                    row["BurstIndex"] = str(burst_index)
 
             if args.burst_export == "all":
-                kept_rows.extend(burst_rows)
+                selected_groups = burst_groups
             else:
-                kept_rows.append(burst_rows[0])
+                selected_groups = burst_groups[:1]
 
-            i = j
+            for group_rows in selected_groups:
+                kept_rows.extend(group_rows)
 
         csv_path = out_dir / f"{safe_filename(camera_name)}_results.csv"
-        write_csv(csv_path, kept_rows, FINAL_FIELDS)
+        write_csv(csv_path, [{k: row.get(k, "") for k in FINAL_FIELDS} for row in kept_rows], FINAL_FIELDS)
 
         total_output += len(kept_rows)
-        export_rows.extend(kept_rows)
-        print(f"  {camera_name}: {len(kept_rows)} images -> {csv_path}")
+        combined_rows.extend(kept_rows)
+        print(f"  {camera_name}: {len(kept_rows)} rows -> {csv_path}")
 
-    animal_count = sum(1 for r in export_rows if (r.get("has_animal", "") or "").strip() == "1")
-    human_only_count = sum(
-        1
-        for r in export_rows
-        if (r.get("has_human", "") or "").strip() == "1" and (r.get("has_animal", "") or "").strip() != "1"
+    all_results_path = out_dir / ALL_RESULTS_CSV
+    animal_unclassified_path = out_dir / ANIMAL_REVIEW_CSV
+    non_animal_path = out_dir / EXCLUDED_REVIEW_CSV
+
+    animal_unclassified_rows.sort(
+        key=lambda row: (
+            row.get("CameraName", ""),
+            _normalize_date_token(row.get("Date", "")),
+            _normalize_time_token(row.get("Time", "")),
+            row.get("Image#", ""),
+            row.get("Species", ""),
+        )
     )
+    non_animal_rows.sort(
+        key=lambda row: (
+            row.get("CameraName", ""),
+            _normalize_date_token(row.get("Date", "")),
+            _normalize_time_token(row.get("Time", "")),
+            row.get("Image#", ""),
+            row.get("Species", ""),
+        )
+    )
+    combined_rows.sort(
+        key=lambda row: (
+            row.get("CameraName", ""),
+            _normalize_date_token(row.get("Date", "")),
+            _normalize_time_token(row.get("Time", "")),
+            row.get("Image#", ""),
+            row.get("Species", ""),
+        )
+    )
+    write_csv(
+        all_results_path,
+        [{k: row.get(k, "") for k in FINAL_FIELDS} for row in combined_rows],
+        FINAL_FIELDS,
+    )
+    write_csv(
+        animal_unclassified_path,
+        [{k: row.get(k, "") for k in FINAL_FIELDS} for row in animal_unclassified_rows],
+        FINAL_FIELDS,
+    )
+    write_csv(
+        non_animal_path,
+        [{k: row.get(k, "") for k in FINAL_FIELDS} for row in non_animal_rows],
+        FINAL_FIELDS,
+    )
+
     species_filled = sum(
         1
-        for r in export_rows
-        if (r.get("Species", "") or "").strip().lower() not in ("", "blank", "vehicle", "no cv result", "human", "unknown")
+        for row in combined_rows
+        if _is_resolved_species(row.get("Species", ""))
+    )
+    animal_count = sum(
+        1 for row in combined_rows if (row.get("has_animal", "") or "").strip() == "1"
     )
 
-    print(f"\nTotal: {total_output} images across {len(rows_by_camera)} locations")
+    print(f"\nTotal: {total_output} species rows across {len(rows_by_camera)} locations")
     print(f"Output directory: {out_dir}")
 
     if start_date or end_date or start_time or end_time:
-        print(f"\nInterval checks:")
+        print("\nInterval checks:")
         print(f"  Flagged outside interval: {total_flagged_outside_interval}")
         print(f"  Missing date/time for check: {total_missing_datetime_for_interval}")
 
-    print(f"\nFiltering:")
+    print("\nRow routing:")
     print(f"  Total images processed: {total_processed}")
-    print(f"  Kept (animal or human): {total_output}")
-    print(f"    Animals: {animal_count}")
-    print(f"    Humans (by Species=human): {human_only_count}")
-    print(f"  Skipped (blank/vehicle): {total_skipped_blank}")
+    print(f"  Resolved species rows: {bucket_counts['resolved_species']}")
+    print(f"  Animal unclassified rows: {bucket_counts['animal_unclassified']}")
+    print(f"  Blank rows: {bucket_counts['blank']}")
+    print(f"  Human rows: {bucket_counts['human']}")
+    print(f"  Excluded rows: {bucket_counts['excluded']}")
     if args.exclude_humans:
         print(f"  Excluded human-only rows: {total_excluded_humans}")
 
-    print(f"\nColumns filled automatically:")
-    print("  ✓ CameraName")
-    print("  ✓ DeploymentFolder")
-    print("  ✓ Image#")
-    print("  ✓ Date")
-    print("  ✓ Time")
+    print("\nOutput files:")
+    print(f"  all_results.csv rows: {len(combined_rows)}")
+    print(f"  Main location CSV rows written: {total_output}")
+    print(f"  animal_unclassified.csv rows: {len(animal_unclassified_rows)}")
+    print(f"  excluded_non_animal.csv rows: {len(non_animal_rows)}")
 
-    print(f"\nMegaDetector results:")
-    print(f"  ✓ has_animal — {animal_count} animals")
-    print("  ✓ model_certainty — confidence scores filled")
-    print("  ✓ # of Individuals — detection counts filled")
+    print("\nDetection fields:")
+    print(
+        "  \u2713 has_animal \u2014 "
+        f"{bucket_counts['resolved_species'] + bucket_counts['animal_unclassified']} animal rows routed"
+    )
+    print("  \u2713 model_certainty \u2014 confidence scores filled")
+    print("  \u2713 # of Individuals \u2014 detection counts filled when available")
 
     if species_filled > 0:
-        print(f"\nSpeciesNet results:")
-        print(f"  ✓ Species — {species_filled}/{total_output} classified")
+        print("\nSpeciesNet results:")
+        print(f"  \u2713 Species \u2014 {species_filled}/{total_output} classified")
     else:
-        print(f"\nSpecies classification:")
-        print("  ○ Species not confidently classified yet")
-
-    print(f"\nManual columns:")
-    print("  ○ Notes (human review)")
+        print("\nSpecies classification:")
+        print("  \u25cb Species not confidently classified yet")
 
     return {
         "manifest_path": str(manifest_path),
@@ -605,9 +856,17 @@ def generate_output_csvs(
         "camera_count": len(rows_by_camera),
         "rows_written": total_output,
         "animals": animal_count,
-        "humans": human_only_count,
+        "humans": bucket_counts["human"],
         "species_filled": species_filled,
-        "skipped_blank": total_skipped_blank,
+        "resolved_species_rows": bucket_counts["resolved_species"],
+        "animal_unclassified_rows": bucket_counts["animal_unclassified"],
+        "blank_rows": bucket_counts["blank"],
+        "human_rows": bucket_counts["human"],
+        "excluded_rows": bucket_counts["excluded"],
+        "all_results_path": str(all_results_path),
+        "animal_unclassified_path": str(animal_unclassified_path),
+        "excluded_rows_path": str(non_animal_path),
+        "review_decisions_path": str(Path(review_decisions_path)),
         "excluded_humans": total_excluded_humans,
     }
 
@@ -635,6 +894,7 @@ def main():
     parser.add_argument("--set_day", type=int, default=None)
     parser.add_argument("--offset_apply_to", choices=["date", "time", "both"], default="both")
     parser.add_argument("--exclude_humans", action="store_true")
+    parser.add_argument("--review_decisions", default=str(REVIEW_DECISIONS_CSV))
     args = parser.parse_args()
 
     generate_output_csvs(
@@ -659,6 +919,7 @@ def main():
         set_day=args.set_day,
         offset_apply_to=args.offset_apply_to,
         exclude_humans=args.exclude_humans,
+        review_decisions_path=Path(args.review_decisions),
     )
 
 

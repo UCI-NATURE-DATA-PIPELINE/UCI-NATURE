@@ -32,19 +32,20 @@ python3 -m venv .venv
 ## Install dependencies
 
 ```bash
+
+python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements.txt
+python3 -m pip install -r requirements.ml.cpu.lock.txt
+
 ```
 
-## Install MkDocs
-
-```bash
-python3 -m pip install mkdocs mkdocs-material
-```
 
 ## Check Python
 
 ```bash
+
 python3 --version
+
 ```
 
 ## Drive mode only
@@ -52,7 +53,9 @@ python3 --version
 If you want to pull images from Google Drive, keep the service account file in:
 
 ```text
+
 secrets/inf191a-uci-nature-sa.json
+
 ```
 
 You can also set the path with `UCI_NATURE_SERVICE_ACCOUNT_FILE`.

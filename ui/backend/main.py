@@ -53,8 +53,12 @@ MANIFEST_CSV = OUTPUTS_DIR / "manifest.csv"
 METADATA_CSV = OUTPUTS_DIR / "metadata.csv"
 ML_OUTPUTS_CSV = OUTPUTS_DIR / "ml_outputs.csv"
 REVIEW_CSV = OUTPUTS_DIR / "speciesnet_review.csv"
+REVIEW_DECISIONS_PATH = OUTPUTS_DIR / REVIEW_DECISIONS_CSV.name
 BY_LOCATION_DIR = OUTPUTS_DIR / "by_location"
 ML_SUMMARY_JSON = OUTPUTS_DIR / "logs" / "ml_summary.json"
+ALL_RESULTS_FILENAME = "all_results.csv"
+ANIMAL_UNCLASSIFIED_FILENAME = "animal_unclassified.csv"
+EXCLUDED_NON_ANIMAL_FILENAME = "excluded_non_animal.csv"
 
 PIPELINE_LOCK = threading.Lock()
 DEFAULT_PIPELINE_STATE = {
@@ -192,6 +196,10 @@ class RunPipelineRequest(BaseModel):
     source_mode: str = "local"
     confidence_threshold: int
     batch_size: str
+    speciesnet_batch_size: int = 8
+    ml_burst_window: int = 300
+    burst_seconds: int = 300
+    burst_export: str = "all"
     remove_burst_duplicates: bool = True
     exclude_humans: bool = True
 
@@ -203,6 +211,42 @@ def normalize_batch_size(batch_size: str) -> int:
         return int(batch_size)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid batch_size: {batch_size}") from exc
+
+
+def normalize_speciesnet_batch_size(batch_size: int) -> int:
+    try:
+        value = int(batch_size)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid speciesnet_batch_size: {batch_size}") from exc
+    return max(1, min(128, value))
+
+
+def normalize_burst_seconds(value: Union[int, str]) -> int:
+    try:
+        burst_seconds = int(value)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid burst seconds: {value}") from exc
+    return max(10, min(300, burst_seconds))
+
+
+def normalize_burst_export(value: Optional[str]) -> str:
+    normalized = (value or "all").strip().lower()
+    if normalized not in {"all", "first"}:
+        raise HTTPException(status_code=400, detail=f"Invalid burst_export: {value}")
+    return normalized
+
+
+class ReviewUpdateRequest(BaseModel):
+    filepath: str
+    review_status: str = "pending"
+    reviewed_species: str = ""
+    review_reason: str = ""
+
+
+class ReviewApplyRequest(BaseModel):
+    burst_seconds: Optional[int] = None
+    burst_export: Optional[str] = None
+    exclude_humans: Optional[bool] = None
 
 
 def normalize_source_mode(source_mode: Optional[str]) -> str:
@@ -364,6 +408,16 @@ def format_duration(seconds_value: Optional[Union[float, int]]) -> str:
 def get_location_csv_paths() -> List[Path]:
     if not BY_LOCATION_DIR.exists():
         return []
+    return sorted(
+        path
+        for path in BY_LOCATION_DIR.glob("*_results.csv")
+        if path.name != ALL_RESULTS_FILENAME
+    )
+
+
+def get_export_artifact_paths() -> List[Path]:
+    if not BY_LOCATION_DIR.exists():
+        return []
     return sorted(BY_LOCATION_DIR.glob("*.csv"))
 
 
@@ -390,6 +444,43 @@ def build_metadata_lookup() -> Dict[str, Dict[str, str]]:
     return lookup
 
 
+def _display_species_label(value: str) -> str:
+    text = (value or "").strip().replace("_", " ")
+    if not text:
+        return "Unknown"
+    return text.title()
+
+
+def _parse_candidate_options(raw_json: str, current_species: str) -> List[str]:
+    options: List[str] = []
+    try:
+        parsed = json.loads(raw_json or "[]")
+    except json.JSONDecodeError:
+        parsed = []
+
+    if isinstance(parsed, list):
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            label = _display_species_label(item.get("label", ""))
+            if label and label not in options:
+                options.append(label)
+
+    for fallback in [current_species, "Animal Unclassified", "Blank", "Human"]:
+        label = _display_species_label(fallback)
+        if label not in options:
+            options.append(label)
+
+    return options
+
+
+def _count_resolved_output_rows() -> int:
+    combined_path = BY_LOCATION_DIR / ALL_RESULTS_FILENAME
+    if combined_path.exists():
+        return count_csv_rows(combined_path)
+    return sum(count_csv_rows(path) for path in get_location_csv_paths())
+
+
 def build_validation_report() -> dict:
     manifest_total = count_csv_rows(MANIFEST_CSV)
     ml_outputs_total = count_csv_rows(ML_OUTPUTS_CSV)
@@ -397,7 +488,9 @@ def build_validation_report() -> dict:
     column_issue_count = 0
     file_reports = []
 
-    for csv_path in get_location_csv_paths():
+    for csv_path in get_export_artifact_paths():
+        if csv_path.name == ALL_RESULTS_FILENAME:
+            continue
         rows = read_csv_rows(csv_path)
         result = validate_csv(csv_path)
         issues = result["column_issues"]
@@ -426,15 +519,16 @@ def build_validation_report() -> dict:
 def build_dashboard_summary_data(project_name: str) -> dict:
     manifest_total = count_csv_rows(MANIFEST_CSV)
     metadata_total = count_csv_rows(METADATA_CSV)
-    review_total = count_csv_rows(REVIEW_CSV)
-    animals_detected = 0
-
-    for path in get_location_csv_paths():
-        for row in read_csv_rows(path):
-            has_animal = (row.get("has_animal") or "").strip()
-            species = (row.get("Species") or "").strip().lower()
-            if has_animal == "1" or species not in ("", "blank", "vehicle", "no cv result"):
-                animals_detected += 1
+    review_decisions = load_review_decisions(REVIEW_DECISIONS_PATH)
+    review_total = sum(
+        1
+        for row in read_csv_rows(REVIEW_CSV)
+        if (review_decisions.get(normalize_review_path(row.get("filepath", "")), {}).get("review_status") or "pending") == "pending"
+    )
+    animals_detected = _count_resolved_output_rows()
+    animal_unclassified_path = BY_LOCATION_DIR / ANIMAL_UNCLASSIFIED_FILENAME
+    if animal_unclassified_path.exists():
+        animals_detected += count_csv_rows(animal_unclassified_path)
 
     validation = build_validation_report()
     ml_summary = read_json_file(ML_SUMMARY_JSON, {})
@@ -489,45 +583,68 @@ def build_review_items_data() -> List[dict]:
     if not rows:
         return []
 
+    decisions = load_review_decisions(REVIEW_DECISIONS_PATH)
     camera_map = build_camera_map()
     metadata_lookup = build_metadata_lookup()
     items = []
 
     for idx, row in enumerate(rows, start=1):
         filepath = (row.get("filepath") or "").strip()
+        decision = decisions.get(normalize_review_path(filepath), {})
         filename = Path(filepath).name if filepath else f"review-item-{idx}"
         metadata = metadata_lookup.get(filepath) or metadata_lookup.get(filename) or {}
-        camera = camera_map.get(filename, "Unknown")
+        camera = camera_map.get(filename) or Path(filepath).parent.name or "Unknown"
         datetime_label = format_ui_datetime(
             date_value=metadata.get("date", ""),
             time_value=metadata.get("time", ""),
             fallback=metadata.get("modified_time", ""),
         )
-        label = (row.get("burst_label") or row.get("label_raw") or "unknown").replace("_", " ").strip()
-        confidence = round(float(row.get("score") or 0) * 100)
+        label_value = (
+            decision.get("reviewed_species")
+            or row.get("final_label")
+            or row.get("resolved_label")
+            or row.get("burst_label")
+            or row.get("label_raw")
+            or "unknown"
+        )
+        label = _display_species_label(label_value)
+        confidence = round(float(row.get("resolved_score") or row.get("score") or 0) * 100)
+        status = decision.get("review_status") or "pending"
+        candidate_options = _parse_candidate_options(
+            row.get("candidate_labels_json", "[]"),
+            label,
+        )
 
         items.append({
-            "id": idx,
+            "id": normalize_review_path(filepath) or str(idx),
+            "filepath": filepath,
             "filename": filename,
-            "species": label.title(),
+            "species": label,
             "confidence": confidence,
             "camera": camera,
             "datetime": datetime_label,
-            "status": "pending",
+            "status": status,
             "reason": (row.get("reason") or "").strip(),
+            "prediction_source": (row.get("prediction_source") or "").strip(),
+            "candidate_options": candidate_options,
         })
 
     return items
 
 
 def build_export_artifact_summary() -> dict:
-    csv_paths = get_location_csv_paths()
+    csv_paths = get_export_artifact_paths()
     export_files = []
-    total_rows = 0
+    total_rows = _count_resolved_output_rows()
+    animal_unclassified_path = BY_LOCATION_DIR / ANIMAL_UNCLASSIFIED_FILENAME
+    excluded_path = BY_LOCATION_DIR / EXCLUDED_NON_ANIMAL_FILENAME
+    if animal_unclassified_path.exists():
+        total_rows += count_csv_rows(animal_unclassified_path)
+    if excluded_path.exists():
+        total_rows += count_csv_rows(excluded_path)
 
     for path in csv_paths:
         row_count = count_csv_rows(path)
-        total_rows += row_count
         export_files.append({
             "name": path.name,
             "rows": row_count,
@@ -547,28 +664,17 @@ def build_export_artifact_summary() -> dict:
     }
 
 
-def build_pipeline_results_summary(session_key: Optional[str] = None) -> dict:
-    status = serialize_pipeline_state(session_key) if session_key else _latest_pipeline_state()
-    export_summary = build_export_artifact_summary()
-
-    result = status.get("result") if isinstance(status.get("result"), dict) else {}
-    source = result.get("source") if isinstance(result.get("source"), dict) else {}
+def _latest_output_settings() -> dict:
+    latest_state = _latest_pipeline_state()
+    payload = latest_state.get("payload") if isinstance(latest_state.get("payload"), dict) else {}
+    burst_export = normalize_burst_export(payload.get("burst_export", "all"))
+    if payload.get("remove_burst_duplicates", True):
+        burst_export = "first"
 
     return {
-        "run_id": status.get("run_id"),
-        "pipeline_status": status.get("status") or "idle",
-        "finished_at": status.get("finished_at"),
-        "status": "ready" if export_summary.get("status") == "ready" else "empty",
-        "message": export_summary.get("message"),
-        "output_dir": export_summary.get("output_dir"),
-        "file_count": export_summary.get("file_count", 0),
-        "total_rows": export_summary.get("total_rows", 0),
-        "files": export_summary.get("files", []),
-        "integration_mode": status.get("integration_mode"),
-        "source_mode": source.get("mode"),
-        "image_count": source.get("image_count"),
-        "review_items": ((result.get("steps") or {}).get("postprocess") or {}).get("review_items", 0),
-        "note": export_summary.get("note"),
+        "burst_seconds": normalize_burst_seconds(payload.get("burst_seconds", 300)),
+        "burst_export": burst_export,
+        "exclude_humans": bool(payload.get("exclude_humans", True)),
     }
 
 
@@ -710,10 +816,22 @@ def execute_pipeline_run(
                 )
 
                 config = PipelineRunConfig(
-                    batch_size=batch_size,
+                    manifest_batch_size=batch_size,
+                    speciesnet_batch_size=normalize_speciesnet_batch_size(
+                        payload.get("speciesnet_batch_size", 8)
+                    ),
                     confidence_threshold=payload["confidence_threshold"],
                     remove_burst_duplicates=payload["remove_burst_duplicates"],
                     exclude_humans=payload["exclude_humans"],
+                    ml_burst_window=normalize_burst_seconds(
+                        payload.get("ml_burst_window", 300)
+                    ),
+                    burst_seconds=normalize_burst_seconds(
+                        payload.get("burst_seconds", 300)
+                    ),
+                    burst_export=normalize_burst_export(
+                        payload.get("burst_export", "all")
+                    ),
                 )
                 configured_staging_dir = config.staging_dir
                 config.staging_dir = resolve_pipeline_staging_dir(config.staging_dir)
@@ -1170,6 +1288,60 @@ def review_items(authorization: Optional[str] = Header(default=None)):
     return build_review_items_data()
 
 
+@app.post("/api/review/save")
+def save_review_item(
+    data: ReviewUpdateRequest,
+    authorization: Optional[str] = Header(default=None),
+):
+    require_auth(authorization)
+    try:
+        saved = upsert_review_decision(
+            filepath=data.filepath,
+            review_status=normalize_review_status(data.review_status),
+            reviewed_species=normalize_review_species(data.reviewed_species),
+            review_reason=data.review_reason,
+            path=REVIEW_DECISIONS_PATH,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "message": "Review decision saved",
+        "saved": saved,
+    }
+
+
+@app.post("/api/review/apply")
+def apply_review_changes(
+    data: ReviewApplyRequest,
+    authorization: Optional[str] = Header(default=None),
+):
+    require_auth(authorization)
+    settings = _latest_output_settings()
+    if data.burst_seconds is not None:
+        settings["burst_seconds"] = normalize_burst_seconds(data.burst_seconds)
+    if data.burst_export is not None:
+        settings["burst_export"] = normalize_burst_export(data.burst_export)
+    if data.exclude_humans is not None:
+        settings["exclude_humans"] = bool(data.exclude_humans)
+
+    result = generate_output_csvs(
+        manifest=MANIFEST_CSV,
+        metadata=METADATA_CSV,
+        drive_index=OUTPUTS_DIR / "drive_index.csv",
+        out_dir=BY_LOCATION_DIR,
+        burst_seconds=settings["burst_seconds"],
+        burst_export=settings["burst_export"],
+        exclude_humans=settings["exclude_humans"],
+        review_decisions_path=REVIEW_DECISIONS_PATH,
+    )
+
+    return {
+        "message": "Saved review decisions applied to output CSVs",
+        "settings": settings,
+        "result": result,
+    }
+
+
 @app.get("/api/validate/issues")
 def validate_issues(authorization: Optional[str] = Header(default=None)):
     require_auth(authorization)
@@ -1180,38 +1352,3 @@ def validate_issues(authorization: Optional[str] = Header(default=None)):
 def export_start(authorization: Optional[str] = Header(default=None)):
     require_auth(authorization)
     return build_export_artifact_summary()
-
-
-@app.get("/api/statistics/summary")
-def statistics_summary(authorization: Optional[str] = Header(default=None)):
-    require_auth(authorization)
-    from collections import Counter
-    by_location_dir = OUTPUTS_DIR / "by_location"
-    species_counter: Counter = Counter()
-    timeline_counter: Counter = Counter()
-    cameras = set()
-    total_detections = 0
-    if by_location_dir.exists():
-        for csv_path in by_location_dir.glob("*.csv"):
-            cameras.add(csv_path.stem)
-            with open(csv_path, "r", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    if (row.get("has_animal") or "").strip() == "1":
-                        total_detections += 1
-                        sp = (row.get("Species") or "").strip() or "unknown"
-                        species_counter[sp] += 1
-                        date = (row.get("Date") or "").strip()[:7]
-                        if date:
-                            timeline_counter[date] += 1
-    sorted_species = species_counter.most_common(10)
-    sorted_timeline = sorted(timeline_counter.items())
-    return {
-        "total_detections": total_detections,
-        "species_count": len(species_counter),
-        "cameras_count": len(cameras),
-        "species_labels": [s[0] for s in sorted_species],
-        "species_values": [s[1] for s in sorted_species],
-        "timeline_labels": [t[0] for t in sorted_timeline],
-        "timeline_values": [t[1] for t in sorted_timeline],
-    }
