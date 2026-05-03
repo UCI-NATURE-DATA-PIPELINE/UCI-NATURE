@@ -128,7 +128,7 @@ export function createPipelineRender(app, stateApi) {
     }
     if (summary) {
       summary.textContent = results?.status === "ready"
-        ? `${formatNumber(results.file_count || 0)} file(s) · ${formatNumber(results.total_rows || 0)} rows · ${results.output_dir || "data/outputs/by_location"}`
+        ? `${formatNumber(results.file_count || 0)} file(s) · ${formatNumber(results.total_rows || 0)} rows · ${results.output_dir || "data/outputs/by_site"}`
         : results?.message || "No completed pipeline results are available yet.";
     }
     if (tableBody) {

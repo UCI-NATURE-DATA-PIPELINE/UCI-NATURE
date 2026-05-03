@@ -9,20 +9,20 @@ export const DRIVE_MANUAL_FOLDER_HINT =
   "Paste a Google Drive folder link or raw folder ID if it doesn’t appear in the dropdown.";
 
 export const projectLabels = {
-  uci: "UCI Campus Reserves",
-  other: "Selected Project"
+  uci: "Field Research Program",
+  other: "Shared Wildlife Survey"
 };
 
 export const driveProfiles = {
   uci: {
-    driveName: "Wildlife Camera Photo Database",
-    driveEmail: "julie.coffey@uci.edu",
-    projectLabel: "UCI Campus Reserves"
+    driveName: "Field Camera Archive",
+    driveEmail: "field.research@example.org",
+    projectLabel: "Field Research Program"
   },
   other: {
-    driveName: "Wildlife Camera Photo Database",
-    driveEmail: "research.demo@uci.edu",
-    projectLabel: "Selected Project"
+    driveName: "Shared Wildlife Survey Archive",
+    driveEmail: "survey.team@example.org",
+    projectLabel: "Shared Wildlife Survey"
   }
 };
 
@@ -83,7 +83,11 @@ export const appState = {
   driveFolderError: "",
   driveSyncState: createEmptyDriveSyncState(),
   driveCameraLocation: "",
+  driveCreateSiteMode: false,
   driveSyncLimit: null,
+  driveDateRangeStart: "",
+  driveDateRangeEnd: "",
+  driveFlagOutsideRange: false,
   driveManualSelectionFeedback: null,
   driveManualSelectionPending: false,
   reviewItems: [],

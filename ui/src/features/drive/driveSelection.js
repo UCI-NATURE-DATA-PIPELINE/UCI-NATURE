@@ -63,6 +63,13 @@ export function createDriveSelection(app, api, stateApi, renderApi) {
   async function handleDriveFolderSelect(selectEl) {
     const folderId = selectEl?.value || "";
     if (appState.driveSyncState.status === "syncing") return app.showToast("Wait for the current Drive sync to finish before changing folders", "warn");
+    if (folderId === "__manual__") {
+      if (selectEl) selectEl.value = appState.selectedDriveFolder?.id || "";
+      const popoverEl = document.getElementById("drive-manual-popover");
+      popoverEl?.setAttribute("open", "open");
+      document.getElementById("drive-folder-manual-input")?.focus();
+      return;
+    }
     if (!folderId) return renderApi.renderDriveFolderSelection();
     const folder = appState.availableDriveFolders.find((item) => item.id === folderId);
     if (!folder) return app.showToast("Selected Drive folder was not found in the current list", "warn");
@@ -73,6 +80,7 @@ export function createDriveSelection(app, api, stateApi, renderApi) {
       stateApi.applySelectedDriveFolderSettings(appState.selectedDriveFolder);
       appState.driveSyncState = normalizeDriveSyncStatus(response?.sync || null);
       appState.driveFolderError = "";
+      document.getElementById("drive-manual-popover")?.removeAttribute("open");
       renderApi.setDriveManualSelectionFeedback(null);
       renderApi.syncDriveUI();
       renderApi.renderDriveFolderSelection();

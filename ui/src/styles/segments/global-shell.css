@@ -1,5 +1,5 @@
 /* ================================================================
-   UCI Nature Wildlife Pipeline — Stylesheet
+   Wildlife Research Pipeline — Stylesheet
    wildlife-hifi-final.css
    
    TABLE OF CONTENTS
@@ -195,4 +195,3 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--b
 .sidebar.collapsed .collapse-chevron { transform: rotate(180deg); }
 .collapse-label { font-size: 13px; opacity: 1; transform: translateX(0); transition: opacity .2s var(--ease), transform .2s var(--ease); }
 .sidebar.collapsed .collapse-label { opacity: 0; transform: translateX(-8px); pointer-events: none; }
-

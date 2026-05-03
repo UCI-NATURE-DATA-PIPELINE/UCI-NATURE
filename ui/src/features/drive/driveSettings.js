@@ -7,6 +7,12 @@ import {
 } from "../../utils/helpers.js";
 
 export function createDriveSettings(app, api, stateApi, renderApi, selectionApi) {
+  const DRIVE_SITE_PRESETS = ["Site 1", "Site 2", "Site 3", "Site 4"];
+
+  function isPresetDriveSite(value) {
+    return DRIVE_SITE_PRESETS.includes(String(value || "").trim());
+  }
+
   async function applyManualDriveFolderSelection() {
     const inputEl = document.getElementById("drive-folder-manual-input");
     const rawValue = String(inputEl?.value || "").trim();
@@ -33,10 +39,10 @@ export function createDriveSettings(app, api, stateApi, renderApi, selectionApi)
       appState.driveSyncState = normalizeDriveSyncStatus(response?.sync || null);
       appState.driveFolderError = "";
       if (inputEl) inputEl.value = "";
-      renderApi.setDriveManualSelectionFeedback(`Selected Drive folder: ${folder.name}`, "success");
+      document.getElementById("drive-manual-popover")?.removeAttribute("open");
+      renderApi.setDriveManualSelectionFeedback(`Selected Drive folder: ${folder.name}.`, "success");
       renderApi.syncDriveUI();
       renderApi.renderDriveFolderSelection();
-      app.showToast(`Selected Drive folder: ${folder.name}`, "success");
     } catch (error) {
       const message = error.message || "Unable to select that Google Drive folder";
       renderApi.setDriveManualSelectionFeedback(message, "error");
@@ -45,6 +51,16 @@ export function createDriveSettings(app, api, stateApi, renderApi, selectionApi)
       appState.driveManualSelectionPending = false;
       renderApi.syncDriveManualSelectionState();
     }
+  }
+
+  function handleDriveDateRangeChange() {
+    const startEl = document.getElementById("drive-date-start");
+    const endEl = document.getElementById("drive-date-end");
+    const flagEl = document.getElementById("drive-date-flag");
+    appState.driveDateRangeStart = String(startEl?.value || "");
+    appState.driveDateRangeEnd = String(endEl?.value || "");
+    appState.driveFlagOutsideRange = Boolean(flagEl?.checked);
+    renderApi.syncDriveUI();
   }
 
   async function handleDriveSyncSettingsChange() {
@@ -56,6 +72,7 @@ export function createDriveSettings(app, api, stateApi, renderApi, selectionApi)
     }
 
     appState.driveCameraLocation = String(locationEl?.value || "").trim();
+    appState.driveCreateSiteMode = Boolean(appState.driveCameraLocation && !isPresetDriveSite(appState.driveCameraLocation));
     appState.driveSyncLimit = normalizeDriveSyncLimitValue(limitEl?.value || "");
     if (!appState.selectedDriveFolder?.id || (!appState.signedInUser && !localStorage.getItem("token"))) {
       renderApi.syncDriveUI();
@@ -79,6 +96,39 @@ export function createDriveSettings(app, api, stateApi, renderApi, selectionApi)
     }
   }
 
+  async function applyDriveCustomSite() {
+    const inputEl = document.getElementById("drive-site-custom-input");
+    const locationEl = document.getElementById("drive-camera-location-select");
+    const customSite = String(inputEl?.value || "").trim();
+    if (appState.driveSyncState.status === "syncing") return app.showToast("Wait for the current Drive sync to finish before changing folder settings", "warn");
+    if (!appState.googleAuthActive) return app.showToast("Sign in with Google first", "warn");
+    if (!appState.driveConnected) return app.showToast("Confirm the Google Drive connection first", "warn");
+    if (!customSite) {
+      renderApi.syncDriveCustomSiteState();
+      return app.showToast("Enter a camera site name first", "warn");
+    }
+    if (!locationEl) return;
+    appState.driveCreateSiteMode = true;
+    const existingOption = Array.from(locationEl.options).find((option) => option.value === customSite);
+    if (!existingOption) {
+      const customOption = document.createElement("option");
+      customOption.value = customSite;
+      customOption.textContent = customSite;
+      customOption.dataset.driveCustom = "true";
+      locationEl.appendChild(customOption);
+    }
+    locationEl.value = customSite;
+    await handleDriveSyncSettingsChange();
+    renderApi.syncDriveCustomSiteState();
+    app.showToast(`Using camera site: ${customSite}`, "success");
+  }
+
+  function handleDriveCustomSiteKeydown(event) {
+    if (event?.key !== "Enter") return;
+    event.preventDefault();
+    void applyDriveCustomSite();
+  }
+
   async function refreshDriveFolders() {
     if (!appState.googleAuthActive) return app.showToast("Sign in with Google first", "warn");
     if (!appState.driveConnected) return app.showToast("Confirm the Google Drive connection first", "warn");
@@ -92,6 +142,9 @@ export function createDriveSettings(app, api, stateApi, renderApi, selectionApi)
 
   return {
     applyManualDriveFolderSelection,
+    applyDriveCustomSite,
+    handleDriveCustomSiteKeydown,
+    handleDriveDateRangeChange,
     handleDriveSyncSettingsChange,
     refreshDriveFolders
   };

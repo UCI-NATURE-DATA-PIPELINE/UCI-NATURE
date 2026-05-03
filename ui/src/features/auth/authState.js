@@ -5,8 +5,8 @@ import { appState, driveProfiles, projectLabels } from "../../state/appState.js"
 export function createAuthState(app) {
   function getDriveProfile() {
     return driveProfiles[appState.selectedProject] || {
-      driveName: "Wildlife Camera Photo Database",
-      driveEmail: "wildlife.demo@uci.edu",
+      driveName: "Field Camera Archive",
+      driveEmail: "field.research@example.org",
       projectLabel: projectLabels[appState.selectedProject] || "Selected Project"
     };
   }

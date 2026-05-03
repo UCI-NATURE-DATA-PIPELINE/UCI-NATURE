@@ -59,7 +59,7 @@ export function createDashboardRender(app, chartsApi) {
       { badge: "Pipeline complete", badgeClass: "badge-blue", text: `${formatNumber(summary?.processed_images || 0)} images processed`, time: summary?.last_run?.date || "Unknown date" },
       { badge: "Review queue", badgeClass: "badge-yellow", text: `${formatNumber(summary?.pending_review || 0)} items need manual review`, time: "Current artifacts" },
       { badge: "Validation", badgeClass: "badge-yellow", text: `${formatNumber(validation?.outside_range || 0)} outside range, ${formatNumber(validation?.unprocessed || 0)} unprocessed`, time: "Current artifacts" },
-      { badge: "Export files", badgeClass: "badge-green", text: exportSummary?.file_count ? `${formatNumber(exportSummary.file_count)} export file(s) ready` : "No export artifacts generated", time: exportSummary?.output_dir || "data/outputs/by_location" }
+      { badge: "Export files", badgeClass: "badge-green", text: exportSummary?.file_count ? `${formatNumber(exportSummary.file_count)} export file(s) ready` : "No export artifacts generated", time: exportSummary?.output_dir || "data/outputs/by_site" }
     ];
 
     container.innerHTML = items.map((item) => `

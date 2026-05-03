@@ -29,8 +29,27 @@ export function createDriveEvents(app, renderApi) {
   }
 
   function selectLocCard(card) {
-    document.querySelectorAll(".loc-select-card").forEach((element) => element.classList.remove("selected"));
+    card?.closest(".location-select-grid")?.querySelectorAll(".loc-select-card").forEach((element) => element.classList.remove("selected"));
     card.classList.add("selected");
+  }
+
+  function selectDriveLocCard(card) {
+    if (appState.driveSyncState.status === "syncing") return app.showToast("Wait for the current Drive sync to finish before changing folder settings", "warn");
+    if (!appState.googleAuthActive) return app.showToast("Sign in with Google first", "warn");
+    if (!appState.driveConnected) return app.showToast("Confirm the Google Drive connection first", "warn");
+    if (card?.dataset?.driveCreate === "true") {
+      appState.driveCreateSiteMode = true;
+      renderApi.syncDriveLocationCards();
+      renderApi.syncDriveCustomSiteState();
+      document.getElementById("drive-site-custom-input")?.focus();
+      return;
+    }
+    const locationEl = document.getElementById("drive-camera-location-select");
+    if (!locationEl) return;
+    const selectedLocation = String(card?.dataset?.driveLocation || "").trim();
+    appState.driveCreateSiteMode = false;
+    locationEl.value = selectedLocation;
+    void app.features.drive.handleDriveSyncSettingsChange();
   }
 
   function handleDriveManualSelectionKeydown(event) {
@@ -42,6 +61,7 @@ export function createDriveEvents(app, renderApi) {
   return {
     handleDriveManualSelectionKeydown,
     selectLocCard,
+    selectDriveLocCard,
     switchUploadTab,
     togglePause
   };

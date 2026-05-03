@@ -14,9 +14,7 @@ export function createDriveUtils(stateApi) {
   }
 
   function getDriveManualSelectionHint() {
-    if (!appState.googleAuthActive) return "Sign in with Google before pasting a folder URL or ID.";
-    if (!appState.driveConnected) return "Confirm the Google Drive connection before pasting a folder URL or ID.";
-    if (appState.driveSyncState.status === "syncing") return "Wait for the current Drive sync to finish before changing folders.";
+    if (!appState.googleAuthActive || !appState.driveConnected || appState.driveSyncState.status === "syncing") return "";
     return DRIVE_MANUAL_FOLDER_HINT;
   }
 

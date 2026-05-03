@@ -147,6 +147,7 @@
   border:5px solid transparent; border-bottom-color:#1A202C;
 }
 .has-tooltip:hover .tooltip-box { opacity:1; transform:translateX(-50%) translateY(0); }
+.has-tooltip:focus-within .tooltip-box { opacity:1; transform:translateX(-50%) translateY(0); }
 
 /* Help badge icons */
 .help-icon {
@@ -161,4 +162,3 @@
 .help-icon-blue:hover { box-shadow:0 0 0 3px rgba(66,153,225,.2); }
 .help-icon-yellow { background:#FEFCBF; color:#92400E; }
 .help-icon-yellow:hover { box-shadow:0 0 0 3px rgba(236,201,75,.25); }
-

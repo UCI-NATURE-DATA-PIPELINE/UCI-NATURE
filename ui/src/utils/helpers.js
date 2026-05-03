@@ -43,7 +43,7 @@ export function normalizeDriveSyncLimitValue(value) {
 
 export function formatDriveSyncLimitLabel(value) {
   const normalized = normalizeDriveSyncLimitValue(value);
-  return normalized ? `First ${formatNumber(normalized)} files` : "All files";
+  return normalized ? `${formatNumber(normalized)} files` : "All files";
 }
 
 export function normalizeDriveFolderOptions(folders) {

@@ -12,7 +12,7 @@
     <div class="export-summary-card red"><div class="export-summary-val" id="export-val-human">75</div><div class="export-summary-lbl">Human detections excluded</div><div class="export-summary-sub">Flagged human detections removed</div></div>
     <div class="export-summary-card blue"><div class="export-summary-val" id="export-val-burst">--</div><div class="export-summary-lbl">Burst duplicates removed</div><div class="export-summary-sub">Best frame per burst group kept</div></div>
   </div>
-  <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">By Camera Location</div>
+  <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">By Camera Site</div>
   <div id="export-folder-list"></div>
 </div>
 
@@ -20,12 +20,12 @@
   <div style="margin-bottom:14px"><div class="card-title" style="margin-bottom:2px">Export Options</div><div style="font-size:12px;color:var(--muted)">Choose what to include in the output file</div></div>
   <div class="export-option-row checked" id="opt-duplicates" onclick="toggleExportOption(this,'opt-duplicates')"><input type="checkbox" class="export-option-cb" checked onchange="toggleExportOption(document.getElementById('opt-duplicates'),null,this)"><div style="flex:1"><div class="export-option-title">Remove burst duplicates</div><div class="export-option-sub">Keep only the highest-confidence image from each burst — other frames in the same group will not appear in the output</div></div><span class="export-option-badge" id="badge-burst-rows" style="background:#FEFCBF;color:#744210">&#8722;8,462 rows</span></div>
   <div class="export-option-row checked" id="opt-humans" onclick="toggleExportOption(this,'opt-humans')"><input type="checkbox" class="export-option-cb" checked onchange="toggleExportOption(document.getElementById('opt-humans'),null,this)"><div style="flex:1"><div class="export-option-title">Exclude human detections</div><div class="export-option-sub">Remove images where a person was detected — recommended to protect individual privacy</div></div><span class="export-option-badge" id="badge-human-rows" style="background:#FED7D7;color:#C53030">&#8722;75 rows</span></div>
-  <div class="export-option-row" id="opt-split" onclick="toggleExportOption(this,'opt-split')"><input type="checkbox" class="export-option-cb" onchange="toggleExportOption(document.getElementById('opt-split'),null,this)"><div style="flex:1"><div class="export-option-title">Split output by camera location</div><div class="export-option-sub">Export 4 separate files — one per camera location — instead of one combined file</div></div><span class="export-option-badge" style="background:#EBF8FF;color:#2B6CB0">4 files</span></div>
+  <div class="export-option-row" id="opt-split" onclick="toggleExportOption(this,'opt-split')"><input type="checkbox" class="export-option-cb" onchange="toggleExportOption(document.getElementById('opt-split'),null,this)"><div style="flex:1"><div class="export-option-title">Split output by camera site</div><div class="export-option-sub">Export 4 separate files — one per camera site — instead of one combined file</div></div><span class="export-option-badge" style="background:#EBF8FF;color:#2B6CB0">4 files</span></div>
 </div>
 
 <div class="card card-p" style="margin-bottom:14px">
   <div class="export-filter-toggle-row" id="filter-toggle-row" onclick="toggleExportFilter()">
-    <div style="display:flex;align-items:center;gap:10px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg><div><div style="font-size:13.5px;font-weight:600">Date &amp; Camera Filter</div><div style="font-size:12px;color:var(--muted);margin-top:1px">Optional &mdash; default exports all records</div></div></div>
+    <div style="display:flex;align-items:center;gap:10px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg><div><div style="font-size:13.5px;font-weight:600">Date &amp; Site Filter</div><div style="font-size:12px;color:var(--muted);margin-top:1px">Optional &mdash; default exports all records</div></div></div>
     <div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;color:var(--muted)" id="filter-status-label">Off &mdash; exporting all dates</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" id="filter-chevron" style="transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg></div>
   </div>
   <div class="export-filter-body" id="export-filter-body">
@@ -41,7 +41,7 @@
         <div class="val-date-error" id="export-end-future-error"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>To date cannot be in the future</div>
         <div class="val-date-error" id="export-range-error"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>To date must be after From date</div>
       </div>
-      <div class="val-date-field"><label class="field-label">Camera Location</label><select class="model-select" id="export-camera-filter"><option>All Cameras</option><option>Research Park</option><option>Bonita Canyon 1</option><option>Bonita Canyon 2</option><option>Marshtrail</option></select></div>
+      <div class="val-date-field"><label class="field-label">Camera Site</label><select class="model-select" id="export-camera-filter"><option>All Sites</option><option>Site 1</option><option>Site 2</option><option>Site 3</option><option>Site 4</option></select></div>
     </div>
   </div>
 </div>

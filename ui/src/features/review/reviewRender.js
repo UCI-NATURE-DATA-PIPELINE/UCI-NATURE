@@ -58,7 +58,7 @@ export function createReviewRender(app, stateApi) {
     setText("conf-overlay", `${item.confidence}% confidence`);
     setText("species-name", item.species);
     setText("species-certainty", `${item.confidence}% model certainty`);
-    setHTML("review-meta", `<div class="meta-row"><span class="meta-key">Filename</span><span class="meta-val">${item.filename}</span></div><div class="meta-row"><span class="meta-key">Camera</span><span class="meta-val">${item.camera}</span></div><div class="meta-row"><span class="meta-key">Date / Time</span><span class="meta-val">${item.datetime}</span></div><div class="meta-row"><span class="meta-key">Burst Group</span><span class="meta-val">${item.burst}</span></div><div class="meta-row"><span class="meta-key">Status</span><span class="meta-val">${capitalize(item.status)}</span></div>`);
+    setHTML("review-meta", `<div class="meta-row"><span class="meta-key">Filename</span><span class="meta-val">${item.filename}</span></div><div class="meta-row"><span class="meta-key">Site</span><span class="meta-val">${item.camera}</span></div><div class="meta-row"><span class="meta-key">Date / Time</span><span class="meta-val">${item.datetime}</span></div><div class="meta-row"><span class="meta-key">Burst Group</span><span class="meta-val">${item.burst}</span></div><div class="meta-row"><span class="meta-key">Status</span><span class="meta-val">${capitalize(item.status)}</span></div>`);
     document.getElementById("human-overlay")?.style.setProperty("display", item.humanDetected ? "inline-flex" : "none");
   }
 

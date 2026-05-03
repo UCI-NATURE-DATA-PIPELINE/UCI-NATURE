@@ -23,12 +23,17 @@ export function bindGlobals(app, showPage) {
   window.switchUploadTab = app.features.drive.switchUploadTab;
   window.togglePause = app.features.drive.togglePause;
   window.selectLocCard = app.features.drive.selectLocCard;
+  window.selectDriveLocCard = app.features.drive.selectDriveLocCard;
   window.handleDriveFolderSelect = app.features.drive.handleDriveFolderSelect;
   window.handleDriveSyncSettingsChange = app.features.drive.handleDriveSyncSettingsChange;
+  window.handleDriveDateRangeChange = app.features.drive.handleDriveDateRangeChange;
   window.refreshDriveFolders = app.features.drive.refreshDriveFolders;
   window.syncDriveManualSelectionState = app.features.drive.syncDriveManualSelectionState;
+  window.syncDriveCustomSiteState = app.features.drive.syncDriveCustomSiteState;
   window.handleDriveManualSelectionKeydown = app.features.drive.handleDriveManualSelectionKeydown;
   window.applyManualDriveFolderSelection = app.features.drive.applyManualDriveFolderSelection;
+  window.handleDriveCustomSiteKeydown = app.features.drive.handleDriveCustomSiteKeydown;
+  window.applyDriveCustomSite = app.features.drive.applyDriveCustomSite;
   window.triggerSync = app.features.drive.triggerSync;
   window.loadDriveSyncStatus = app.features.drive.loadDriveSyncStatus;
   window.updateSlider = app.features.pipeline.updateSlider;
