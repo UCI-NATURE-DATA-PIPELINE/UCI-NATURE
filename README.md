@@ -121,14 +121,16 @@ Make sure to 'cd' into this project's root folder before installation
 
 ```bash
 # Create virtual environment (recommended)
-python3.11 -m venv .venv311
-source .venv311/bin/activate  # Linux/Mac
-# or: .venv\Scripts\activate  # Windows
+python -m venv .venv311
+.venv311\Scripts\activate.bat  # Windows
+#or: source .venv311/bin/activate  # Linux/Mac
 
 # Install dependencies
-pip install -r requirements/requirements.lock
-pip install -r requirements/requirements.txt
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -r requirements/requirements.lock
 ```
+$ git config --global user.name "tappj"
+$ git config --global user.email tappj@uci.edu
 
 ### Requirements
 
