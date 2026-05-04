@@ -138,6 +138,7 @@ def run_speciesnet_model(
     progress_bars: bool = True,
     geofence: bool = True,
     progress_callback: Optional[Callable[[dict], None]] = None,
+    filepaths: Optional[list[str]] = None,
 ) -> dict:
     staging_dir = Path(staging_dir)
     out_json = Path(out_json)
@@ -145,7 +146,11 @@ def run_speciesnet_model(
     if not staging_dir.exists():
         raise FileNotFoundError(f"Staging directory not found: {staging_dir}")
 
-    num_images = count_images(staging_dir)
+    if filepaths is not None:
+        num_images = len(filepaths)
+        print(f"Using explicit filepath list: {num_images} images")
+    else:
+        num_images = count_images(staging_dir)
 
     if num_images == 0:
         print("No images found in staging directory.")
@@ -182,11 +187,18 @@ def run_speciesnet_model(
             "Install the 'speciesnet' package to run the pipeline."
         ) from exc
 
-    instances_dict = prepare_instances_dict(
-        folders=[str(staging_dir)],
-        country=country,
-        admin1_region=admin1_region,
-    )
+    if filepaths is not None:
+        instances_dict = prepare_instances_dict(
+            filepaths=filepaths,
+            country=country,
+            admin1_region=admin1_region,
+        )
+    else:
+        instances_dict = prepare_instances_dict(
+            folders=[str(staging_dir)],
+            country=country,
+            admin1_region=admin1_region,
+        )
 
     model = SpeciesNet(
         DEFAULT_MODEL,
