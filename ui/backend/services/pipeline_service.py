@@ -139,6 +139,28 @@ def run_pipeline_service(
     )
     manifest_path = Path(manifest_result["manifest_path"])
 
+    rows_to_process = int(manifest_result.get("rows_written") or 0)
+    print(f"Pipeline manifest to process: {manifest_path} ({rows_to_process} rows)")
+
+    # Apply batch size limit by truncating the manifest to the first N rows
+    if config.manifest_batch_size and config.manifest_batch_size > 0 and rows_to_process > config.manifest_batch_size:
+        import csv as _csv
+        print(
+            f"Limiting manifest to first {config.manifest_batch_size} rows "
+            f"(batch_size from frontend; full manifest had {rows_to_process})"
+        )
+        with open(manifest_path, "r", encoding="utf-8", newline="") as _f:
+            _reader = _csv.DictReader(_f)
+            _fieldnames = _reader.fieldnames or []
+            _all_rows = list(_reader)
+        _limited_rows = _all_rows[:config.manifest_batch_size]
+        with open(manifest_path, "w", encoding="utf-8", newline="") as _f:
+            _writer = _csv.DictWriter(_f, fieldnames=_fieldnames)
+            _writer.writeheader()
+            _writer.writerows(_limited_rows)
+        rows_to_process = len(_limited_rows)
+        print(f"Manifest truncated to {rows_to_process} rows")
+
     print("\n" + "=" * 80)
     print("STEP: Extract Metadata (EXIF)")
     print("=" * 80)
@@ -198,11 +220,27 @@ def run_pipeline_service(
         config.speciesnet_json_path,
         label="SpeciesNet predictions file",
     )
+
+    # Read the (possibly truncated) manifest to get the exact file list for SpeciesNet
+    import csv as _csv_for_sn
+    _manifest_filepaths = []
+    with open(manifest_path, "r", encoding="utf-8", newline="") as _f:
+        for _row in _csv_for_sn.DictReader(_f):
+            _local_path = (_row.get("local_path") or "").strip()
+            if _local_path:
+                _resolved = Path(_local_path)
+                if not _resolved.is_absolute():
+                    _resolved = REPO_ROOT / _resolved
+                _manifest_filepaths.append(str(_resolved))
+
+    print(f"Passing {len(_manifest_filepaths)} explicit filepaths to SpeciesNet")
+
     speciesnet_result = run_speciesnet_model(
         staging_dir=resolved_staging_dir,
         out_json=config.speciesnet_json_path,
         batch_size=config.speciesnet_batch_size,
         progress_callback=speciesnet_progress_callback,
+        filepaths=_manifest_filepaths,
     )
 
     print("\n" + "=" * 80)

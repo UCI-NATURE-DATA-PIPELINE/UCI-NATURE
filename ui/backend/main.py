@@ -672,6 +672,13 @@ def build_export_artifact_summary() -> dict:
         "note": "Drive upload is not wired yet; this route returns the generated export artifacts.",
     }
 
+def build_pipeline_results_summary(session_key: str) -> dict:
+    pipeline_state = serialize_pipeline_state(session_key)
+    exports = build_export_artifact_summary()
+    return {
+        "pipeline": pipeline_state,
+        "exports": exports,
+    }
 
 def _latest_output_settings() -> dict:
     latest_state = _latest_pipeline_state()
