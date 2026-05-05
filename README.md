@@ -129,8 +129,6 @@ python -m venv .venv311
 python -m pip install --upgrade pip setuptools wheel
 python -m pip install -r requirements/requirements.lock
 ```
-$ git config --global user.name "tappj"
-$ git config --global user.email tappj@uci.edu
 
 ### Requirements
 
