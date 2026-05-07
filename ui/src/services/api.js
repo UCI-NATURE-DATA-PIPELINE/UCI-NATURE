@@ -7,4 +7,5 @@ export * from "./healthApi.js";
 export * from "./pipelineApi.js";
 export * from "./reviewApi.js";
 export * from "./statisticsApi.js";
+export * from "./uploadApi.js";
 export * from "./validateApi.js";

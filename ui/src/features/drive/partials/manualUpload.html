@@ -1,50 +1,59 @@
 <!-- Manual upload markup for the Upload page's local-file workflow. -->
 <div id="upload-manual">
+  <div id="upload-backend-banner" class="upload-backend-banner" role="status" hidden>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C53030" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="8" x2="12" y2="12"/>
+      <line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    <div>
+      <div class="upload-backend-banner-title">Backend is not connected</div>
+      <div class="upload-backend-banner-sub">Please start the backend on <code>127.0.0.1:8000</code> and try again.</div>
+    </div>
+  </div>
+
   <div class="upload-summary-strip">
-    <div class="upload-summary-card"><div class="upload-summary-val" id="upload-manual-total">--</div><div class="upload-summary-lbl">This Session</div></div>
-    <div class="upload-summary-card"><div class="upload-summary-val" style="color:var(--blue)">600</div><div class="upload-summary-lbl">Uploading Now</div></div>
-    <div class="upload-summary-card"><div class="upload-summary-val" style="color:var(--muted)">4</div><div class="upload-summary-lbl">Camera Sites</div></div>
-    <div class="upload-summary-card"><div class="upload-summary-val" style="color:var(--muted)">Jun 1 – Jun 14</div><div class="upload-summary-lbl">Date Range</div></div>
+    <div class="upload-summary-card"><div class="upload-summary-val" id="upload-manual-total">0</div><div class="upload-summary-lbl">Selected Images</div></div>
+    <div class="upload-summary-card"><div class="upload-summary-val" id="upload-manual-size" style="color:var(--blue)">—</div><div class="upload-summary-lbl">Total Size</div></div>
+    <div class="upload-summary-card"><div class="upload-summary-val" id="upload-manual-site" style="color:var(--muted)">Site 1</div><div class="upload-summary-lbl">Camera Site</div></div>
+    <div class="upload-summary-card"><div class="upload-summary-val" id="upload-manual-status" style="color:var(--muted)">Ready</div><div class="upload-summary-lbl">Status</div></div>
   </div>
 
   <div class="upload-workspace-grid">
     <div class="upload-main-column">
       <div class="card card-p">
-        <div class="card-title">Add Images</div>
-        <div class="upload-dropzone" id="upload-zone" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');showToast('Images received — added to queue','success')">
+        <div class="card-title">Upload wildlife camera images</div>
+        <div class="upload-dropzone" id="upload-zone" role="button" tabindex="0" aria-label="Drop wildlife camera images or click to browse">
           <div class="dropzone-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#718096" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></div>
           <div class="dropzone-title">Drop images or folders here</div>
           <div class="dropzone-sub">From SD card, USB drive, or local folder</div>
-          <div class="dropzone-meta">JPG · PNG · TIFF &nbsp;·&nbsp; Up to 10,000 files per batch</div>
-          <button class="dropzone-browse-btn" onclick="event.stopPropagation();showToast('File browser would open here','success')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>Browse Files</button>
+          <div class="dropzone-meta">JPG · PNG · TIFF &nbsp;·&nbsp; Results will be exported as a CSV after processing</div>
+          <button type="button" class="dropzone-browse-btn" id="upload-browse-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            Browse Files
+          </button>
+          <input type="file" id="upload-file-input" class="visually-hidden" multiple accept=".jpg,.jpeg,.png,.tif,.tiff,image/jpeg,image/png,image/tiff" />
         </div>
       </div>
 
       <div class="card card-p">
-        <div class="upload-card-head"><div class="card-title">Upload Queue</div><span class="upload-card-meta">2 batches · 6.3 GB total</span></div>
-        <div class="upload-queue-list">
-          <div class="upload-queue-item">
-            <div class="queue-file-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3182CE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
-            <div><div class="queue-file-name">SITE1_0001 → SITE1_1200</div><div class="queue-file-meta">1,200 files · Site 1 · Jun 14, 2026</div></div>
-            <span class="queue-location-tag">Site 1</span><span class="queue-size-text">4.2 GB</span>
-            <div class="queue-prog-wrap"><div class="queue-prog-bar"><div class="queue-prog-fill done" style="width:100%"></div></div><div class="queue-prog-pct">100%</div></div>
-            <span class="status-pill pill-green">✓ Complete</span>
-          </div>
-          <div class="upload-queue-item">
-            <div class="queue-file-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3182CE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
-            <div><div class="queue-file-name">SITE2_1201 → SITE2_1800</div><div class="queue-file-meta">600 files · Site 2 · Jun 14, 2026</div></div>
-            <span class="queue-location-tag">Site 2</span><span class="queue-size-text">2.1 GB</span>
-            <div class="queue-prog-wrap"><div class="queue-prog-bar"><div class="queue-prog-fill active" id="upload-prog-fill" style="width:60%"></div></div><div class="queue-prog-pct" id="upload-prog-pct">60%</div></div>
-            <span class="status-pill pill-yellow" id="upload-status-pill">Uploading…</span>
+        <div class="upload-card-head"><div class="card-title">Upload Queue</div><span class="upload-card-meta" id="upload-queue-meta">No files selected yet</span></div>
+        <div class="upload-queue-list" id="upload-queue-list"></div>
+
+        <div class="upload-action-bar">
+          <div class="upload-action-bar-info" id="upload-action-bar-info">Drop or browse wildlife camera images to begin.</div>
+          <div class="upload-action-btns">
+            <button type="button" class="btn btn-outline btn-sm" id="upload-clear-btn" disabled>Clear</button>
+            <button type="button" class="btn btn-primary btn-sm btn-upload" id="upload-start-btn" disabled>
+              <span class="btn-icon btn-icon-upload" style="margin-right:5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></span>
+              Process Selected Images
+            </button>
           </div>
         </div>
 
-        <div class="upload-action-bar">
-          <div class="upload-action-bar-info"><strong>600 files</strong> remaining · ~3 min left</div>
-          <div class="upload-action-btns">
-            <button class="btn btn-outline btn-sm btn-pause" id="pause-btn" data-paused="false" onclick="togglePause(this)"><span class="btn-icon btn-icon-pause" id="pause-icon" style="margin-right:5px"><svg id="pause-svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="5" y="4" width="4" height="16" rx="1.5"/><rect x="15" y="4" width="4" height="16" rx="1.5"/></svg></span><span id="pause-label">Pause</span></button>
-            <button class="btn btn-primary btn-sm btn-upload" onclick="showToast('Upload started','success')"><span class="btn-icon btn-icon-upload" style="margin-right:5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></span>Start Upload</button>
-          </div>
+        <div class="upload-result-card" id="upload-result-card" hidden>
+          <div class="upload-result-message" id="upload-result-message"></div>
+          <div class="upload-result-details" id="upload-result-details"></div>
         </div>
       </div>
     </div>
@@ -52,28 +61,28 @@
     <div class="upload-side-column">
       <div class="card card-p">
         <div class="card-title">Assign Camera Site</div>
-        <div class="upload-sidebar-intro">Which camera site should this batch use?</div>
+        <div class="upload-sidebar-intro">Which camera site should this batch use? Files are grouped under this site in the backend staging folder.</div>
         <div class="location-select-grid upload-location-grid-two">
-          <div class="loc-select-card selected" onclick="selectLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 1</div></div>
-          <div class="loc-select-card" onclick="selectLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 2</div></div>
-          <div class="loc-select-card" onclick="selectLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 3</div></div>
-          <div class="loc-select-card" onclick="selectLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 4</div></div>
+          <div class="loc-select-card selected" data-upload-site="Site 1" onclick="selectLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 1</div></div>
+          <div class="loc-select-card" data-upload-site="Site 2" onclick="selectLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 2</div></div>
+          <div class="loc-select-card" data-upload-site="Site 3" onclick="selectLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 3</div></div>
+          <div class="loc-select-card" data-upload-site="Site 4" onclick="selectLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 4</div></div>
         </div>
       </div>
 
       <div class="card card-p">
-        <div class="card-title">Session Info</div>
+        <div class="card-title">What happens next</div>
         <div class="upload-session-info-list">
-          <div class="upload-session-info-row"><span>Date range</span><strong>Jun 1 – Jun 14</strong></div>
-          <div class="upload-session-info-row"><span>Equipment</span><strong>Field camera fleet</strong></div>
-          <div class="upload-session-info-row"><span>Format</span><strong>JPG · 12 MP</strong></div>
-          <div class="upload-session-info-row upload-session-info-row-accent"><span>Upload speed</span><strong>28 MB/s</strong></div>
+          <div class="upload-session-info-row"><span>1. Upload</span><strong>Images sent to backend staging</strong></div>
+          <div class="upload-session-info-row"><span>2. Process</span><strong>Run Model page</strong></div>
+          <div class="upload-session-info-row"><span>3. Review</span><strong>Validate &amp; correct labels</strong></div>
+          <div class="upload-session-info-row upload-session-info-row-accent"><span>4. Export</span><strong>CSV results per site</strong></div>
         </div>
       </div>
 
       <div class="upload-note-card">
         <div class="upload-note-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D69E2E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Timestamp Note</div>
-        <div class="upload-note-text">Camera clocks may drift after battery changes. Use the <strong>Validate</strong> step to correct timestamp offsets.</div>
+        <div class="upload-note-text">Camera clocks may drift after battery changes. Use the <strong>Validate</strong> step to correct timestamp offsets before exporting CSVs.</div>
       </div>
     </div>
   </div>

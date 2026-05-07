@@ -7,6 +7,7 @@ import { createDriveSettings } from "./driveSettings.js";
 import { createDriveState } from "./driveState.js";
 import { createDriveSync } from "./driveSync.js";
 import { createDriveUtils } from "./driveUtils.js";
+import { createManualUploadFlow } from "./manualUploadFlow.js";
 
 export function createDriveFeature(app) {
   const api = createDriveApi();
@@ -17,6 +18,7 @@ export function createDriveFeature(app) {
   const syncApi = createDriveSync(app, api, stateApi, renderApi);
   const settingsApi = createDriveSettings(app, api, stateApi, renderApi, selectionApi);
   const eventApi = createDriveEvents(app, renderApi);
+  const manualUploadFlow = createManualUploadFlow(app);
 
   return {
     ...stateApi,
@@ -26,6 +28,8 @@ export function createDriveFeature(app) {
     ...syncApi,
     ...eventApi,
     ...utilsApi,
+    initializeManualUpload: manualUploadFlow.initialize,
+    refreshManualUpload: manualUploadFlow.refresh,
     loadDriveStatusSummary: api.getDriveStatus
   };
 }
