@@ -13,6 +13,7 @@ import traceback
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from scripts.config import APP_ENV, PIPELINE_DRIVE_CACHE_POLICY
@@ -48,6 +49,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.mount("/images", StaticFiles(directory="C:/191A/UCI-NATURE/data/staging"), name="images")
 app.include_router(google_auth_router)
 app.include_router(google_drive_router)
 

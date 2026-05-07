@@ -2,6 +2,29 @@
 import { setHTML, setText } from "../../utils/dom.js";
 import { capitalize } from "../../utils/format.js";
 
+function getImageUrlFromPath(csvFilePath) {
+  if (!csvFilePath) return "";
+  
+  // 1. Swap any Windows backslashes (\) to web forward slashes (/)
+  const normalizedPath = csvFilePath.replace(/\\/g, '/');
+  
+  // 2. Cut the string perfectly right after the word "staging"
+  // Using regex /staging\//i makes it case-insensitive just in case!
+  const splitPath = normalizedPath.split(/staging\//i);
+  
+  if (splitPath.length > 1) {
+      // This grabs "Test Folder/WhiteScreen.jpg"
+      const relativePath = splitPath[1]; 
+      
+      // encodeURI() converts the space into "%20" so the URL doesn't break
+      return `http://localhost:8000/images/${encodeURI(relativePath)}`;
+  } else {
+      // Fallback just in case a path doesn't have "staging" in it
+      const fileName = normalizedPath.split('/').pop();
+      return `http://localhost:8000/images/${encodeURI(fileName)}`;
+  }
+}
+
 export function createReviewRender(app, stateApi) {
   function renderReviewQueue() {
     const container = document.getElementById("review-queue-list");
@@ -51,11 +74,33 @@ export function createReviewRender(app, stateApi) {
 
     if (app.state.reviewIndex >= items.length) app.state.reviewIndex = 0;
     const item = items[app.state.reviewIndex];
-    setText("viewer-img", item.emoji);
+    // 1. Get the container where the emoji used to go
+    const imageContainer = document.getElementById("viewer-img");
+
+    if (imageContainer) {
+      const dynamicUrl = getImageUrlFromPath(item.filepath || item.file_path || item.filename);
+      
+      
+      imageContainer.style.display = "flex";
+      imageContainer.style.alignItems = "center";
+      imageContainer.style.justifyContent = "center";
+      // imageContainer.style.padding = "5x"; 
+      
+      imageContainer.innerHTML = `<img src="${dynamicUrl}" alt="${item.species}" style="max-width: 100%; max-height: 90%; object-fit: contain; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);" />`;
+    }
     setText("viewer-filename", item.filename);
     setText("viewer-pos", `${app.state.reviewIndex + 1} of ${items.length}`);
     setText("nav-counter", `${app.state.reviewIndex + 1} / ${items.length}`);
     setText("conf-overlay", `${item.confidence}% confidence`);
+    const speciesOverlay = document.getElementById("species-overlay");
+    if (speciesOverlay) {
+      if (item.humanDetected) {
+        speciesOverlay.style.display = "none";
+      } else {
+        speciesOverlay.style.display = "";
+        speciesOverlay.textContent = item.species || "Unknown";
+      }
+    }
     setText("species-name", item.species);
     setText("species-certainty", `${item.confidence}% model certainty`);
     setHTML("review-meta", `<div class="meta-row"><span class="meta-key">Filename</span><span class="meta-val">${item.filename}</span></div><div class="meta-row"><span class="meta-key">Site</span><span class="meta-val">${item.camera}</span></div><div class="meta-row"><span class="meta-key">Date / Time</span><span class="meta-val">${item.datetime}</span></div><div class="meta-row"><span class="meta-key">Burst Group</span><span class="meta-val">${item.burst}</span></div><div class="meta-row"><span class="meta-key">Status</span><span class="meta-val">${capitalize(item.status)}</span></div>`);
