@@ -257,6 +257,7 @@ def run_pipeline_service(
         manifest_csv=manifest_path,
         metadata_csv=config.metadata_path,
         burst_window_seconds=config.ml_burst_window,
+        confidence_threshold=threshold,
     )
 
     print("\n" + "=" * 80)

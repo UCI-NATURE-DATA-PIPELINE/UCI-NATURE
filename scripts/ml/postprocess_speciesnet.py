@@ -329,6 +329,7 @@ def postprocess_speciesnet_results(
     out_csv: Path = OUT_CSV,
     review_csv: Path = REVIEW_CSV,
     burst_window_seconds: int = BURST_WINDOW_SECONDS,
+    confidence_threshold: float = None,
 ) -> dict:
     burst_window_seconds = max(10, min(300, int(burst_window_seconds)))
 
@@ -514,12 +515,22 @@ def postprocess_speciesnet_results(
                 row["resolved_species_level"],
             )
 
-            needs_review, final_label, reason = decision_needs_review(
-                burst_label,
-                score_for_review,
-                row["margin"],
-                burst_species_level,
-            )
+            if confidence_threshold is not None:
+                if row["score"] < confidence_threshold:
+                    needs_review = True
+                    final_label = burst_label
+                    reason = f"user_threshold<{confidence_threshold}"
+                else:
+                    needs_review = False
+                    final_label = burst_label
+                    reason = ""
+            else:
+                needs_review, final_label, reason = decision_needs_review(
+                    burst_label,
+                    score_for_review,
+                    row["margin"],
+                    burst_species_level,
+                )
 
             out_writer.writerow(
                 {

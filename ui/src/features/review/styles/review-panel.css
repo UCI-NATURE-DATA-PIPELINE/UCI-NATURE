@@ -1,5 +1,21 @@
 .review-panel { display:flex; flex-direction:column; gap:10px; overflow-y:auto; }
 
+.review-species-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: #ED8936;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 20px;
+  z-index: 5;
+  text-transform: capitalize;
+  letter-spacing: 0.3px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
 /* Detection result rows */
 .review-det-section { margin-bottom:12px; }
 .review-det-title { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px; }

@@ -160,6 +160,8 @@ export function normalizeReviewItem(item) {
   return {
     id: item?.id,
     filename: item?.filename || `review-item-${item?.id || "unknown"}`,
+    filepath: item?.filepath,
+    file_path: item?.file_path,
     species,
     confidence: Number(item?.confidence || 0),
     animalDetected: !["blank", "human", "vehicle", "no cv result"].includes(speciesLower),
