@@ -17,7 +17,17 @@
 <link rel="stylesheet" href="./src/features/statistics/statistics.css">
 </head>
 <body>
-<div id="auth-root"></div>
+<!-- App boot splash. Hidden once bootstrapAppState() decides whether to show
+     login or the dashboard, so users don't see a flash of the wrong screen. -->
+<div id="app-boot" class="app-boot" role="status" aria-live="polite">
+  <div class="app-boot-card">
+    <div class="app-boot-spinner" aria-hidden="true"></div>
+    <div class="app-boot-title" id="app-boot-title">Starting Wildlife Research…</div>
+    <div class="app-boot-sub" id="app-boot-sub">Checking backend and your sign-in.</div>
+    <button type="button" id="app-boot-retry" class="app-boot-retry" hidden>Retry</button>
+  </div>
+</div>
+<div id="auth-root" style="display:none"></div>
 <div class="app" id="main-app" style="display:none">
 
   <!-- ── SIDEBAR ──────────────────────────── -->

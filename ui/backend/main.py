@@ -2,13 +2,15 @@ from contextlib import redirect_stderr, redirect_stdout
 from copy import deepcopy
 from datetime import datetime
 import importlib.util
-from pathlib import Path
+import io
+from pathlib import Path, PurePosixPath
 import sys
 from typing import Any, Dict, List, Optional, Tuple, Union
 import csv
 import json
 import threading
 import traceback
+import zipfile
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -1255,6 +1257,15 @@ def dashboard_summary(authorization: Optional[str] = Header(default=None)):
 UPLOAD_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 UPLOAD_MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB per image is plenty for camera traps.
 
+# ZIP upload limits — guards against accidental huge archives or zip-bombs.
+UPLOAD_ZIP_MAX_BYTES = 4 * 1024 * 1024 * 1024  # 4 GB compressed cap for the request.
+UPLOAD_ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES = 8 * 1024 * 1024 * 1024  # 8 GB uncompressed cap.
+UPLOAD_ZIP_MAX_ENTRIES = 50000
+
+# Names/prefixes inside a ZIP that should always be skipped (macOS junk, hidden files).
+UPLOAD_ZIP_SKIP_PREFIXES = ("__MACOSX/", "__MACOSX\\")
+UPLOAD_ZIP_SKIP_BASENAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
+
 
 def _safe_camera_subdir(value: Optional[str]) -> str:
     """Sanitize a user-provided camera/site label into a safe folder name."""
@@ -1385,6 +1396,193 @@ async def upload_images(
         "skipped": skipped,
         "skipped_count": len(skipped),
         "total_bytes": total_bytes,
+        "staging_dir": staging_display,
+        "camera_location": safe_subdir or None,
+        "files": saved,
+    }
+
+
+def _safe_zip_member_name(raw_name: str) -> Optional[str]:
+    """Return a sanitized POSIX path for a ZIP entry, or None if it's unsafe.
+
+    Defends against zip-slip (../escape, absolute paths, drive letters) and
+    skips macOS metadata folders / hidden system files.
+    """
+    if not raw_name:
+        return None
+    # Normalize separators to POSIX so PurePosixPath handles ./ and trailing /.
+    normalized = raw_name.replace("\\", "/").lstrip("/")
+    if not normalized or normalized.endswith("/"):
+        return None  # directory entry — skipped explicitly elsewhere too.
+    if normalized.startswith(UPLOAD_ZIP_SKIP_PREFIXES):
+        return None
+    parts = PurePosixPath(normalized).parts
+    if any(part in ("..", "") for part in parts):
+        return None
+    # Reject Windows drive letters or weird control prefixes.
+    if len(parts[0]) == 2 and parts[0].endswith(":"):
+        return None
+    basename = parts[-1]
+    if basename.startswith(".") or basename in UPLOAD_ZIP_SKIP_BASENAMES:
+        return None
+    return "/".join(parts)
+
+
+@app.post("/api/upload/zip")
+async def upload_zip(
+    archive: UploadFile = File(...),
+    camera_location: Optional[str] = Form(None),
+    authorization: Optional[str] = Header(default=None),
+):
+    """Accept a ZIP of wildlife camera images and unpack them into staging.
+
+    Runs the same staging conventions as `/api/upload/images`:
+      - per-camera subfolder under `data/staging/`
+      - only allow-listed image extensions are extracted
+      - macOS / Windows junk and hidden files are skipped
+      - zip-slip and absolute paths are blocked
+      - per-file and per-archive size caps are enforced
+    """
+    require_auth(authorization)
+
+    if not archive or not archive.filename:
+        raise HTTPException(status_code=400, detail="No ZIP file was uploaded.")
+
+    archive_name = Path(archive.filename).name
+    if Path(archive_name).suffix.lower() != ".zip":
+        raise HTTPException(status_code=400, detail="Upload a .zip archive.")
+
+    try:
+        zip_bytes = await archive.read()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not read ZIP upload: {exc}") from exc
+    finally:
+        try:
+            await archive.close()
+        except Exception:
+            pass
+
+    if not zip_bytes:
+        raise HTTPException(status_code=400, detail="The uploaded ZIP archive was empty.")
+    if len(zip_bytes) > UPLOAD_ZIP_MAX_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ZIP archive exceeds the {UPLOAD_ZIP_MAX_BYTES // (1024 * 1024)} MB limit.",
+        )
+
+    from ui.backend.services.pipeline_service import resolve_pipeline_staging_dir
+
+    staging_dir = resolve_pipeline_staging_dir()
+    safe_subdir = _safe_camera_subdir(camera_location)
+    target_dir = staging_dir / safe_subdir if safe_subdir else staging_dir
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unable to prepare staging directory: {target_dir} ({exc})",
+        ) from exc
+
+    saved: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+    total_uncompressed_bytes = 0
+
+    try:
+        archive_buffer = io.BytesIO(zip_bytes)
+        with zipfile.ZipFile(archive_buffer) as zf:
+            entries = zf.infolist()
+            if len(entries) > UPLOAD_ZIP_MAX_ENTRIES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"ZIP archive has too many entries (>{UPLOAD_ZIP_MAX_ENTRIES}).",
+                )
+
+            for entry in entries:
+                if entry.is_dir():
+                    continue
+
+                raw_name = entry.filename or ""
+                safe_member = _safe_zip_member_name(raw_name)
+                if not safe_member:
+                    skipped.append({"name": raw_name, "reason": "unsafe_or_hidden"})
+                    continue
+
+                ext = Path(safe_member).suffix.lower()
+                if ext not in UPLOAD_ALLOWED_EXTENSIONS:
+                    skipped.append({"name": safe_member, "reason": "unsupported_type"})
+                    continue
+
+                if entry.file_size and entry.file_size > UPLOAD_MAX_FILE_BYTES:
+                    skipped.append({
+                        "name": safe_member,
+                        "reason": f"too_large:{entry.file_size}",
+                    })
+                    continue
+
+                if total_uncompressed_bytes + (entry.file_size or 0) > UPLOAD_ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES:
+                    skipped.append({
+                        "name": safe_member,
+                        "reason": "archive_uncompressed_cap_reached",
+                    })
+                    continue
+
+                # Flatten nested directories into the per-site folder so the existing
+                # pipeline (which scans staging recursively) finds them, but we still
+                # use the original basename to preserve filename semantics. Collisions
+                # are resolved by appending a counter.
+                target_path = _unique_target_path(target_dir, Path(safe_member).name)
+
+                try:
+                    with zf.open(entry, "r") as src, open(target_path, "wb") as dest:
+                        # Stream into the target file with a hard cap to defend
+                        # against malicious entries that lie about their size.
+                        bytes_written = 0
+                        while True:
+                            chunk = src.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            bytes_written += len(chunk)
+                            if bytes_written > UPLOAD_MAX_FILE_BYTES:
+                                dest.close()
+                                target_path.unlink(missing_ok=True)
+                                raise ValueError("entry exceeded per-file size limit during extraction")
+                            dest.write(chunk)
+                except (zipfile.BadZipFile, OSError, ValueError) as exc:
+                    skipped.append({"name": safe_member, "reason": f"extract_error:{exc}"})
+                    continue
+
+                size_bytes = target_path.stat().st_size
+                if size_bytes == 0:
+                    target_path.unlink(missing_ok=True)
+                    skipped.append({"name": safe_member, "reason": "empty_file"})
+                    continue
+
+                total_uncompressed_bytes += size_bytes
+                try:
+                    relative_path = str(target_path.relative_to(PROJECT_ROOT))
+                except ValueError:
+                    relative_path = str(target_path)
+                saved.append({
+                    "name": Path(safe_member).name,
+                    "stored_as": target_path.name,
+                    "size_bytes": size_bytes,
+                    "relative_path": relative_path,
+                })
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid ZIP archive: {exc}") from exc
+
+    try:
+        staging_display = str(target_dir.relative_to(PROJECT_ROOT))
+    except ValueError:
+        staging_display = str(target_dir)
+
+    return {
+        "message": f"Extracted {len(saved)} image(s) from {archive_name}",
+        "archive_name": archive_name,
+        "uploaded_count": len(saved),
+        "skipped": skipped,
+        "skipped_count": len(skipped),
+        "total_bytes": total_uncompressed_bytes,
         "staging_dir": staging_display,
         "camera_location": safe_subdir or None,
         "files": saved,
