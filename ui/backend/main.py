@@ -51,7 +51,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/images", StaticFiles(directory="C:/191A/UCI-NATURE/data/staging"), name="images")
+app.mount("/images", StaticFiles(directory="data/staging"), name="images")
 app.include_router(google_auth_router)
 app.include_router(google_drive_router)
 
