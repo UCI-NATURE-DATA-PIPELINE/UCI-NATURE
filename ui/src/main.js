@@ -30,7 +30,12 @@ async function initializeApp() {
   const { showPage } = createPageController(app);
   bindGlobals(app, showPage);
   bindLayoutNavigation({ showPage });
-  app.applyBackendHealthStatus = backendStatusApi.applyBackendHealthStatus;
+  app.applyBackendHealthStatus = (health) => {
+    backendStatusApi.applyBackendHealthStatus(health);
+    // Keep the Upload page's backend banner / Process button in sync with the
+    // header status pill so users see one consistent connectivity message.
+    app.features.drive?.refreshManualUpload?.();
+  };
   app.refreshBackendHealth = async ({ silent = false } = {}) => {
     try {
       const health = await getBackendHealth();
@@ -62,6 +67,7 @@ async function initializeApp() {
   app.features.pipeline.applyPipelineStatus(null);
   app.features.drive.syncDriveUI();
   app.features.drive.renderDriveFolderSelection();
+  app.features.drive.initializeManualUpload();
   const bootstrapPromise = bootstrapAppState(app, showPage);
   void app.refreshBackendHealth({ silent: true });
   await bootstrapPromise;

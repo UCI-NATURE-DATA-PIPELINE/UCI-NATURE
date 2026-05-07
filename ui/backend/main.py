@@ -10,7 +10,7 @@ import json
 import threading
 import traceback
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -1247,6 +1247,146 @@ def drive_status(authorization: Optional[str] = Header(default=None)):
 def dashboard_summary(authorization: Optional[str] = Header(default=None)):
     session = require_auth(authorization)
     return build_dashboard_summary_data(session["user"]["project"])
+
+
+# Allowed wildlife camera image extensions for the manual Upload page.
+UPLOAD_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
+UPLOAD_MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB per image is plenty for camera traps.
+
+
+def _safe_camera_subdir(value: Optional[str]) -> str:
+    """Sanitize a user-provided camera/site label into a safe folder name."""
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return ""
+    # Keep alphanumerics, dashes, underscores, dots and spaces — drop the rest.
+    safe_chars = []
+    for char in cleaned:
+        if char.isalnum() or char in {"-", "_", ".", " "}:
+            safe_chars.append(char)
+    safe = "".join(safe_chars).strip().replace(" ", "_")
+    # Disallow path traversal and absolute paths.
+    safe = safe.replace("..", "").lstrip("/\\")
+    return safe[:64]
+
+
+def _unique_target_path(target_dir: Path, original_name: str) -> Path:
+    """Return a non-colliding path inside target_dir for the uploaded filename."""
+    candidate = target_dir / Path(original_name).name
+    if not candidate.exists():
+        return candidate
+    stem = candidate.stem
+    suffix = candidate.suffix
+    counter = 1
+    while True:
+        alt = target_dir / f"{stem}-{counter}{suffix}"
+        if not alt.exists():
+            return alt
+        counter += 1
+
+
+@app.post("/api/upload/images")
+async def upload_images(
+    files: List[UploadFile] = File(...),
+    camera_location: Optional[str] = Form(None),
+    authorization: Optional[str] = Header(default=None),
+):
+    """Accept manual wildlife camera image uploads and stage them for the pipeline.
+
+    Files are written into the same staging directory the local pipeline reads from
+    (resolved by `resolve_pipeline_staging_dir`). An optional `camera_location` form
+    field groups uploads into a per-site subfolder so multiple sessions can coexist.
+    """
+    require_auth(authorization)
+
+    if not files:
+        raise HTTPException(status_code=400, detail="No files were uploaded.")
+
+    from ui.backend.services.pipeline_service import resolve_pipeline_staging_dir
+
+    staging_dir = resolve_pipeline_staging_dir()
+    safe_subdir = _safe_camera_subdir(camera_location)
+    target_dir = staging_dir / safe_subdir if safe_subdir else staging_dir
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unable to prepare staging directory: {target_dir} ({exc})",
+        ) from exc
+
+    saved: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+    total_bytes = 0
+
+    for upload in files:
+        original_name = Path(upload.filename or "").name
+        if not original_name:
+            skipped.append({"name": upload.filename or "", "reason": "missing_filename"})
+            continue
+
+        ext = Path(original_name).suffix.lower()
+        if ext not in UPLOAD_ALLOWED_EXTENSIONS:
+            skipped.append({"name": original_name, "reason": "unsupported_type"})
+            continue
+
+        try:
+            contents = await upload.read()
+        except Exception as exc:
+            skipped.append({"name": original_name, "reason": f"read_error:{exc}"})
+            continue
+        finally:
+            try:
+                await upload.close()
+            except Exception:
+                pass
+
+        size_bytes = len(contents)
+        if size_bytes == 0:
+            skipped.append({"name": original_name, "reason": "empty_file"})
+            continue
+        if size_bytes > UPLOAD_MAX_FILE_BYTES:
+            skipped.append({
+                "name": original_name,
+                "reason": f"too_large:{size_bytes}",
+            })
+            continue
+
+        target_path = _unique_target_path(target_dir, original_name)
+        try:
+            with open(target_path, "wb") as out_file:
+                out_file.write(contents)
+        except OSError as exc:
+            skipped.append({"name": original_name, "reason": f"write_error:{exc}"})
+            continue
+
+        total_bytes += size_bytes
+        try:
+            relative_path = str(target_path.relative_to(PROJECT_ROOT))
+        except ValueError:
+            relative_path = str(target_path)
+        saved.append({
+            "name": original_name,
+            "stored_as": target_path.name,
+            "size_bytes": size_bytes,
+            "relative_path": relative_path,
+        })
+
+    try:
+        staging_display = str(target_dir.relative_to(PROJECT_ROOT))
+    except ValueError:
+        staging_display = str(target_dir)
+
+    return {
+        "message": f"Saved {len(saved)} image(s) to backend staging",
+        "uploaded_count": len(saved),
+        "skipped": skipped,
+        "skipped_count": len(skipped),
+        "total_bytes": total_bytes,
+        "staging_dir": staging_display,
+        "camera_location": safe_subdir or None,
+        "files": saved,
+    }
 
 
 @app.post("/api/pipeline/run")
