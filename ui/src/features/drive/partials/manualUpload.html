@@ -23,21 +23,39 @@
     <div class="upload-main-column">
       <div class="card card-p">
         <div class="card-title">Upload wildlife camera images</div>
+        <div class="upload-subtitle">Drop image files or a ZIP archive. Results will be exported as a CSV after processing.</div>
         <div class="upload-dropzone" id="upload-zone" role="button" tabindex="0" aria-label="Drop wildlife camera images or click to browse">
           <div class="dropzone-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#718096" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></div>
-          <div class="dropzone-title">Drop images or folders here</div>
+          <div class="dropzone-title">Drop images, a folder, or a ZIP file here</div>
           <div class="dropzone-sub">From SD card, USB drive, or local folder</div>
-          <div class="dropzone-meta">JPG · PNG · TIFF &nbsp;·&nbsp; Results will be exported as a CSV after processing</div>
-          <button type="button" class="dropzone-browse-btn" id="upload-browse-btn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            Browse Files
-          </button>
-          <input type="file" id="upload-file-input" class="visually-hidden" multiple accept=".jpg,.jpeg,.png,.tif,.tiff,image/jpeg,image/png,image/tiff" />
+          <div class="dropzone-meta">JPG · PNG · TIFF · ZIP &nbsp;·&nbsp; Results will be exported as a CSV</div>
+          <div class="dropzone-actions">
+            <button type="button" class="dropzone-browse-btn" id="upload-browse-files-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Browse files
+            </button>
+            <button type="button" class="dropzone-browse-btn dropzone-browse-secondary" id="upload-browse-folder-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              Browse folder
+            </button>
+          </div>
+          <!-- Hidden inputs: one for files (incl. ZIP), one for whole-folder selection. -->
+          <input type="file" id="upload-file-input" class="visually-hidden" multiple accept=".jpg,.jpeg,.png,.tif,.tiff,.zip,image/jpeg,image/png,image/tiff,application/zip" />
+          <input type="file" id="upload-folder-input" class="visually-hidden" multiple webkitdirectory directory />
         </div>
       </div>
 
       <div class="card card-p">
-        <div class="upload-card-head"><div class="card-title">Upload Queue</div><span class="upload-card-meta" id="upload-queue-meta">No files selected yet</span></div>
+        <div class="upload-card-head">
+          <div class="card-title">Upload Queue</div>
+          <span class="upload-card-meta" id="upload-queue-meta">No files selected yet</span>
+        </div>
+
+        <div id="upload-queue-summary" class="upload-queue-summary" hidden>
+          <div class="upload-queue-summary-text" id="upload-queue-summary-text">128 images ready</div>
+          <button type="button" class="btn btn-link btn-sm" id="upload-queue-toggle-btn">Show all files</button>
+        </div>
+
         <div class="upload-queue-list" id="upload-queue-list"></div>
 
         <div class="upload-action-bar">
@@ -46,7 +64,7 @@
             <button type="button" class="btn btn-outline btn-sm" id="upload-clear-btn" disabled>Clear</button>
             <button type="button" class="btn btn-primary btn-sm btn-upload" id="upload-start-btn" disabled>
               <span class="btn-icon btn-icon-upload" style="margin-right:5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></span>
-              Process Selected Images
+              Process selected images
             </button>
           </div>
         </div>

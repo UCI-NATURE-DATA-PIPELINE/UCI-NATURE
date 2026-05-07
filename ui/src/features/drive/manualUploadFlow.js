@@ -1,22 +1,40 @@
 /** Manual upload flow for the Upload page.
  *
- * Wires the manualUpload.html partial to the backend `/api/upload/images`
- * endpoint:
- *   - Drag/drop + Browse files into a queue (validates wildlife image types)
- *   - Sends FormData to the backend with the chosen camera site
- *   - Streams progress + success/error feedback into the existing UI
+ * Wires manualUpload.html to the backend upload endpoints:
+ *   - POST /api/upload/images   (one or more image files)
+ *   - POST /api/upload/zip      (a single ZIP archive)
  *
- * Designed to be initialized once after the feature markup is loaded. Re-render
- * the controls (e.g. backend status banner) by calling refresh().
+ * Features:
+ *   - Drag/drop images, a whole folder, or a ZIP
+ *   - Browse files / Browse folder buttons
+ *   - Collapsed file list by default once the queue exceeds COLLAPSE_THRESHOLD
+ *   - Backend-offline banner & disabled Process button
+ *   - Streams XHR upload progress into the existing queue UI
+ *   - Surfaces success/error in a result card with the staging path
+ *
+ * Files queued from a ZIP and image files share a single queue. On submit we
+ * send the images via /upload/images and each ZIP via /upload/zip, then merge
+ * their results so the user sees one summary.
  */
 import { appState } from "../../state/appState.js";
-import { uploadStagedImages } from "../../services/api.js";
+import { uploadStagedImages, uploadStagedZip } from "../../services/api.js";
 
-const ACCEPTED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".tif", ".tiff"];
+const ACCEPTED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".tif", ".tiff"];
+const COLLAPSE_THRESHOLD = 10;
+
+function lower(name) {
+  return String(name || "").toLowerCase();
+}
 
 function hasImageExtension(name) {
-  const lower = String(name || "").toLowerCase();
-  return ACCEPTED_EXTENSIONS.some((ext) => lower.endsWith(ext));
+  const v = lower(name);
+  return ACCEPTED_IMAGE_EXTENSIONS.some((ext) => v.endsWith(ext));
+}
+
+function isZipFile(file) {
+  if (!file) return false;
+  if (lower(file.name).endsWith(".zip")) return true;
+  return file.type === "application/zip" || file.type === "application/x-zip-compressed";
 }
 
 function isImageFile(file) {
@@ -45,24 +63,31 @@ function getById(id) {
 
 export function createManualUploadFlow(app) {
   const state = {
-    files: [],
+    images: [],            // File[] of image files
+    zips: [],              // File[] of ZIP archives
     cameraLocation: "Site 1",
     isUploading: false,
-    progress: 0,
+    progress: 0,           // 0..100, combined
     error: "",
-    lastResult: null
+    lastResult: null,      // merged backend payload
+    listExpanded: false
   };
 
   let bound = false;
 
-  function getElements() {
+  function elements() {
     return {
       manualRoot: getById("upload-manual"),
       zone: getById("upload-zone"),
-      input: getById("upload-file-input"),
-      browseBtn: getById("upload-browse-btn"),
+      fileInput: getById("upload-file-input"),
+      folderInput: getById("upload-folder-input"),
+      browseFilesBtn: getById("upload-browse-files-btn"),
+      browseFolderBtn: getById("upload-browse-folder-btn"),
       list: getById("upload-queue-list"),
       meta: getById("upload-queue-meta"),
+      summaryWrap: getById("upload-queue-summary"),
+      summaryText: getById("upload-queue-summary-text"),
+      toggleBtn: getById("upload-queue-toggle-btn"),
       total: getById("upload-manual-total"),
       sizeStat: getById("upload-manual-size"),
       siteStat: getById("upload-manual-site"),
@@ -84,8 +109,14 @@ export function createManualUploadFlow(app) {
     return (name || "Site 1").trim();
   }
 
-  function totalBytes() {
-    return state.files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+  function totalQueueCount() {
+    return state.images.length + state.zips.length;
+  }
+
+  function totalQueueBytes() {
+    const imgBytes = state.images.reduce((s, f) => s + (Number(f.size) || 0), 0);
+    const zipBytes = state.zips.reduce((s, f) => s + (Number(f.size) || 0), 0);
+    return imgBytes + zipBytes;
   }
 
   function isBackendConnected() {
@@ -96,40 +127,45 @@ export function createManualUploadFlow(app) {
     if (state.isUploading) return "Uploading";
     if (state.error) return "Error";
     if (state.lastResult) return "Uploaded";
-    return state.files.length ? "Ready" : "Ready";
+    return "Ready";
   }
 
-  function renderSummary() {
-    const els = getElements();
+  function renderSummaryCards() {
+    const els = elements();
     state.cameraLocation = readSelectedSite();
-    if (els.total) els.total.textContent = String(state.files.length);
-    if (els.sizeStat) els.sizeStat.textContent = state.files.length ? formatBytes(totalBytes()) : "—";
+    const count = state.images.length;
+    if (els.total) els.total.textContent = String(count);
+    if (els.sizeStat) els.sizeStat.textContent = totalQueueCount() ? formatBytes(totalQueueBytes()) : "—";
     if (els.siteStat) els.siteStat.textContent = state.cameraLocation;
     if (els.statusStat) els.statusStat.textContent = statusLabel();
     if (els.meta) {
+      const parts = [];
+      if (state.images.length) parts.push(`${state.images.length} image(s)`);
+      if (state.zips.length) parts.push(`${state.zips.length} ZIP file(s)`);
       if (state.isUploading) {
-        els.meta.textContent = `Uploading ${state.files.length} file(s)…`;
-      } else if (state.lastResult) {
-        const count = state.lastResult.uploaded_count ?? state.files.length;
-        els.meta.textContent = `${count} file(s) saved · ${formatBytes(state.lastResult.total_bytes || 0)}`;
-      } else if (state.files.length) {
-        els.meta.textContent = `${state.files.length} file(s) · ${formatBytes(totalBytes())}`;
+        els.meta.textContent = `Uploading… ${state.progress}%`;
+      } else if (state.lastResult && !totalQueueCount()) {
+        const c = state.lastResult.uploaded_count ?? 0;
+        els.meta.textContent = `${c} file(s) saved · ${formatBytes(state.lastResult.total_bytes || 0)}`;
+      } else if (parts.length) {
+        els.meta.textContent = `${parts.join(" · ")} · ${formatBytes(totalQueueBytes())}`;
       } else {
         els.meta.textContent = "No files selected yet";
       }
     }
     if (els.barInfo) {
       if (state.isUploading) {
-        els.barInfo.innerHTML = `Uploading <strong>${state.files.length} file(s)</strong> to backend staging… ${state.progress}%`;
-      } else if (state.lastResult) {
-        const count = state.lastResult.uploaded_count ?? state.files.length;
+        els.barInfo.innerHTML = `Uploading <strong>${totalQueueCount()} file(s)</strong> to backend staging… ${state.progress}%`;
+      } else if (state.lastResult && !totalQueueCount()) {
+        const c = state.lastResult.uploaded_count ?? 0;
         const skipped = state.lastResult.skipped_count || 0;
-        const skippedNote = skipped ? ` · skipped ${skipped} unsupported file(s)` : "";
-        els.barInfo.innerHTML = `Processing complete: <strong>${count} image(s)</strong> staged${skippedNote}.`;
+        const skippedNote = skipped ? ` · skipped ${skipped} unsupported entry(ies)` : "";
+        els.barInfo.innerHTML = `Processing complete: <strong>${c} image(s)</strong> staged${skippedNote}.`;
       } else if (state.error) {
         els.barInfo.textContent = state.error;
-      } else if (state.files.length) {
-        els.barInfo.innerHTML = `<strong>${state.files.length} file(s)</strong> ready · ${formatBytes(totalBytes())} · Site: ${state.cameraLocation}`;
+      } else if (totalQueueCount()) {
+        const zipNote = state.zips.length ? ` · ZIP file detected` : "";
+        els.barInfo.innerHTML = `<strong>${state.images.length} image(s)</strong> ready · ${formatBytes(totalQueueBytes())} · Site: ${state.cameraLocation}${zipNote}`;
       } else {
         els.barInfo.textContent = "Drop or browse wildlife camera images to begin.";
       }
@@ -137,30 +173,54 @@ export function createManualUploadFlow(app) {
   }
 
   function renderQueue() {
-    const els = getElements();
+    const els = elements();
     if (!els.list) return;
     els.list.innerHTML = "";
 
-    if (!state.files.length) {
+    const queue = [...state.zips, ...state.images];
+    if (!queue.length) {
       const empty = document.createElement("div");
       empty.className = "upload-queue-empty";
       empty.textContent = state.lastResult
         ? "Queue cleared after upload. Add another batch to continue."
-        : "No images selected yet. Drop wildlife camera images above or click Browse Files.";
+        : "No images selected yet. Drop wildlife camera images above or click Browse files.";
       els.list.appendChild(empty);
+      if (els.summaryWrap) els.summaryWrap.hidden = true;
       return;
     }
 
-    const progressClass = state.isUploading
-      ? "active"
-      : state.lastResult
-        ? "done"
-        : "";
-    const fillWidth = state.isUploading
-      ? state.progress
-      : state.lastResult
-        ? 100
-        : 0;
+    const shouldCollapse = !state.listExpanded && queue.length > COLLAPSE_THRESHOLD;
+    if (els.summaryWrap) {
+      // Show the "X images selected / Show all" header any time we have files.
+      const totalImg = state.images.length;
+      const totalZip = state.zips.length;
+      const summaryParts = [];
+      if (totalImg) summaryParts.push(`${totalImg} image${totalImg === 1 ? "" : "s"} ready`);
+      if (totalZip) summaryParts.push(`${totalZip} ZIP file${totalZip === 1 ? "" : "s"} detected`);
+      if (els.summaryText) els.summaryText.textContent = summaryParts.join(" · ");
+      els.summaryWrap.hidden = false;
+      if (els.toggleBtn) {
+        if (queue.length > COLLAPSE_THRESHOLD) {
+          els.toggleBtn.hidden = false;
+          els.toggleBtn.textContent = state.listExpanded ? "Hide file list" : "Show all files";
+        } else {
+          // For small queues we still expand by default; hide the toggle button.
+          els.toggleBtn.hidden = true;
+        }
+      }
+    }
+
+    if (shouldCollapse) {
+      // Render a single compact summary row instead of every file.
+      const compact = document.createElement("div");
+      compact.className = "upload-queue-collapsed";
+      compact.textContent = `File list collapsed for ${queue.length} file(s). Click "Show all files" to inspect.`;
+      els.list.appendChild(compact);
+      return;
+    }
+
+    const progressClass = state.isUploading ? "active" : state.lastResult ? "done" : "";
+    const fillWidth = state.isUploading ? state.progress : state.lastResult ? 100 : 0;
     const pillClass = state.lastResult
       ? "pill-green"
       : state.isUploading
@@ -176,16 +236,15 @@ export function createManualUploadFlow(app) {
           ? "Failed"
           : "Pending";
 
-    state.files.forEach((file) => {
+    queue.forEach((file) => {
       const row = document.createElement("div");
       row.className = "upload-queue-item";
+      const isZip = isZipFile(file);
       row.innerHTML = `
         <div class="queue-file-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3182CE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <circle cx="8.5" cy="8.5" r="1.5"/>
-            <polyline points="21 15 16 10 5 21"/>
-          </svg>
+          ${isZip
+            ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3182CE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>`
+            : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3182CE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`}
         </div>
         <div>
           <div class="queue-file-name"></div>
@@ -199,9 +258,8 @@ export function createManualUploadFlow(app) {
         </div>
         <span class="status-pill ${pillClass}">${pillText}</span>
       `;
-      // Use textContent to safely render user-supplied filenames.
       row.querySelector(".queue-file-name").textContent = file.name;
-      row.querySelector(".queue-file-meta").textContent = `${formatBytes(file.size)} · ${state.cameraLocation}`;
+      row.querySelector(".queue-file-meta").textContent = `${isZip ? "ZIP archive" : "Image"} · ${formatBytes(file.size)} · ${state.cameraLocation}`;
       row.querySelector(".queue-location-tag").textContent = state.cameraLocation;
       row.querySelector(".queue-size-text").textContent = formatBytes(file.size);
       els.list.appendChild(row);
@@ -209,22 +267,22 @@ export function createManualUploadFlow(app) {
   }
 
   function renderControls() {
-    const els = getElements();
+    const els = elements();
     const backendDown = !isBackendConnected();
     if (els.backendBanner) {
       els.backendBanner.hidden = !backendDown;
     }
     if (els.startBtn) {
-      els.startBtn.disabled = state.isUploading || !state.files.length || backendDown;
+      els.startBtn.disabled = state.isUploading || !totalQueueCount() || backendDown;
     }
     if (els.clearBtn) {
       els.clearBtn.disabled = state.isUploading
-        || (!state.files.length && !state.lastResult && !state.error);
+        || (!totalQueueCount() && !state.lastResult && !state.error);
     }
   }
 
   function renderResult() {
-    const els = getElements();
+    const els = elements();
     if (!els.result) return;
     if (state.error) {
       els.result.hidden = false;
@@ -250,7 +308,7 @@ export function createManualUploadFlow(app) {
         els.resultMessage.textContent = `Upload complete · ${count} image(s) saved`;
       }
       if (els.resultDetails) {
-        const skippedNote = skipped ? ` Skipped ${skipped} unsupported file(s).` : "";
+        const skippedNote = skipped ? ` Skipped ${skipped} unsupported entry(ies).` : "";
         els.resultDetails.textContent =
           `${formatBytes(totalBytesValue)} written to ${stagingDir}.${skippedNote}`
           + ` Open the Run Model page to process the staged images. Results will be exported as a CSV.`;
@@ -261,7 +319,7 @@ export function createManualUploadFlow(app) {
   }
 
   function render() {
-    renderSummary();
+    renderSummaryCards();
     renderQueue();
     renderControls();
     renderResult();
@@ -274,37 +332,81 @@ export function createManualUploadFlow(app) {
   function addFiles(fileList) {
     if (!fileList || !fileList.length) return;
     const incoming = Array.from(fileList);
-    const accepted = incoming.filter(isImageFile);
-    const rejectedCount = incoming.length - accepted.length;
-    if (!accepted.length) {
-      app.showToast("No supported wildlife images found in selection (JPG, PNG, TIFF).", "warn");
+
+    const newImages = [];
+    const newZips = [];
+    let rejected = 0;
+    incoming.forEach((file) => {
+      if (isZipFile(file)) newZips.push(file);
+      else if (isImageFile(file)) newImages.push(file);
+      else rejected += 1;
+    });
+
+    if (!newImages.length && !newZips.length) {
+      app.showToast("No supported files found (JPG, PNG, TIFF, ZIP).", "warn");
       return;
     }
-    const map = new Map(state.files.map((file) => [dedupeKey(file), file]));
-    accepted.forEach((file) => {
+
+    const imageMap = new Map(state.images.map((file) => [dedupeKey(file), file]));
+    newImages.forEach((file) => {
       const key = dedupeKey(file);
-      if (!map.has(key)) map.set(key, file);
+      if (!imageMap.has(key)) imageMap.set(key, file);
     });
-    state.files = Array.from(map.values());
+    state.images = Array.from(imageMap.values());
+
+    const zipMap = new Map(state.zips.map((file) => [dedupeKey(file), file]));
+    newZips.forEach((file) => {
+      const key = dedupeKey(file);
+      if (!zipMap.has(key)) zipMap.set(key, file);
+    });
+    state.zips = Array.from(zipMap.values());
+
     state.error = "";
     state.lastResult = null;
     state.progress = 0;
-    if (rejectedCount > 0) {
-      app.showToast(`Skipped ${rejectedCount} non-image file(s).`, "warn");
+    // Re-collapse the list when a brand new batch is added so we don't dump
+    // hundreds of rows into the page automatically.
+    state.listExpanded = false;
+
+    if (rejected > 0) {
+      app.showToast(`Skipped ${rejected} unsupported file(s).`, "warn");
     }
     render();
   }
 
   function clearFiles() {
-    state.files = [];
+    state.images = [];
+    state.zips = [];
     state.error = "";
     state.lastResult = null;
     state.progress = 0;
+    state.listExpanded = false;
     render();
   }
 
+  function mergeResults(...results) {
+    const merged = {
+      uploaded_count: 0,
+      skipped_count: 0,
+      total_bytes: 0,
+      staging_dir: "",
+      files: [],
+      skipped: []
+    };
+    results.forEach((r) => {
+      if (!r) return;
+      merged.uploaded_count += Number(r.uploaded_count || 0);
+      merged.skipped_count += Number(r.skipped_count || (r.skipped?.length ?? 0));
+      merged.total_bytes += Number(r.total_bytes || 0);
+      if (r.staging_dir && !merged.staging_dir) merged.staging_dir = r.staging_dir;
+      if (Array.isArray(r.files)) merged.files = merged.files.concat(r.files);
+      if (Array.isArray(r.skipped)) merged.skipped = merged.skipped.concat(r.skipped);
+    });
+    return merged;
+  }
+
   async function startUpload() {
-    if (state.isUploading || !state.files.length) return;
+    if (state.isUploading || !totalQueueCount()) return;
     if (!isBackendConnected()) {
       app.showToast("Backend is not connected. Please start the backend and try again.", "warn");
       return;
@@ -315,24 +417,49 @@ export function createManualUploadFlow(app) {
     state.lastResult = null;
     render();
 
+    // Each "step" gets an equal slice of overall progress so that mixing
+    // images + multiple ZIPs still lands on a clean 100% at the end.
+    const totalSteps = (state.images.length ? 1 : 0) + state.zips.length;
+    let stepIndex = 0;
+
+    function reportStepProgress(percent) {
+      const safe = Math.max(0, Math.min(100, Number(percent) || 0));
+      const stepShare = totalSteps > 0 ? 100 / totalSteps : 100;
+      const overall = Math.round(stepIndex * stepShare + (safe / 100) * stepShare);
+      state.progress = Math.max(0, Math.min(100, overall));
+      renderSummaryCards();
+      renderQueue();
+    }
+
+    const partials = [];
     try {
-      const result = await uploadStagedImages(state.files, {
-        cameraLocation: state.cameraLocation,
-        onProgress: ({ percent }) => {
-          const next = Math.max(0, Math.min(100, Number(percent) || 0));
-          if (next !== state.progress) {
-            state.progress = next;
-            renderSummary();
-            renderQueue();
-          }
-        }
-      });
-      state.lastResult = result || {};
+      if (state.images.length) {
+        const result = await uploadStagedImages(state.images, {
+          cameraLocation: state.cameraLocation,
+          onProgress: ({ percent }) => reportStepProgress(percent)
+        });
+        partials.push(result);
+        stepIndex += 1;
+      }
+      // ZIPs are uploaded one at a time so progress stays meaningful and any
+      // single failure surfaces clearly with the archive name.
+      for (const zipFile of state.zips) {
+        const result = await uploadStagedZip(zipFile, {
+          cameraLocation: state.cameraLocation,
+          onProgress: ({ percent }) => reportStepProgress(percent)
+        });
+        partials.push(result);
+        stepIndex += 1;
+      }
+
+      const merged = mergeResults(...partials);
+      state.lastResult = merged;
       state.progress = 100;
-      const count = state.lastResult.uploaded_count ?? state.files.length;
-      app.showToast(`Upload complete · ${count} image(s) saved`, "success");
-      // Reset queue but keep the result card so the user has a confirmation trail.
-      state.files = [];
+      app.showToast(`Upload complete · ${merged.uploaded_count} image(s) saved`, "success");
+      // Empty the queue but keep the result card around for confirmation.
+      state.images = [];
+      state.zips = [];
+      state.listExpanded = false;
     } catch (error) {
       const message = error?.message || "Upload failed";
       state.error = message;
@@ -343,6 +470,7 @@ export function createManualUploadFlow(app) {
     }
   }
 
+  // ── DOM event handlers ───────────────────────────────────────────────
   function handleZoneDragOver(event) {
     event.preventDefault();
     event.currentTarget.classList.add("drag-over");
@@ -356,21 +484,27 @@ export function createManualUploadFlow(app) {
     addFiles(event.dataTransfer?.files);
   }
   function handleZoneClick(event) {
-    if (event.target.closest("#upload-browse-btn")) return;
-    getElements().input?.click();
+    if (event.target.closest("#upload-browse-files-btn")) return;
+    if (event.target.closest("#upload-browse-folder-btn")) return;
+    elements().fileInput?.click();
   }
   function handleZoneKeydown(event) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      getElements().input?.click();
+      elements().fileInput?.click();
     }
   }
-  function handleBrowseClick(event) {
+  function handleBrowseFilesClick(event) {
     event.preventDefault();
     event.stopPropagation();
-    getElements().input?.click();
+    elements().fileInput?.click();
   }
-  function handleInputChange(event) {
+  function handleBrowseFolderClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    elements().folderInput?.click();
+  }
+  function handleFileInputChange(event) {
     addFiles(event.target?.files);
     if (event.target) event.target.value = "";
   }
@@ -378,21 +512,27 @@ export function createManualUploadFlow(app) {
     state.cameraLocation = readSelectedSite();
     render();
   }
+  function handleToggleList() {
+    state.listExpanded = !state.listExpanded;
+    renderQueue();
+  }
 
   function bindEvents() {
-    const els = getElements();
-    if (bound || !els.zone || !els.input) return false;
+    const els = elements();
+    if (bound || !els.zone || !els.fileInput) return false;
     els.zone.addEventListener("dragover", handleZoneDragOver);
     els.zone.addEventListener("dragleave", handleZoneDragLeave);
     els.zone.addEventListener("drop", handleZoneDrop);
     els.zone.addEventListener("click", handleZoneClick);
     els.zone.addEventListener("keydown", handleZoneKeydown);
-    els.input.addEventListener("change", handleInputChange);
-    els.browseBtn?.addEventListener("click", handleBrowseClick);
+    els.fileInput.addEventListener("change", handleFileInputChange);
+    els.folderInput?.addEventListener("change", handleFileInputChange);
+    els.browseFilesBtn?.addEventListener("click", handleBrowseFilesClick);
+    els.browseFolderBtn?.addEventListener("click", handleBrowseFolderClick);
     els.startBtn?.addEventListener("click", () => { void startUpload(); });
     els.clearBtn?.addEventListener("click", clearFiles);
+    els.toggleBtn?.addEventListener("click", handleToggleList);
     document.querySelectorAll("#upload-manual .loc-select-card").forEach((card) => {
-      // Run after the existing selectLocCard() handler so .selected is up to date.
       card.addEventListener("click", () => window.setTimeout(handleSiteChange, 0));
     });
     bound = true;

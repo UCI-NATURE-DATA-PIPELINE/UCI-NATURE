@@ -14,40 +14,13 @@ function getStoredAuthToken() {
   }
 }
 
-/**
- * Upload one or more image files to the backend staging directory.
- *
- * @param {File[]|FileList} files - Image files selected by the researcher.
- * @param {object} [options]
- * @param {string} [options.cameraLocation] - Optional per-site subfolder name.
- * @param {(progress: { loaded:number, total:number, percent:number }) => void} [options.onProgress]
- * @returns {Promise<object>} - Backend JSON payload describing saved/skipped files.
- */
-export function uploadStagedImages(files, { cameraLocation = "", onProgress } = {}) {
+function sendFormData(url, formData, onProgress) {
   return new Promise((resolve, reject) => {
-    const formData = new FormData();
-    const fileArray = Array.from(files || []);
-
-    if (!fileArray.length) {
-      reject(new Error("No files were selected for upload."));
-      return;
-    }
-
-    fileArray.forEach((file) => {
-      formData.append("files", file, file.name);
-    });
-    if (cameraLocation) {
-      formData.append("camera_location", String(cameraLocation));
-    }
-
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${API_BASE}/upload/images`);
+    xhr.open("POST", url);
     xhr.timeout = UPLOAD_TIMEOUT_MS;
-
     const token = getStoredAuthToken();
     if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-    // NOTE: Do not set Content-Type manually for FormData -- the browser must
-    // generate the multipart boundary for FastAPI to parse the request.
 
     xhr.upload.addEventListener("progress", (event) => {
       if (typeof onProgress !== "function") return;
@@ -63,27 +36,58 @@ export function uploadStagedImages(files, { cameraLocation = "", onProgress } = 
       } catch (error) {
         payload = null;
       }
-
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(payload || {});
         return;
       }
-
       const message = (payload && (payload.detail || payload.message))
         || `Upload failed with status ${xhr.status}`;
       reject(new Error(message));
     });
-
-    xhr.addEventListener("error", () => {
-      reject(new Error("Network error during upload. Is the backend running?"));
-    });
-    xhr.addEventListener("timeout", () => {
-      reject(new Error("Upload timed out. Try a smaller batch or check the backend."));
-    });
-    xhr.addEventListener("abort", () => {
-      reject(new Error("Upload cancelled."));
-    });
+    xhr.addEventListener("error", () => reject(new Error("Network error during upload. Is the backend running?")));
+    xhr.addEventListener("timeout", () => reject(new Error("Upload timed out. Try a smaller batch or check the backend.")));
+    xhr.addEventListener("abort", () => reject(new Error("Upload cancelled.")));
 
     xhr.send(formData);
   });
+}
+
+/**
+ * Upload one or more image files to the backend staging directory.
+ *
+ * @param {File[]|FileList} files - Image files selected by the researcher.
+ * @param {object} [options]
+ * @param {string} [options.cameraLocation] - Optional per-site subfolder name.
+ * @param {(progress: { loaded:number, total:number, percent:number }) => void} [options.onProgress]
+ * @returns {Promise<object>} - Backend JSON payload describing saved/skipped files.
+ */
+export function uploadStagedImages(files, { cameraLocation = "", onProgress } = {}) {
+  const fileArray = Array.from(files || []);
+  if (!fileArray.length) {
+    return Promise.reject(new Error("No files were selected for upload."));
+  }
+  const formData = new FormData();
+  fileArray.forEach((file) => formData.append("files", file, file.name));
+  if (cameraLocation) formData.append("camera_location", String(cameraLocation));
+  // NOTE: Do not set Content-Type manually for FormData -- the browser must
+  // generate the multipart boundary for FastAPI to parse the request.
+  return sendFormData(`${API_BASE}/upload/images`, formData, onProgress);
+}
+
+/**
+ * Upload a single ZIP archive to the backend; the server safely extracts
+ * supported image entries into the staging directory.
+ *
+ * @param {File} zipFile - A ZIP file selected by the researcher.
+ * @param {object} [options]
+ * @param {string} [options.cameraLocation] - Optional per-site subfolder name.
+ * @param {(progress: { loaded:number, total:number, percent:number }) => void} [options.onProgress]
+ * @returns {Promise<object>} - Backend JSON payload describing saved/skipped files.
+ */
+export function uploadStagedZip(zipFile, { cameraLocation = "", onProgress } = {}) {
+  if (!zipFile) return Promise.reject(new Error("No ZIP file was selected."));
+  const formData = new FormData();
+  formData.append("archive", zipFile, zipFile.name);
+  if (cameraLocation) formData.append("camera_location", String(cameraLocation));
+  return sendFormData(`${API_BASE}/upload/zip`, formData, onProgress);
 }

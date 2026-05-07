@@ -3,3 +3,50 @@
 @import "./segments/global-workspace.css";
 @import "./segments/global-overlays.css";
 @import "./segments/global-legacy.css";
+
+/* App boot splash shown until bootstrapAppState() resolves. */
+.app-boot {
+  position:fixed;
+  inset:0;
+  background:#F7FAFC;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+}
+.app-boot[hidden] { display:none !important; }
+.app-boot-card {
+  background:#fff;
+  border:1px solid #E2E8F0;
+  border-radius:14px;
+  padding:28px 32px;
+  box-shadow:0 4px 16px rgba(0,0,0,.05);
+  text-align:center;
+  min-width:260px;
+  max-width:360px;
+}
+.app-boot-spinner {
+  width:36px;
+  height:36px;
+  border-radius:50%;
+  border:3px solid #E2E8F0;
+  border-top-color:#0064A4;
+  margin:0 auto 14px;
+  animation:appBootSpin .9s linear infinite;
+}
+.app-boot.error .app-boot-spinner { border-top-color:#C53030; animation:none; }
+.app-boot-title { font-size:15px; font-weight:600; color:#1A202C; margin-bottom:4px; }
+.app-boot-sub   { font-size:12.5px; color:#4A5568; line-height:1.45; }
+.app-boot-retry {
+  margin-top:14px;
+  background:#0064A4;
+  color:#fff;
+  border:none;
+  border-radius:8px;
+  padding:8px 16px;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+}
+.app-boot-retry[hidden] { display:none !important; }
+@keyframes appBootSpin { to { transform:rotate(360deg); } }

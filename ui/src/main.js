@@ -20,9 +20,34 @@ const app = {
   showToast
 };
 
+function setBootSplashStatus(title, subtitle, { showRetry = false, error = false } = {}) {
+  const root = document.getElementById("app-boot");
+  const titleEl = document.getElementById("app-boot-title");
+  const subEl = document.getElementById("app-boot-sub");
+  const retryEl = document.getElementById("app-boot-retry");
+  if (root) root.classList.toggle("error", Boolean(error));
+  if (titleEl && title) titleEl.textContent = title;
+  if (subEl && subtitle) subEl.textContent = subtitle;
+  if (retryEl) retryEl.hidden = !showRetry;
+}
+
+function hideBootSplash() {
+  const root = document.getElementById("app-boot");
+  if (root) root.hidden = true;
+}
+
+function revealAuthShells() {
+  // The boot splash hides auth-root + main-app while we run health/auth checks.
+  // Bootstrap will toggle one of them visible based on the result; here we just
+  // make sure their inline display:none placeholders aren't blocking that.
+  const authRoot = document.getElementById("auth-root");
+  if (authRoot) authRoot.style.display = "";
+}
+
 async function initializeApp() {
   console.log("App start");
   if (DEV_MODE) console.log("Local dev mode enabled");
+  setBootSplashStatus("Starting Wildlife Research…", "Loading interface modules.");
   await loadFeatureMarkup();
   console.log("Markup loaded");
   const backendStatusApi = createBackendStatus();
@@ -32,9 +57,13 @@ async function initializeApp() {
   bindLayoutNavigation({ showPage });
   app.applyBackendHealthStatus = (health) => {
     backendStatusApi.applyBackendHealthStatus(health);
-    // Keep the Upload page's backend banner / Process button in sync with the
+    // Keep the Upload page's backend banners / Process buttons in sync with the
     // header status pill so users see one consistent connectivity message.
     app.features.drive?.refreshManualUpload?.();
+    const driveOfflineBanner = document.getElementById("drive-backend-banner");
+    if (driveOfflineBanner) {
+      driveOfflineBanner.hidden = Boolean(health?.connected);
+    }
   };
   app.refreshBackendHealth = async ({ silent = false } = {}) => {
     try {
@@ -68,9 +97,24 @@ async function initializeApp() {
   app.features.drive.syncDriveUI();
   app.features.drive.renderDriveFolderSelection();
   app.features.drive.initializeManualUpload();
-  const bootstrapPromise = bootstrapAppState(app, showPage);
-  void app.refreshBackendHealth({ silent: true });
-  await bootstrapPromise;
+
+  setBootSplashStatus("Checking backend…", "Looking for the API at 127.0.0.1:8000.");
+  const healthResult = await app.refreshBackendHealth({ silent: true });
+  if (healthResult) {
+    setBootSplashStatus("Loading your session…", "Restoring your sign-in state.");
+  } else {
+    // Don't trap the user on a spinner — fall through to login/dashboard so
+    // they can see the offline banner and retry from the header.
+    setBootSplashStatus(
+      "Backend not connected",
+      "We'll continue offline. Start the backend on 127.0.0.1:8000 to enable processing.",
+      { error: true }
+    );
+  }
+
+  revealAuthShells();
+  await bootstrapAppState(app, showPage);
+  hideBootSplash();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
