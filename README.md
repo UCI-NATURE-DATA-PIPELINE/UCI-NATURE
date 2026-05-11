@@ -47,11 +47,14 @@ That avoids low-value path churn in static asset loading, Python imports, and de
 - Folder selection from the picker or by pasting a Google Drive folder URL or raw folder ID
 - Live Drive sync and pipeline status in the UI
 
-### Local UI development overview
+---
 
-Run the backend:
+### Local UI development — macOS / Linux
+
+Run the backend (from the project root `UCI-NATURE/`):
 
 ```bash
+source .venv311/bin/activate
 python3.11 -m uvicorn ui.backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -66,6 +69,72 @@ Then open:
 
 - Frontend: `http://127.0.0.1:3000/`
 - Backend API: `http://127.0.0.1:8000/`
+
+---
+
+### Local UI development — Windows (PowerShell)
+
+> **Note:** `source` and `python3.11` are Linux/macOS commands. PowerShell uses different syntax for all of these. Follow the steps below exactly.
+
+#### Step 1 — Allow script execution (one-time setup)
+
+Open PowerShell as a regular user and run:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+#### Step 2 — Create required data directories (one-time setup)
+
+The backend will crash on startup if these folders don't exist. Create them from the project root (`UCI-NATURE\`):
+
+```powershell
+mkdir data\staging
+mkdir data\local_input
+mkdir data\outputs\by_location
+```
+
+#### Step 3 — Install missing server dependencies (one-time setup)
+
+`uvicorn` and `fastapi` are not included in `requirements.txt` and must be installed separately:
+
+```powershell
+.\.venv311\Scripts\Activate.ps1
+pip install uvicorn fastapi python-multipart
+```
+
+#### Step 4 — Start the backend
+
+Open a PowerShell terminal, `cd` to the project root (`UCI-NATURE\`), then run:
+
+```powershell
+.\.venv311\Scripts\Activate.ps1
+python -m uvicorn ui.backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+> ⚠️ Run uvicorn from the `UCI-NATURE\` root, **not** from inside `ui\`. The module path `ui.backend.main` depends on the root being the working directory.
+
+#### Step 5 — Start the frontend
+
+Open a **second** PowerShell terminal and run:
+
+```powershell
+cd ui
+python -m http.server 3000
+```
+
+Then open `http://127.0.0.1:3000` in your browser.
+
+#### Windows quick-reference cheat sheet
+
+| macOS / Linux | Windows PowerShell |
+|---|---|
+| `source .venv311/bin/activate` | `.\.venv311\Scripts\Activate.ps1` |
+| `python3.11` | `python` |
+| `python3` | `python` |
+| `mkdir -p a/b/c` | `mkdir a\b\c` |
+
+---
 
 ### High-level UI/Drive run flow
 
@@ -122,7 +191,7 @@ Make sure to 'cd' into this project's root folder before installation
 ```bash
 # Create virtual environment (recommended)
 python -m venv .venv311
-.venv311\Scripts\activate.bat  # Windows
+.venv311\\Scripts\\activate.bat  # Windows
 #or: source .venv311/bin/activate  # Linux/Mac
 
 # Install dependencies
@@ -421,6 +490,52 @@ python scripts/pipeline/validate_output.py
 Julie Ellen Coffey - UCI Campus Reserves Manager
 
 ## Troubleshooting
+
+### Windows: "source is not recognized"
+
+`source` is a Linux/macOS command. On Windows PowerShell, activate the venv with:
+
+```powershell
+.\.venv311\Scripts\Activate.ps1
+```
+
+If you see a script execution error, run this once first:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+### Windows: "python3.11 is not recognized"
+
+Windows does not ship a `python3.11` alias. Use `python` instead:
+
+```powershell
+python -m uvicorn ui.backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+### "No module named 'uvicorn'" or "No module named 'fastapi'"
+
+These packages are not included in `requirements.txt`. Install them manually inside the activated venv:
+
+```powershell
+pip install uvicorn fastapi python-multipart
+```
+
+### "RuntimeError: Directory 'data/staging' does not exist"
+
+The backend mounts `data/staging` as a static file directory on startup. Create the required folders from the project root before starting the backend:
+
+```powershell
+# Windows
+mkdir data\staging
+mkdir data\local_input
+mkdir data\outputs\by_location
+```
+
+```bash
+# macOS / Linux
+mkdir -p data/staging data/local_input data/outputs/by_location
+```
 
 ### "No module named 'google.oauth2'"
 
