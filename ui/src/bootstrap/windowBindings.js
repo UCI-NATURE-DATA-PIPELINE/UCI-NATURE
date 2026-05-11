@@ -65,4 +65,6 @@ export function bindGlobals(app, showPage) {
   window.closeExportModal = app.features.export.closeExportModal;
   window.confirmExport = app.features.export.confirmExport;
   window.syncExportFilenamePreview = app.features.export.syncExportFilenamePreview;
+  // Download a single export artifact CSV by filename
+  window.downloadFile = app.features.export.downloadFile;
 }
