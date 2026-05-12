@@ -664,6 +664,15 @@ def build_export_artifact_summary() -> dict:
             "path": str(path.relative_to(PROJECT_ROOT)),
         })
 
+    human_count = 0
+    burst_count = 0
+    for p in get_location_csv_paths():
+        for row in read_csv_rows(p):
+            if (row.get("has_human") or "").strip() == "1" and (row.get("has_animal") or "").strip() != "1":
+                human_count += 1
+            burst_idx = (row.get("BurstIndex") or "").strip()
+            if burst_idx and burst_idx != "1":
+                burst_count += 1
     ready = bool(export_files)
     return {
         "message": "Export artifacts are ready" if ready else "No export artifacts available",
@@ -671,6 +680,8 @@ def build_export_artifact_summary() -> dict:
         "output_dir": str(BY_LOCATION_DIR.relative_to(PROJECT_ROOT)) if BY_LOCATION_DIR.exists() else str(BY_LOCATION_DIR),
         "file_count": len(export_files),
         "total_rows": total_rows,
+        "human_detections_excluded": human_count,
+        "burst_duplicates_removed": burst_count,
         "files": export_files,
         "integration_mode": "artifact_backed",
         "note": "Drive upload is not wired yet; this route returns the generated export artifacts.",

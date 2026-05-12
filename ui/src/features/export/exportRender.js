@@ -74,8 +74,8 @@ export function createExportRender(app) {
   function applyExportData(data, validation = app.state.validationData) {
     app.state.exportData = data;
     setText("export-val-total", formatNumber(data?.total_rows || 0));
-    setText("export-val-human", "75");   // placeholder until backend returns this
-    setText("export-val-burst", formatNumber(data?.file_count || 0));
+    setText("export-val-human", formatNumber(data?.human_detections_excluded || 0));
+    setText("export-val-burst", formatNumber(data?.burst_duplicates_removed || 0));
     setHTML("export-folder-list", buildExportFolderRows(data?.files || []));
 
     const issueCount =
@@ -103,6 +103,10 @@ export function createExportRender(app) {
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
       </svg>Export ${formatNumber(data?.total_rows || 0)} Records to Google Drive`
     );
+    const burstRemoved = data?.burst_duplicates_removed || 0;
+    const humanExcluded = data?.human_detections_excluded || 0;
+    setText("badge-burst-rows", (burstRemoved ? "-" : "") + formatNumber(burstRemoved) + " rows");
+    setText("badge-human-rows", (humanExcluded ? "-" : "") + formatNumber(humanExcluded) + " rows");
     syncExportFilenamePreview();
     syncDriveConnectionBanner();
   }
