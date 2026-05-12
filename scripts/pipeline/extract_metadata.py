@@ -78,7 +78,7 @@ def load_ml_outputs(path: Path) -> tuple[dict[str, dict[str, str]], list[str]]:
         reader = csv.DictReader(f)
         fields = list(reader.fieldnames or [])
         for r in reader:
-            fid = (r.get("file_id") or r.get("fileId") or r.get("id") or "").strip()
+            fid = (r.get("file_id") or r.get("fileId") or r.get("id") or r.get("local_path") or r.get("local_file_name") or "").strip()
             if fid:
                 out[fid] = {k: (r.get(k, "") or "") for k in fields}
 
@@ -204,8 +204,9 @@ def extract_metadata_from_manifest(
         for k in ml_fields:
             row_out[k] = ""
 
-        if file_id and file_id in ml_map:
-            for k, v in ml_map[file_id].items():
+        lookup_key = file_id or (r.get("local_path") or "").strip() or (r.get("local_file_name") or "").strip()
+        if lookup_key and lookup_key in ml_map:
+            for k, v in ml_map[lookup_key].items():
                 row_out[k] = v
 
         out_rows.append(row_out)

@@ -365,6 +365,7 @@ def generate_output_csvs(
 
     manifest_by_id = load_csv_by_key(manifest_path, "file_id")
     meta_by_id = load_csv_by_key(meta_path, "file_id")
+    meta_by_path = load_csv_by_key(meta_path, "local_path")
     drive_by_id = (
         load_csv_by_key(drive_index_path, "file_id") if drive_index_path.exists() else {}
     )
@@ -440,7 +441,7 @@ def generate_output_csvs(
             filename = (row.get("file_name") or row.get("local_file_name") or "").strip()
 
             manifest_row = manifest_by_id.get(file_id, row) if file_id else row
-            metadata_row = meta_by_id.get(file_id, {})
+            metadata_row = meta_by_id.get(file_id) or meta_by_path.get((manifest_row.get("local_path") or row.get("local_path") or "").strip()) or {}
             drive_row = drive_by_id.get(file_id, {})
 
             total_processed += 1

@@ -182,7 +182,7 @@ def _max_detection_conf_any(detections: list[dict], categories: set[str]) -> flo
 def _deduplicate_rows_by_file_id(rows: list[dict]) -> dict[str, dict]:
     deduped: dict[str, dict] = {}
     for row in rows:
-        file_id = row.get("file_id", "")
+        file_id = row.get("file_id", "") or row.get("local_path", "") or row.get("local_file_name", "")
         if not file_id:
             continue
         if file_id not in deduped:
