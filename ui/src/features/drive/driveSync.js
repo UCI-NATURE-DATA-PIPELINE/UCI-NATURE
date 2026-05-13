@@ -43,7 +43,7 @@ export function createDriveSync(app, api, stateApi, renderApi) {
   }
 
   async function triggerSync(buttonEl) {
-    if (!appState.googleAuthActive) return app.showToast("Sign in with Google before syncing a Drive folder", "warn");
+    if (!appState.googleAuthActive) return app.showToast("Connect Google Drive before syncing a Drive folder", "warn");
     if (!appState.driveConnected) return app.showToast("Confirm the Google Drive connection before syncing", "warn");
     if (!appState.selectedDriveFolder?.id) return app.showToast("Select a Google Drive folder before syncing", "warn");
     if (appState.driveSyncState.status === "syncing") {

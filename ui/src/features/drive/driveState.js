@@ -1,10 +1,12 @@
 /** Drive feature state helpers for selection, readiness, and sync progress. */
 import { appState } from "../../state/appState.js";
 import { normalizeDriveSyncLimitValue, normalizeDriveSyncStatus } from "../../utils/helpers.js";
+import { normalizeCameraSiteName } from "./cameraSiteName.js";
 
 export function createDriveState() {
   function applySelectedDriveFolderSettings(folder = null) {
-    appState.driveCameraLocation = String(folder?.camera_location || "");
+    appState.driveCameraLocation = normalizeCameraSiteName(folder?.camera_location || "");
+    appState.driveCreateSiteMode = Boolean(appState.driveCameraLocation && appState.driveCameraLocation !== normalizeCameraSiteName(folder?.name || ""));
     appState.driveSyncLimit = normalizeDriveSyncLimitValue(folder?.max_files);
   }
 

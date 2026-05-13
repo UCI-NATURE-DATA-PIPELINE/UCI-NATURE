@@ -54,7 +54,7 @@ export function createAuthRender(stateApi) {
         : `${appState.currentDriveProfile.projectLabel} · Not signed in`;
     }
     if (confirmBtn) {
-      confirmBtn.textContent = appState.googleAuthActive ? "Confirm & Enter Dashboard" : "Sign in with Google first";
+      confirmBtn.textContent = appState.googleAuthActive ? "Confirm & Enter Dashboard" : "Connect Google Drive first";
       confirmBtn.disabled = !appState.googleAuthActive;
     }
   }

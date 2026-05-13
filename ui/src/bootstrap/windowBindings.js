@@ -12,16 +12,15 @@ export function bindGlobals(app, showPage) {
   window.openDP = openDP;
   window.pickDate = pickDate;
   window.selectProject = app.features.auth.selectProject;
-  window.goToStep1 = () => app.features.auth.setLoginStep(1);
+  // Login screen only advances forward via a single "Continue" button.
   window.goToStep2 = () => app.features.auth.setLoginStep(2);
-  window.goToStep3 = () => app.features.auth.setLoginStep(3);
-  window.simulateOAuth = app.features.auth.simulateOAuth;
+  window.startGoogleSignIn = app.features.auth.startGoogleSignIn;
+  window.continueWithoutGoogleDrive = app.features.auth.continueWithoutGoogleDrive;
   window.confirmDrive = app.features.auth.confirmDrive;
   window.switchAccount = app.features.auth.switchAccount;
   window.openDriveModal = app.features.auth.openDriveModal;
   window.reconnectDrive = app.features.auth.reconnectDrive;
   window.switchUploadTab = app.features.drive.switchUploadTab;
-  window.togglePause = app.features.drive.togglePause;
   window.selectLocCard = app.features.drive.selectLocCard;
   window.selectDriveLocCard = app.features.drive.selectDriveLocCard;
   window.handleDriveFolderSelect = app.features.drive.handleDriveFolderSelect;
@@ -34,6 +33,9 @@ export function bindGlobals(app, showPage) {
   window.applyManualDriveFolderSelection = app.features.drive.applyManualDriveFolderSelection;
   window.handleDriveCustomSiteKeydown = app.features.drive.handleDriveCustomSiteKeydown;
   window.applyDriveCustomSite = app.features.drive.applyDriveCustomSite;
+  window.openDriveSiteModal = app.features.drive.openDriveSiteModal;
+  window.closeDriveSiteModal = app.features.drive.closeDriveSiteModal;
+  window.selectDriveAutoSite = app.features.drive.selectDriveAutoSite;
   window.triggerSync = app.features.drive.triggerSync;
   window.loadDriveSyncStatus = app.features.drive.loadDriveSyncStatus;
   window.updateSlider = app.features.pipeline.updateSlider;

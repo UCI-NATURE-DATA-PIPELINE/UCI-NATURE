@@ -2,6 +2,7 @@
  * upload progress events back to the UI (fetch() doesn't expose upload progress).
  * Goes against the same API_BASE / token flow as the rest of the app. */
 import { API_BASE } from "./core/http.js";
+import { normalizeCameraSiteName } from "../features/drive/cameraSiteName.js";
 
 // Wildlife camera batches can be large; allow up to 30 minutes per request.
 const UPLOAD_TIMEOUT_MS = 30 * 60 * 1000;
@@ -68,7 +69,8 @@ export function uploadStagedImages(files, { cameraLocation = "", onProgress } = 
   }
   const formData = new FormData();
   fileArray.forEach((file) => formData.append("files", file, file.name));
-  if (cameraLocation) formData.append("camera_location", String(cameraLocation));
+  const normalizedCameraLocation = normalizeCameraSiteName(cameraLocation);
+  if (normalizedCameraLocation) formData.append("camera_location", normalizedCameraLocation);
   // NOTE: Do not set Content-Type manually for FormData -- the browser must
   // generate the multipart boundary for FastAPI to parse the request.
   return sendFormData(`${API_BASE}/upload/images`, formData, onProgress);
@@ -88,6 +90,7 @@ export function uploadStagedZip(zipFile, { cameraLocation = "", onProgress } = {
   if (!zipFile) return Promise.reject(new Error("No ZIP file was selected."));
   const formData = new FormData();
   formData.append("archive", zipFile, zipFile.name);
-  if (cameraLocation) formData.append("camera_location", String(cameraLocation));
+  const normalizedCameraLocation = normalizeCameraSiteName(cameraLocation);
+  if (normalizedCameraLocation) formData.append("camera_location", normalizedCameraLocation);
   return sendFormData(`${API_BASE}/upload/zip`, formData, onProgress);
 }

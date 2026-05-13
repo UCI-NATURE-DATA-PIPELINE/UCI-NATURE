@@ -42,6 +42,7 @@
 .login-step-item {
   display: flex; align-items: center; gap: 6px; font-size: 12px;
   color: var(--muted); font-weight: 500;
+  white-space: nowrap;
 }
 .login-step-item.active { color: var(--blue); }
 .login-step-item.done   { color: #38A169; }
@@ -96,18 +97,59 @@
   text-transform: uppercase; letter-spacing: .4px;
 }
 
-/* OAuth button */
-.oauth-btn {
-  width: 100%; padding: 13px; border-radius: 10px;
-  background: #fff; border: 1.5px solid var(--border);
+/* Login buttons */
+#login-screen button.oauth-button {
+  all: unset;
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 46px;
+  padding: 13px 16px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #D7DEE8;
   display: flex; align-items: center; justify-content: center; gap: 10px;
   font-size: 14px; font-weight: 600; color: #3c4043;
   cursor: pointer; transition: all .2s; font-family: 'Inter', sans-serif;
-  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  box-shadow: 0 1px 4px rgba(15,30,55,.08);
+  line-height: 1.25;
+  text-align: center;
 }
-.oauth-btn:hover { background: #f8f9fa; border-color: #c7cdd6; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
-.oauth-btn:disabled { opacity: .6; cursor: not-allowed; }
+#login-screen button.oauth-button:hover {
+  background: #f8f9fa;
+  border-color: #c7cdd6;
+  box-shadow: 0 2px 8px rgba(15,30,55,.12);
+}
+#login-screen button.oauth-button:focus-visible {
+  outline: 3px solid rgba(0,100,164,.22);
+  outline-offset: 2px;
+}
+#login-screen button.oauth-button:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+  box-shadow: 0 1px 4px rgba(15,30,55,.08);
+}
 .oauth-btn.loading { background: #f8f9fa; }
+
+#login-screen button.local-login-button {
+  min-height: 46px;
+  padding: 13px 16px;
+  color: #3c4043;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.login-option-divider {
+  display: flex; align-items: center; gap: 10px;
+  margin: 16px 0 14px;
+  color: #9AA8B8; font-size: 11px; font-weight: 500;
+}
+.login-option-divider::before,
+.login-option-divider::after {
+  content: "";
+  flex: 1; height: 1px; background: #E5EAF0;
+}
 
 /* loading spinner for oauth */
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -182,4 +224,3 @@
 .drive-badge.warning:hover { background: #FEECCC; }
 .drive-dot.warn { background: #ED8936; box-shadow: 0 0 0 3px rgba(237,137,54,.2); animation: pulse-warn 1.8s ease-in-out infinite; }
 @keyframes pulse-warn { 0%,100%{box-shadow:0 0 0 3px rgba(237,137,54,.2)} 50%{box-shadow:0 0 0 6px rgba(237,137,54,.08)} }
-

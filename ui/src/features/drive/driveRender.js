@@ -6,14 +6,9 @@ import {
   formatDriveSyncLimitLabel,
   normalizeDriveFolderOptions
 } from "../../utils/helpers.js";
+import { normalizeCameraSiteName } from "./cameraSiteName.js";
 
 export function createDriveRender(app, stateApi, utilsApi) {
-  const DRIVE_SITE_PRESETS = ["Site 1", "Site 2", "Site 3", "Site 4"];
-
-  function isPresetDriveSite(value) {
-    return DRIVE_SITE_PRESETS.includes(String(value || "").trim());
-  }
-
   function renderDriveManualSelectionFeedback() {
     const feedbackEl = document.getElementById("drive-folder-manual-feedback");
     if (!feedbackEl) return;
@@ -31,12 +26,37 @@ export function createDriveRender(app, stateApi, utilsApi) {
   function syncDriveSelectionControls() {
     const locationEl = document.getElementById("drive-camera-location-select");
     const limitEl = document.getElementById("drive-sync-limit-select");
+    const detectedEl = document.getElementById("drive-site-detected");
+    const autoCardEl = document.getElementById("drive-site-auto-card");
+    const helperPathEl = document.getElementById("drive-site-helper-path");
     const disabled = appState.driveSyncState.status === "syncing" || !appState.googleAuthActive || !appState.driveConnected;
     const canSync = Boolean(appState.googleAuthActive && appState.driveConnected && appState.selectedDriveFolder?.id && appState.driveSyncState.status !== "syncing");
+
+    // Auto-detect default camera site from the selected Drive folder name.
+    const detectedFromFolder = normalizeCameraSiteName(appState.selectedDriveFolder?.name || "");
+    if (!appState.driveCameraLocation && detectedFromFolder) {
+      appState.driveCameraLocation = detectedFromFolder;
+    }
+
     if (locationEl) {
       syncDriveCustomSiteOption(locationEl);
-      locationEl.value = appState.driveCameraLocation || "Site 1";
+      locationEl.value = appState.driveCameraLocation || "";
       locationEl.disabled = disabled;
+    }
+    if (detectedEl) {
+      if (detectedFromFolder) {
+        detectedEl.textContent = detectedFromFolder;
+        detectedEl.classList.remove("muted");
+        if (autoCardEl) autoCardEl.dataset.driveLocation = detectedFromFolder;
+      } else {
+        detectedEl.textContent = "Pick a Drive folder first";
+        detectedEl.classList.add("muted");
+        if (autoCardEl) autoCardEl.dataset.driveLocation = "";
+      }
+    }
+    if (helperPathEl) {
+      const label = appState.driveCameraLocation || "&lt;site&gt;";
+      helperPathEl.innerHTML = `data/staging/${label}/`;
     }
     if (limitEl) {
       limitEl.value = appState.driveSyncLimit ? String(appState.driveSyncLimit) : "";
@@ -54,16 +74,20 @@ export function createDriveRender(app, stateApi, utilsApi) {
   }
 
   function syncDriveCustomSiteOption(selectEl) {
+    // The Drive site selector is a hidden mirror of `appState.driveCameraLocation`.
+    // We just clear any stale options and inject one for the current site name —
+    // whether that name was auto-detected from the Drive folder or typed by the user.
     if (!selectEl) return;
     Array.from(selectEl.options)
-      .filter((option) => option.dataset.driveCustom === "true" && option.value !== appState.driveCameraLocation)
+      .filter((option) => option.value !== appState.driveCameraLocation)
       .forEach((option) => option.remove());
-    if (!appState.driveCameraLocation || isPresetDriveSite(appState.driveCameraLocation)) return;
+    if (!appState.driveCameraLocation) return;
     if (Array.from(selectEl.options).some((option) => option.value === appState.driveCameraLocation)) return;
     const customOption = document.createElement("option");
     customOption.value = appState.driveCameraLocation;
     customOption.textContent = appState.driveCameraLocation;
     customOption.dataset.driveCustom = "true";
+    customOption.selected = true;
     selectEl.appendChild(customOption);
   }
 
@@ -72,12 +96,29 @@ export function createDriveRender(app, stateApi, utilsApi) {
     const buttonEl = document.getElementById("drive-site-custom-btn");
     const helperEl = document.getElementById("drive-site-helper");
     const rowEl = document.getElementById("drive-site-custom-row");
-    const activeCustomSite = appState.driveCameraLocation && !isPresetDriveSite(appState.driveCameraLocation) ? appState.driveCameraLocation : "";
+    const modalInputEl = document.getElementById("drive-site-modal-input");
+    const customValueEl = document.getElementById("drive-site-custom-value");
+    // Show whichever name the user is overriding to — fall back to the detected folder.
+    const activeCustomSite = appState.driveCreateSiteMode && appState.driveCameraLocation
+      ? appState.driveCameraLocation
+      : "";
     if (inputEl) {
       inputEl.disabled = disabled;
-      inputEl.placeholder = disabled ? "Connect Google Drive to create a site" : "Create a new camera site";
-      if (!activeCustomSite && document.activeElement !== inputEl) inputEl.value = "";
-      if (activeCustomSite && document.activeElement !== inputEl) inputEl.value = activeCustomSite;
+      if (document.activeElement !== inputEl) {
+        inputEl.value = activeCustomSite;
+      }
+    }
+    if (modalInputEl && document.activeElement !== modalInputEl) {
+      modalInputEl.value = activeCustomSite;
+    }
+    if (customValueEl) {
+      if (appState.driveCreateSiteMode && appState.driveCameraLocation) {
+        customValueEl.textContent = appState.driveCameraLocation;
+        customValueEl.classList.remove("muted");
+      } else {
+        customValueEl.textContent = "No site selected";
+        customValueEl.classList.add("muted");
+      }
     }
     if (buttonEl) buttonEl.disabled = disabled || !String(inputEl?.value || activeCustomSite || "").trim();
     if (rowEl) rowEl.hidden = true;
@@ -87,15 +128,20 @@ export function createDriveRender(app, stateApi, utilsApi) {
   }
 
   function syncDriveLocationCards(disabled = appState.driveSyncState.status === "syncing" || !appState.googleAuthActive || !appState.driveConnected) {
+    // Card-based site selection has been replaced by an auto-detected text
+    // input. The querySelectorAll below is now a no-op in normal flow, but
+    // we keep the function so any external caller (or a future restoration
+    // of cards) won't break.
     document.querySelectorAll(".drive-loc-select-card").forEach((card) => {
       const value = String(card?.dataset?.driveLocation || "").trim();
-      const selected = appState.driveCameraLocation
-        ? Boolean(value && value === appState.driveCameraLocation)
-        : value === "Site 1";
+      const cardDisabled = card?.dataset?.driveCreate === "true" ? false : disabled;
+      const selected = card?.dataset?.driveCreate === "true"
+        ? Boolean(appState.driveCreateSiteMode)
+        : Boolean(!appState.driveCreateSiteMode && appState.driveCameraLocation && value === appState.driveCameraLocation);
       card.classList.toggle("selected", selected);
-      card.classList.toggle("disabled", disabled);
+      card.classList.toggle("disabled", cardDisabled);
       card.setAttribute("aria-pressed", selected ? "true" : "false");
-      card.setAttribute("aria-disabled", disabled ? "true" : "false");
+      card.setAttribute("aria-disabled", cardDisabled ? "true" : "false");
     });
   }
 
@@ -116,7 +162,7 @@ export function createDriveRender(app, stateApi, utilsApi) {
     if (!selectEl) return;
     const normalizedFolders = normalizeDriveFolderOptions(folders);
     if (!appState.googleAuthActive) {
-      selectEl.innerHTML = `<option value="">Sign in with Google first</option>`;
+      selectEl.innerHTML = `<option value="">Connect Google Drive to use Drive import</option>`;
       selectEl.disabled = true;
       return;
     }
@@ -175,10 +221,10 @@ export function createDriveRender(app, stateApi, utilsApi) {
     const hasAnyStagedFiles = syncedCount > 0;
     const appliedLimitLabel = formatDriveSyncLimitLabel(appState.selectedDriveFolder?.max_files ?? appState.driveSyncLimit);
     const stagingDir = appState.driveSyncState.staging_dir || "processing cache";
-    const queueName = hasSelectedFolder ? appState.selectedDriveFolder.name : "SITE1_0001 → SITE1_1200";
+    const queueName = hasSelectedFolder ? appState.selectedDriveFolder.name : "No Drive folder selected";
 
-    let queueMeta = "1,200 files · Site 1 · Jun 14, 2026";
-    if (hasSelectedFolder && !appState.googleAuthActive) queueMeta = "Google Drive source · Sign in with Google to sync";
+    let queueMeta = "Pick a Drive folder above to begin.";
+    if (hasSelectedFolder && !appState.googleAuthActive) queueMeta = "Google Drive source · Connect Google Drive to sync";
     else if (hasSelectedFolder && !appState.driveConnected) queueMeta = "Google Drive source · Confirm Drive connection to sync";
     else if (hasSelectedFolder) queueMeta = `Google Drive source · ${appliedLimitLabel}`;
 
@@ -186,13 +232,13 @@ export function createDriveRender(app, stateApi, utilsApi) {
       ? `${formatNumber(Math.max(totalCount ? 2 : 1, 1))} batches · ${formatNumber(totalCount || syncedCount || 0)} files`
       : isReady || hasAnyStagedFiles
         ? `${formatNumber(Math.max(syncedCount ? 2 : 1, 1))} batches · ${formatNumber(syncedCount || totalCount || 0)} files`
-        : "2 batches · 6.3 GB total";
+        : "No sync started yet";
 
     const queueSize = syncStatus === "syncing" || (syncStatus === "failed" && totalCount)
       ? `${Math.max(0.1, ((syncedCount || 0) / 300).toFixed ? Number(((syncedCount || 0) / 300).toFixed(1)) : 0)} GB`
       : isReady || hasAnyStagedFiles
         ? `${Math.max(0.1, ((syncedCount || totalCount || 0) / 300).toFixed ? Number(((syncedCount || totalCount || 0) / 300).toFixed(1)) : 0)} GB`
-        : "4.2 GB";
+        : "—";
 
     const actionText = syncStatus === "syncing"
       ? `Syncing ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} files`
@@ -246,7 +292,7 @@ export function createDriveRender(app, stateApi, utilsApi) {
       queueMeta,
       queueName,
       queueSize,
-      queueTag: appState.driveCameraLocation || "Site 1",
+      queueTag: appState.driveCameraLocation || "—",
       stagingDir,
       syncStatus,
       syncedCount,
@@ -268,7 +314,7 @@ export function createDriveRender(app, stateApi, utilsApi) {
     if (helperEl) {
       let helperText = "Choose a folder from Google Drive to continue.";
       if (!appState.googleAuthActive || !appState.driveConnected) {
-        helperText = "";
+        helperText = "Connect Google Drive to use Drive import.";
       } else if (appState.driveSyncState.status === "syncing") {
         helperText = `Syncing ${formatNumber(appState.driveSyncState.downloaded_count)} of ${formatNumber(appState.driveSyncState.discovered_count || 0)} image(s) from ${appState.selectedDriveFolder?.name || "the selected folder"}...`;
       } else if (appState.driveFoldersLoading) {
@@ -303,10 +349,37 @@ export function createDriveRender(app, stateApi, utilsApi) {
     const summaryFolder = document.getElementById("drive-summary-folder");
     const summaryRange = document.getElementById("drive-summary-range");
     const summaryLimit = document.getElementById("drive-summary-limit");
-    if (summaryConnection) summaryConnection.textContent = appState.driveConnected ? "Connected" : appState.googleAuthActive ? "Confirm" : "Offline";
+    if (summaryConnection) summaryConnection.textContent = appState.driveConnected ? "Connected" : appState.googleAuthActive ? "Confirm" : "Connect Google Drive";
     if (summaryFolder) summaryFolder.textContent = appState.selectedDriveFolder?.name || "None";
-    if (summaryRange) summaryRange.textContent = appState.driveCameraLocation || "Site 1";
+    if (summaryRange) summaryRange.textContent = appState.driveCameraLocation || "—";
     if (summaryLimit) summaryLimit.textContent = appliedLimitLabel;
+    const syncSummaryFolder = document.getElementById("drive-sync-summary-folder");
+    const syncSummarySite = document.getElementById("drive-sync-summary-site");
+    const syncSummaryLimit = document.getElementById("drive-sync-summary-limit");
+    const syncSummaryDestination = document.getElementById("drive-sync-summary-destination");
+    const syncSummaryConnection = document.getElementById("drive-sync-summary-connection");
+    const syncSummaryStatus = document.getElementById("drive-sync-summary-status");
+    const driveRuntimeWarning = document.getElementById("drive-runtime-warning");
+    const destinationFolder = appState.driveCameraLocation
+      ? `data/staging/${appState.driveCameraLocation}`
+      : "data/staging/<camera_site>";
+    const connectionStatus = appState.driveConnected ? "Connected" : appState.googleAuthActive ? "Confirm Drive" : "Connect Google Drive";
+    const lastSyncStatus = queuePresentation.syncStatus === "syncing"
+      ? `Syncing ${formatNumber(syncedCount)} / ${formatNumber(totalCount || syncedCount || 0)}`
+      : queuePresentation.syncStatus === "failed"
+        ? "Failed"
+        : queuePresentation.isReady
+          ? "Ready"
+          : "Idle";
+    if (syncSummaryFolder) syncSummaryFolder.textContent = appState.selectedDriveFolder?.name || "None";
+    if (syncSummarySite) syncSummarySite.textContent = appState.driveCameraLocation || "—";
+    if (syncSummaryLimit) syncSummaryLimit.textContent = appliedLimitLabel;
+    if (syncSummaryDestination) syncSummaryDestination.textContent = destinationFolder;
+    if (syncSummaryConnection) syncSummaryConnection.textContent = connectionStatus;
+    if (syncSummaryStatus) syncSummaryStatus.textContent = lastSyncStatus;
+    if (driveRuntimeWarning) {
+      driveRuntimeWarning.hidden = !appState.backendHealth?.connected || Boolean(appState.backendHealth?.pipelineRuntimeReady);
+    }
     document.getElementById("drive-badge")?.classList.toggle("connected", appState.driveConnected);
     document.getElementById("drive-badge")?.classList.toggle("disconnected", !appState.driveConnected);
     document.getElementById("drive-dot")?.classList.toggle("on", appState.driveConnected);
@@ -318,7 +391,11 @@ export function createDriveRender(app, stateApi, utilsApi) {
     const syncTitle = document.getElementById("drive-sync-banner-title");
     const syncSub = document.getElementById("drive-sync-banner-sub");
     if (syncTitle) syncTitle.textContent = appState.driveConnected ? "Google Drive connected" : appState.googleAuthActive ? "Confirm Google Drive" : "Google Drive not connected";
-    if (syncSub) syncSub.textContent = appState.driveConnected ? `${driveEmail} · Choose a folder, set a sync limit if needed, and sync when ready.` : "";
+    if (syncSub) {
+      syncSub.textContent = appState.driveConnected
+        ? `${driveEmail} · Choose a folder, set a limit if needed, then sync.`
+        : "Connect Google Drive to use Drive import.";
+    }
     const queueCount = document.getElementById("drive-sync-queue-count");
     if (queueCount) queueCount.textContent = queuePresentation.queueCount;
     const selectedName = document.getElementById("drive-folder-selected-name");
@@ -336,17 +413,21 @@ export function createDriveRender(app, stateApi, utilsApi) {
     const currentFile = document.getElementById("drive-sync-current-file");
     const syncStatus = queuePresentation.syncStatus;
     const syncPercent = queuePresentation.progressPercent;
-    const usePlaceholderQueue = !appState.selectedDriveFolder?.name && syncStatus !== "syncing" && syncStatus !== "failed";
+    const usePlaceholderQueue = false;
     if (selectedName) selectedName.textContent = queuePresentation.queueName;
     if (selectedMeta) selectedMeta.textContent = queuePresentation.queueMeta;
     if (queueTag) queueTag.textContent = queuePresentation.queueTag;
     if (queueSize) queueSize.textContent = queuePresentation.queueSize;
     if (statusText) statusText.textContent = queuePresentation.actionText;
-    if (statusTextVisible) statusTextVisible.innerHTML = queuePresentation.isReady
-      ? `<strong>${formatNumber(queuePresentation.syncedCount || queuePresentation.totalCount || 0)} files</strong> ready for processing`
-      : syncStatus === "syncing"
-        ? `<strong>${formatNumber(queuePresentation.syncedCount)}</strong> files synced · processing`
-        : `<strong>600 files</strong> remaining · ~3 min left`;
+    if (statusTextVisible) {
+      statusTextVisible.innerHTML = !appState.googleAuthActive || !appState.driveConnected
+        ? "Connect Google Drive to use Drive import."
+        : queuePresentation.isReady
+          ? `<strong>${formatNumber(queuePresentation.syncedCount || queuePresentation.totalCount || 0)} files</strong> ready for processing`
+          : syncStatus === "syncing"
+            ? `<strong>${formatNumber(queuePresentation.syncedCount)}</strong> files synced · processing`
+            : queuePresentation.actionText;
+    }
     if (statusSub) statusSub.textContent = queuePresentation.hiddenStatusSub;
     if (statusPill) {
       statusPill.className = `status-pill ${usePlaceholderQueue || queuePresentation.isReady ? "pill-green" : syncStatus === "syncing" ? "pill-yellow" : syncStatus === "failed" ? "pill-red" : "pill-slate"}`;

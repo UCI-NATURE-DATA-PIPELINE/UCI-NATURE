@@ -15,19 +15,6 @@ export function createDriveEvents(app, renderApi) {
     }
   }
 
-  function togglePause(button) {
-    appState.uploadPaused = !appState.uploadPaused;
-    document.getElementById("upload-status-pill").textContent = appState.uploadPaused ? "Paused" : "Uploading…";
-    document.getElementById("pause-label").textContent = appState.uploadPaused ? "Resume" : "Pause";
-    if (!appState.uploadPaused) {
-      document.getElementById("upload-prog-fill")?.style.setProperty("width", "68%");
-      const pct = document.getElementById("upload-prog-pct");
-      if (pct) pct.textContent = "68%";
-    }
-    button.dataset.paused = appState.uploadPaused ? "true" : "false";
-    app.showToast(appState.uploadPaused ? "Upload paused" : "Upload resumed", appState.uploadPaused ? "warn" : "success");
-  }
-
   function selectLocCard(card) {
     card?.closest(".location-select-grid")?.querySelectorAll(".loc-select-card").forEach((element) => element.classList.remove("selected"));
     card.classList.add("selected");
@@ -35,7 +22,7 @@ export function createDriveEvents(app, renderApi) {
 
   function selectDriveLocCard(card) {
     if (appState.driveSyncState.status === "syncing") return app.showToast("Wait for the current Drive sync to finish before changing folder settings", "warn");
-    if (!appState.googleAuthActive) return app.showToast("Sign in with Google first", "warn");
+    if (!appState.googleAuthActive) return app.showToast("Connect Google Drive first", "warn");
     if (!appState.driveConnected) return app.showToast("Confirm the Google Drive connection first", "warn");
     if (card?.dataset?.driveCreate === "true") {
       appState.driveCreateSiteMode = true;
@@ -62,7 +49,6 @@ export function createDriveEvents(app, renderApi) {
     handleDriveManualSelectionKeydown,
     selectLocCard,
     selectDriveLocCard,
-    switchUploadTab,
-    togglePause
+    switchUploadTab
   };
 }

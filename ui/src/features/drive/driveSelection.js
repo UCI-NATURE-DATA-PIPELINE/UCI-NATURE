@@ -1,6 +1,7 @@
 /** Drive feature data-loading and folder-selection workflows. */
 import { appState } from "../../state/appState.js";
 import { normalizeDriveFolderOptions, normalizeDriveSyncStatus } from "../../utils/helpers.js";
+import { normalizeCameraSiteName } from "./cameraSiteName.js";
 
 export function createDriveSelection(app, api, stateApi, renderApi) {
   async function loadSelectedDriveFolderState({ silent = true } = {}) {
@@ -75,7 +76,8 @@ export function createDriveSelection(app, api, stateApi, renderApi) {
     if (!folder) return app.showToast("Selected Drive folder was not found in the current list", "warn");
     if (selectEl) selectEl.disabled = true;
     try {
-      const response = await api.saveSelectedDriveFolder(folder.id, folder.name, appState.driveCameraLocation || null, appState.driveSyncLimit);
+      const cameraLocation = appState.driveCreateSiteMode ? appState.driveCameraLocation : normalizeCameraSiteName(folder.name);
+      const response = await api.saveSelectedDriveFolder(folder.id, folder.name, cameraLocation || null, appState.driveSyncLimit);
       appState.selectedDriveFolder = response?.folder || folder;
       stateApi.applySelectedDriveFolderSettings(appState.selectedDriveFolder);
       appState.driveSyncState = normalizeDriveSyncStatus(response?.sync || null);

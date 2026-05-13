@@ -5,18 +5,13 @@ import {
   normalizeDriveSyncLimitValue,
   normalizeDriveSyncStatus
 } from "../../utils/helpers.js";
+import { normalizeCameraSiteName } from "./cameraSiteName.js";
 
 export function createDriveSettings(app, api, stateApi, renderApi, selectionApi) {
-  const DRIVE_SITE_PRESETS = ["Site 1", "Site 2", "Site 3", "Site 4"];
-
-  function isPresetDriveSite(value) {
-    return DRIVE_SITE_PRESETS.includes(String(value || "").trim());
-  }
-
   async function applyManualDriveFolderSelection() {
     const inputEl = document.getElementById("drive-folder-manual-input");
     const rawValue = String(inputEl?.value || "").trim();
-    if (!appState.googleAuthActive) return app.showToast("Sign in with Google first", "warn");
+    if (!appState.googleAuthActive) return app.showToast("Connect Google Drive first", "warn");
     if (!appState.driveConnected) return app.showToast("Confirm the Google Drive connection first", "warn");
     if (appState.driveSyncState.status === "syncing") return app.showToast("Wait for the current Drive sync to finish before changing folders", "warn");
     if (!rawValue) {
@@ -30,9 +25,13 @@ export function createDriveSettings(app, api, stateApi, renderApi, selectionApi)
     renderApi.syncDriveManualSelectionState();
 
     try {
-      const response = await api.saveSelectedDriveFolder(rawValue, null, appState.driveCameraLocation || null, appState.driveSyncLimit);
+      const cameraLocation = appState.driveCreateSiteMode ? appState.driveCameraLocation : null;
+      const response = await api.saveSelectedDriveFolder(rawValue, null, cameraLocation || null, appState.driveSyncLimit);
       const folder = response?.folder || null;
       if (!folder?.id || !folder?.name) throw new Error("The backend did not return a valid Google Drive folder.");
+      if (!appState.driveCreateSiteMode) {
+        folder.camera_location = normalizeCameraSiteName(folder.name);
+      }
       appState.selectedDriveFolder = folder;
       stateApi.applySelectedDriveFolderSettings(appState.selectedDriveFolder);
       appState.availableDriveFolders = normalizeDriveFolderOptions([...appState.availableDriveFolders, folder]);
@@ -71,8 +70,8 @@ export function createDriveSettings(app, api, stateApi, renderApi, selectionApi)
       return app.showToast("Wait for the current Drive sync to finish before changing sync settings", "warn");
     }
 
-    appState.driveCameraLocation = String(locationEl?.value || "").trim();
-    appState.driveCreateSiteMode = Boolean(appState.driveCameraLocation && !isPresetDriveSite(appState.driveCameraLocation));
+    appState.driveCameraLocation = normalizeCameraSiteName(locationEl?.value || "");
+    appState.driveCreateSiteMode = Boolean(appState.driveCreateSiteMode && appState.driveCameraLocation);
     appState.driveSyncLimit = normalizeDriveSyncLimitValue(limitEl?.value || "");
     if (!appState.selectedDriveFolder?.id || (!appState.signedInUser && !localStorage.getItem("token"))) {
       renderApi.syncDriveUI();
@@ -98,11 +97,11 @@ export function createDriveSettings(app, api, stateApi, renderApi, selectionApi)
 
   async function applyDriveCustomSite() {
     const inputEl = document.getElementById("drive-site-custom-input");
+    const modalEl = document.getElementById("drive-site-modal");
+    const modalInputEl = document.getElementById("drive-site-modal-input");
     const locationEl = document.getElementById("drive-camera-location-select");
-    const customSite = String(inputEl?.value || "").trim();
+    const customSite = normalizeCameraSiteName(modalInputEl?.value || inputEl?.value || "");
     if (appState.driveSyncState.status === "syncing") return app.showToast("Wait for the current Drive sync to finish before changing folder settings", "warn");
-    if (!appState.googleAuthActive) return app.showToast("Sign in with Google first", "warn");
-    if (!appState.driveConnected) return app.showToast("Confirm the Google Drive connection first", "warn");
     if (!customSite) {
       renderApi.syncDriveCustomSiteState();
       return app.showToast("Enter a camera site name first", "warn");
@@ -120,17 +119,59 @@ export function createDriveSettings(app, api, stateApi, renderApi, selectionApi)
     locationEl.value = customSite;
     await handleDriveSyncSettingsChange();
     renderApi.syncDriveCustomSiteState();
+    if (modalEl) modalEl.hidden = true;
     app.showToast(`Using camera site: ${customSite}`, "success");
   }
 
   function handleDriveCustomSiteKeydown(event) {
+    if (event?.key === "Escape") {
+      event.preventDefault();
+      closeDriveSiteModal();
+      return;
+    }
     if (event?.key !== "Enter") return;
     event.preventDefault();
     void applyDriveCustomSite();
   }
 
+  function openDriveSiteModal() {
+    const modalEl = document.getElementById("drive-site-modal");
+    const modalInputEl = document.getElementById("drive-site-modal-input");
+    if (!modalEl || !modalInputEl) return;
+    const currentCustom = appState.driveCreateSiteMode ? appState.driveCameraLocation : "";
+    modalEl.hidden = false;
+    modalInputEl.value = currentCustom || "";
+    window.requestAnimationFrame(() => modalInputEl.focus());
+  }
+
+  function closeDriveSiteModal() {
+    const modalEl = document.getElementById("drive-site-modal");
+    if (modalEl) modalEl.hidden = true;
+  }
+
+  async function selectDriveAutoSite() {
+    const locationEl = document.getElementById("drive-camera-location-select");
+    const detectedSite = normalizeCameraSiteName(appState.selectedDriveFolder?.name || "");
+    if (appState.driveSyncState.status === "syncing") return app.showToast("Wait for the current Drive sync to finish before changing folder settings", "warn");
+    if (!appState.googleAuthActive) return app.showToast("Connect Google Drive first", "warn");
+    if (!appState.driveConnected) return app.showToast("Confirm the Google Drive connection first", "warn");
+    if (!detectedSite) return app.showToast("Pick a Drive folder first", "warn");
+    appState.driveCreateSiteMode = false;
+    appState.driveCameraLocation = detectedSite;
+    if (locationEl) {
+      if (!Array.from(locationEl.options).some((option) => option.value === detectedSite)) {
+        const option = document.createElement("option");
+        option.value = detectedSite;
+        option.textContent = detectedSite;
+        locationEl.appendChild(option);
+      }
+      locationEl.value = detectedSite;
+    }
+    await handleDriveSyncSettingsChange();
+  }
+
   async function refreshDriveFolders() {
-    if (!appState.googleAuthActive) return app.showToast("Sign in with Google first", "warn");
+    if (!appState.googleAuthActive) return app.showToast("Connect Google Drive first", "warn");
     if (!appState.driveConnected) return app.showToast("Confirm the Google Drive connection first", "warn");
     if (appState.driveSyncState.status === "syncing") return app.showToast("Wait for the current Drive sync to finish before refreshing folders", "warn");
     const result = await selectionApi.hydrateDriveFolderSelection();
@@ -143,9 +184,12 @@ export function createDriveSettings(app, api, stateApi, renderApi, selectionApi)
   return {
     applyManualDriveFolderSelection,
     applyDriveCustomSite,
+    closeDriveSiteModal,
     handleDriveCustomSiteKeydown,
     handleDriveDateRangeChange,
     handleDriveSyncSettingsChange,
-    refreshDriveFolders
+    openDriveSiteModal,
+    refreshDriveFolders,
+    selectDriveAutoSite
   };
 }

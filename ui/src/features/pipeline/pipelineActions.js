@@ -29,7 +29,7 @@ export function createPipelineActions(app, api, renderApi, loadPipelineStatus, l
     if (sourceMode === "drive") {
       await app.features.drive.loadSelectedDriveFolderState({ silent: true });
       await app.features.drive.loadDriveSyncStatus({ silent: true });
-      if (!app.state.driveConnected) return app.showToast(app.state.googleAuthActive ? "Confirm the Google Drive connection before running the pipeline from Drive mode" : "Sign in with Google before running the pipeline from Drive mode", "warn");
+      if (!app.state.driveConnected) return app.showToast(app.state.googleAuthActive ? "Confirm the Google Drive connection before running the pipeline from Drive mode" : "Connect Google Drive before running the pipeline from Drive mode", "warn");
       if (!app.state.selectedDriveFolder?.id) return app.showToast("Select a Google Drive folder before running the pipeline from Drive mode", "warn");
       if (app.state.driveSyncState.status === "syncing") return app.showToast("Drive sync is still in progress. Wait for it to finish before starting the pipeline.", "warn");
     }

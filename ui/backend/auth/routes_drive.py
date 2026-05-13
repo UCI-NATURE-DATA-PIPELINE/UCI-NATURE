@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import datetime
+import re
 import threading
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -77,7 +78,17 @@ def _normalize_sync_limit(value: Optional[int]) -> Optional[int]:
 
 
 def _normalize_camera_location(value: Optional[str]) -> Optional[str]:
-    normalized = str(value or "").strip()
+    normalized = re.sub(r"\.(zip|tar|tgz|tar\.gz)$", "", str(value or "").strip(), flags=re.IGNORECASE)
+    normalized = re.sub(r"[^A-Za-z0-9._\- ]+", " ", normalized)
+    normalized = re.sub(r"(?:^|[_\-\s])\d{8}T\d{6}Z(?:$|[_\-\s])", " ", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"^[\s_-]*(?:19|20)\d{2}[\s_-]+\d{1,2}[\s_-]+\d{1,2}[\s_-]*", "", normalized)
+    normalized = re.sub(r"[\s_-]+(?:19|20)\d{2}[\s_-]+\d{1,2}(?:[\s_-]+\d{1,2})?[\s_-]*$", "", normalized)
+    normalized = re.sub(r"(?:[\s_-]+\d+){2,}$", "", normalized)
+    normalized = re.sub(r"[_-]+", " ", normalized)
+    normalized = re.sub(r"([a-z])([A-Z])", r"\1 \2", normalized)
+    normalized = re.sub(r"([A-Za-z])(\d+)", r"\1 \2", normalized)
+    normalized = re.sub(r"(\d+)([A-Za-z])", r"\1 \2", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()[:64]
     return normalized or None
 
 
@@ -776,6 +787,9 @@ def sync_selected_folder(
 
     selected_folder["max_files"] = _normalize_sync_limit(
         payload.max_files if payload is not None else selected_folder.get("max_files")
+    )
+    selected_folder["camera_location"] = _normalize_camera_location(
+        selected_folder.get("camera_location") or selected_folder.get("name")
     )
     session["selected_drive_folder"] = selected_folder
     write_session(session, session_key)

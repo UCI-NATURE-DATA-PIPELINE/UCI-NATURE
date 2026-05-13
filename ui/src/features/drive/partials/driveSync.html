@@ -22,7 +22,7 @@
       <div class="upload-summary-lbl">Selected Folder</div>
     </div>
     <div class="upload-summary-card">
-      <div class="upload-summary-val" id="drive-summary-range" style="color:var(--muted)">Site 1</div>
+      <div class="upload-summary-val" id="drive-summary-range" style="color:var(--muted)">—</div>
       <div class="upload-summary-lbl">Camera Site</div>
     </div>
     <div class="upload-summary-card">
@@ -34,8 +34,8 @@
   <div class="upload-workspace-grid drive-upload-grid">
     <div class="upload-main-column drive-main-column">
       <div class="card card-p">
-        <div class="card-title">Step 1 · Select a Drive folder</div>
-        <div class="upload-subtitle">Pick the camera folder in Google Drive. We'll stage it on the backend and run the pipeline locally.</div>
+        <div class="card-title">Choose a Drive folder</div>
+        <div class="upload-subtitle">Select a research folder and stage its images for processing.</div>
         <div class="drive-top-controls" id="drive-sync-controls">
           <div class="drive-field-group drive-folder-group">
             <div class="drive-field-label-row">
@@ -89,7 +89,7 @@
           <div class="drive-sync-banner-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7L12 12L22 7L12 2Z" fill="#4285F4"/><path d="M2 17L12 22L22 17" stroke="#34A853" stroke-width="2.2" stroke-linecap="round"/><path d="M2 12L12 17L22 12" stroke="#FBBC05" stroke-width="2.2" stroke-linecap="round"/></svg></div>
           <div class="drive-sync-banner-copy">
             <div class="drive-sync-banner-title" id="drive-sync-banner-title">Google Drive connected</div>
-            <div class="drive-sync-banner-sub" id="drive-sync-banner-sub">Choose a folder, set a sync limit if needed, and sync when ready.</div>
+            <div class="drive-sync-banner-sub" id="drive-sync-banner-sub">Choose a folder, set a limit if needed, then sync.</div>
           </div>
           <button class="drive-sync-reconnect-btn" id="drive-sync-reconnect-btn" style="display:none" onclick="reconnectDrive()">Reconnect</button>
         </div>
@@ -97,7 +97,7 @@
 
       <div class="card card-p">
         <div class="upload-card-head">
-          <div class="card-title">Step 2 · Sync into backend staging</div>
+          <div class="card-title">Stage Drive images</div>
           <span class="upload-card-meta" id="drive-sync-queue-count">No sync started yet</span>
         </div>
 
@@ -119,7 +119,7 @@
                 <span id="drive-sync-status-text">No Drive folder selected · sync Drive source first</span>
               </div>
             </div>
-            <span class="queue-location-tag" id="drive-queue-tag">Site 1</span>
+            <span class="queue-location-tag" id="drive-queue-tag">—</span>
             <span class="queue-size-text" id="drive-queue-size">—</span>
             <div class="queue-prog-wrap">
               <div class="queue-prog-bar"><div class="queue-prog-fill drive-queue-prog-fill" id="drive-sync-progress-fill" style="width:0%"></div></div>
@@ -140,37 +140,72 @@
 
     <div class="upload-side-column drive-side-column">
       <div class="card card-p">
-        <div class="card-title">Assign camera site</div>
-        <div class="upload-sidebar-intro">Which camera site should this sync use?</div>
-        <div class="drive-hidden-select-wrap">
-          <label class="visually-hidden" for="drive-camera-location-select">Camera site</label>
-          <select class="drive-input" id="drive-camera-location-select" onchange="handleDriveSyncSettingsChange()">
-            <option value="Site 1">Site 1</option>
-            <option value="Site 2">Site 2</option>
-            <option value="Site 3">Site 3</option>
-            <option value="Site 4">Site 4</option>
-          </select>
+        <div class="upload-site-title-row">
+          <div class="card-title">Camera site</div>
+          <span class="upload-site-help-wrap">
+            <button type="button" class="upload-site-help" id="drive-site-help-btn" aria-label="Camera site help" aria-expanded="false" aria-controls="drive-site-help-popover">?</button>
+            <span class="upload-site-popover" id="drive-site-help-popover" role="tooltip">
+              We use the folder, ZIP, or Drive folder name as the camera site. You can also create one manually.
+            </span>
+          </span>
         </div>
-        <div class="location-select-grid upload-location-grid-two drive-location-grid">
-          <div class="loc-select-card drive-loc-select-card selected" data-drive-location="Site 1" onclick="selectDriveLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 1</div></div>
-          <div class="loc-select-card drive-loc-select-card" data-drive-location="Site 2" onclick="selectDriveLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 2</div></div>
-          <div class="loc-select-card drive-loc-select-card" data-drive-location="Site 3" onclick="selectDriveLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 3</div></div>
-          <div class="loc-select-card drive-loc-select-card" data-drive-location="Site 4" onclick="selectDriveLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 4</div></div>
+        <div class="upload-site-panel">
+          <button type="button" class="loc-select-card upload-site-card drive-loc-select-card selected" id="drive-site-auto-card" data-drive-location="" onclick="selectDriveAutoSite()" aria-pressed="true">
+            <span>
+              <span class="loc-select-name">Auto-detect camera site</span>
+              <strong class="upload-site-card-value" id="drive-site-detected">Pick a Drive folder first</strong>
+            </span>
+            <span class="loc-select-check" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          </button>
+          <button type="button" class="loc-select-card upload-site-card drive-loc-select-card" id="drive-site-create-card" data-drive-create="true" onclick="openDriveSiteModal()" aria-pressed="false">
+            <span>
+              <span class="loc-select-name">Create new camera site</span>
+              <strong class="upload-site-card-value muted" id="drive-site-custom-value">No site selected</strong>
+            </span>
+            <span class="loc-select-check" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          </button>
+          <input
+            class="visually-hidden"
+            id="drive-site-custom-input"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            oninput="syncDriveCustomSiteState()"
+            onkeydown="handleDriveCustomSiteKeydown(event)"
+          />
+          <button class="visually-hidden" id="drive-site-custom-btn" onclick="applyDriveCustomSite()">Use this name</button>
+          <span id="drive-site-helper-path" class="visually-hidden">data/staging/&lt;site&gt;/</span>
         </div>
-        <div class="drive-site-create-row" id="drive-site-custom-row" hidden>
-          <input class="drive-input" id="drive-site-custom-input" type="text" placeholder="Create a new camera site" oninput="syncDriveCustomSiteState()" onkeydown="handleDriveCustomSiteKeydown(event)">
-          <button class="btn btn-outline btn-sm" id="drive-site-custom-btn" onclick="applyDriveCustomSite()">Create site</button>
-        </div>
+        <!-- Hidden mirror of the chosen site name so the existing
+             handleDriveSyncSettingsChange() reader keeps working. -->
+        <select class="visually-hidden" id="drive-camera-location-select" aria-hidden="true" tabindex="-1" onchange="handleDriveSyncSettingsChange()"></select>
+        <div id="drive-site-custom-row" hidden></div>
         <div class="drive-helper-text" id="drive-site-helper" hidden></div>
       </div>
 
+      <div class="upload-site-modal-overlay" id="drive-site-modal" onclick="if (event.target === this) closeDriveSiteModal()" hidden>
+        <div class="upload-site-modal" role="dialog" aria-modal="true" aria-labelledby="drive-site-modal-title">
+          <div class="upload-site-modal-title" id="drive-site-modal-title">Create camera site</div>
+          <input type="text" id="drive-site-modal-input" class="upload-site-input" placeholder="Camera site name" autocomplete="off" spellcheck="false" onkeydown="handleDriveCustomSiteKeydown(event)" />
+          <div class="upload-site-modal-actions">
+            <button type="button" class="btn btn-outline btn-sm" onclick="closeDriveSiteModal()">Cancel</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="applyDriveCustomSite()">Save</button>
+          </div>
+        </div>
+      </div>
+
       <div class="card card-p">
-        <div class="card-title">How this works</div>
-        <div class="upload-session-info-list">
-          <div class="upload-session-info-row"><span>1. Connect</span><strong>Sign in with Google</strong></div>
-          <div class="upload-session-info-row"><span>2. Pick folder</span><strong>From My Drive or Shared</strong></div>
-          <div class="upload-session-info-row"><span>3. Sync</span><strong>Stages files locally</strong></div>
-          <div class="upload-session-info-row upload-session-info-row-accent"><span>4. Process</span><strong>Run Model · CSV export</strong></div>
+        <div class="card-title">Sync summary</div>
+        <div class="upload-summary-list">
+          <div class="upload-summary-row"><span>Selected Drive folder</span><strong id="drive-sync-summary-folder">None</strong></div>
+          <div class="upload-summary-row"><span>Camera site</span><strong id="drive-sync-summary-site">—</strong></div>
+          <div class="upload-summary-row"><span>Sync limit</span><strong id="drive-sync-summary-limit">All files</strong></div>
+          <div class="upload-summary-row"><span>Destination folder</span><strong id="drive-sync-summary-destination">data/staging/&lt;camera_site&gt;</strong></div>
+          <div class="upload-summary-row"><span>Connection status</span><strong id="drive-sync-summary-connection">Offline</strong></div>
+          <div class="upload-summary-row"><span>Last sync status</span><strong id="drive-sync-summary-status">Idle</strong></div>
+        </div>
+        <div class="upload-runtime-warning" id="drive-runtime-warning" hidden>
+          Model runtime not ready. Uploads can still be staged, but processing will require SpeciesNet.
         </div>
       </div>
 

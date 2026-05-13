@@ -9,20 +9,14 @@ export const DRIVE_MANUAL_FOLDER_HINT =
   "Paste a Google Drive folder link or raw folder ID if it doesn’t appear in the dropdown.";
 
 export const projectLabels = {
-  uci: "Field Research Program",
-  other: "Shared Wildlife Survey"
+  uci: "UCI Nature Wildlife Camera Project"
 };
 
 export const driveProfiles = {
   uci: {
-    driveName: "Field Camera Archive",
-    driveEmail: "field.research@example.org",
-    projectLabel: "Field Research Program"
-  },
-  other: {
-    driveName: "Shared Wildlife Survey Archive",
-    driveEmail: "survey.team@example.org",
-    projectLabel: "Shared Wildlife Survey"
+    driveName: "UCI Nature Wildlife Drive",
+    driveEmail: "",
+    projectLabel: "UCI Nature Wildlife Camera Project"
   }
 };
 
@@ -74,7 +68,6 @@ export const appState = {
   currentDriveProfile: null,
   googleAuthActive: false,
   googleAuthUser: null,
-  usingMockAuth: false,
   pipelineStatus: null,
   pipelineResults: null,
   availableDriveFolders: [],

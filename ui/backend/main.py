@@ -4,6 +4,7 @@ from datetime import datetime
 import importlib.util
 import io
 from pathlib import Path, PurePosixPath
+import re
 import sys
 from typing import Any, Dict, List, Optional, Tuple, Union
 import csv
@@ -196,7 +197,7 @@ def require_auth(authorization: Optional[str]):
 
 
 class LoginRequest(BaseModel):
-    email: str
+    email: Optional[str] = None
     project: str
 
 
@@ -1192,13 +1193,15 @@ def api_health():
 @app.post("/api/auth/login")
 def login(data: LoginRequest):
     token = create_session_token()
+    email = (data.email or "").strip()
 
     session = read_session(token)
     session["token"] = token
     session["user"] = {
-        "email": data.email,
         "project": data.project,
     }
+    if email:
+        session["user"]["email"] = email
     session["drive_connected"] = session.get("drive_connected", False)
     session["drive_name"] = session.get("drive_name")
     session["drive_email"] = session.get("drive_email")
@@ -1278,9 +1281,26 @@ UPLOAD_ZIP_SKIP_PREFIXES = ("__MACOSX/", "__MACOSX\\")
 UPLOAD_ZIP_SKIP_BASENAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
 
+def _normalize_camera_site_name(value: Optional[str]) -> str:
+    """Reduce common exported archive/folder names to a readable camera site."""
+    cleaned = re.sub(r"\.(zip|tar|tgz|tar\.gz)$", "", (value or "").strip(), flags=re.IGNORECASE)
+    if not cleaned:
+        return ""
+    cleaned = re.sub(r"[^A-Za-z0-9._\- ]+", " ", cleaned)
+    cleaned = re.sub(r"(?:^|[_\-\s])\d{8}T\d{6}Z(?:$|[_\-\s])", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"^[\s_-]*(?:19|20)\d{2}[\s_-]+\d{1,2}[\s_-]+\d{1,2}[\s_-]*", "", cleaned)
+    cleaned = re.sub(r"[\s_-]+(?:19|20)\d{2}[\s_-]+\d{1,2}(?:[\s_-]+\d{1,2})?[\s_-]*$", "", cleaned)
+    cleaned = re.sub(r"(?:[\s_-]+\d+){2,}$", "", cleaned)
+    cleaned = re.sub(r"[_-]+", " ", cleaned)
+    cleaned = re.sub(r"([a-z])([A-Z])", r"\1 \2", cleaned)
+    cleaned = re.sub(r"([A-Za-z])(\d+)", r"\1 \2", cleaned)
+    cleaned = re.sub(r"(\d+)([A-Za-z])", r"\1 \2", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()[:64]
+
+
 def _safe_camera_subdir(value: Optional[str]) -> str:
     """Sanitize a user-provided camera/site label into a safe folder name."""
-    cleaned = (value or "").strip()
+    cleaned = _normalize_camera_site_name(value)
     if not cleaned:
         return ""
     # Keep alphanumerics, dashes, underscores, dots and spaces — drop the rest.

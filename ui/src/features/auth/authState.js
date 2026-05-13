@@ -4,10 +4,12 @@ import { appState, driveProfiles, projectLabels } from "../../state/appState.js"
 
 export function createAuthState(app) {
   function getDriveProfile() {
+    // Fallback values used only if a future project slug is selected before
+    // its profile has been registered in driveProfiles.
     return driveProfiles[appState.selectedProject] || {
-      driveName: "Field Camera Archive",
-      driveEmail: "field.research@example.org",
-      projectLabel: projectLabels[appState.selectedProject] || "Selected Project"
+      driveName: "UCI Nature Wildlife Drive",
+      driveEmail: "",
+      projectLabel: projectLabels[appState.selectedProject] || "UCI Nature Wildlife Camera Project"
     };
   }
 

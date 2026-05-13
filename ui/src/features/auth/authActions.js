@@ -13,22 +13,28 @@ export function createAuthActions(app, api, stateApi, renderApi) {
       if (!card.classList.contains("disabled")) card.classList.remove("selected");
     });
     cardEl.classList.add("selected");
-    appState.selectedProject = cardEl.id === "proj-uci" ? "uci" : "other";
+    // Only one project is configured today (UCI Nature Wildlife Camera
+    // Project). Add more mappings here as new projects come online.
+    appState.selectedProject = "uci";
     appState.currentDriveProfile = null;
     renderApi.updateDriveConfirmation();
   }
 
-  async function simulateOAuth() {
+  /**
+   * Kicks off the real Google OAuth flow: mint a backend session via
+   * /api/auth/login, fetch the Google auth URL from /api/auth/google/start,
+   * then redirect the browser.
+   */
+  async function startGoogleSignIn() {
     const oauthBtn = document.getElementById("oauth-btn");
     const originalText = oauthBtn?.innerHTML;
     renderApi.setLoginStep(3);
     if (oauthBtn) {
       oauthBtn.disabled = true;
-      oauthBtn.textContent = "Signing in...";
+      oauthBtn.textContent = "Connecting...";
     }
 
     appState.currentDriveProfile = stateApi.getDriveProfile();
-    appState.usingMockAuth = false;
 
     try {
       const response = await api.loginUser(appState.currentDriveProfile.driveEmail, appState.selectedProject);
@@ -58,9 +64,57 @@ export function createAuthActions(app, api, stateApi, renderApi) {
     }
   }
 
+  async function continueWithoutGoogleDrive() {
+    const localBtn = document.getElementById("local-login-btn");
+    const originalHtml = localBtn?.innerHTML;
+    if (localBtn) {
+      localBtn.disabled = true;
+      localBtn.textContent = "Opening Manual Upload...";
+    }
+
+    try {
+      const response = await api.loginUser("", appState.selectedProject);
+      const sessionToken = String(response?.access_token || "").trim();
+      if (!sessionToken) throw new Error("The backend did not return a session token.");
+      localStorage.setItem("token", sessionToken);
+
+      appState.signedInUser = response?.user || { project: appState.selectedProject };
+      appState.currentDriveProfile = null;
+      appState.googleAuthActive = false;
+      appState.googleAuthUser = null;
+      appState.driveConnected = false;
+      appState.selectedDriveFolder = null;
+      appState.availableDriveFolders = [];
+      appState.driveFoldersLoading = false;
+      appState.driveFolderError = "";
+      appState.driveSyncState = createEmptyDriveSyncState();
+      appState.driveManualSelectionFeedback = null;
+      appState.driveManualSelectionPending = false;
+      app.features.drive.stopDriveSyncPolling();
+      app.features.drive.applySelectedDriveFolderSettings(null);
+      app.features.drive.applyDriveSyncStatus(null);
+      app.features.drive.syncDriveUI();
+      app.features.drive.renderDriveFolderSelection();
+      renderApi.updateDriveConfirmation();
+      renderApi.enterDashboard();
+      app.features.drive.switchUploadTab("manual");
+      await app.showPage("upload");
+      app.showToast("Manual Upload is ready. Google Drive is not connected.", "success");
+    } catch (error) {
+      localStorage.removeItem("token");
+      appState.signedInUser = null;
+      app.showToast(error.message || "Unable to start a local session", "warn");
+    } finally {
+      if (localBtn) {
+        localBtn.innerHTML = originalHtml;
+        localBtn.disabled = false;
+      }
+    }
+  }
+
   async function confirmDrive() {
     if (!appState.googleAuthActive) {
-      app.showToast("Sign in with Google before confirming Drive", "warn");
+      app.showToast("Connect Google Drive before confirming Drive", "warn");
       return;
     }
 
@@ -78,7 +132,6 @@ export function createAuthActions(app, api, stateApi, renderApi) {
         selected_folder: response?.selected_folder
       });
       appState.selectedDriveFolder = response?.selected_folder || appState.selectedDriveFolder;
-      appState.usingMockAuth = false;
       app.features.drive.setDriveManualSelectionFeedback(null);
       app.features.drive.syncDriveUI();
       await app.features.drive.hydrateDriveFolderSelection({ silent: true });
@@ -105,7 +158,6 @@ export function createAuthActions(app, api, stateApi, renderApi) {
     appState.currentDriveProfile = null;
     appState.googleAuthActive = false;
     appState.googleAuthUser = null;
-    appState.usingMockAuth = false;
     appState.selectedDriveFolder = null;
     app.features.drive.applySelectedDriveFolderSettings(null);
     appState.availableDriveFolders = [];
@@ -141,10 +193,11 @@ export function createAuthActions(app, api, stateApi, renderApi) {
   return {
     clearOAuthQueryParams,
     confirmDrive,
+    continueWithoutGoogleDrive,
     openDriveModal,
     reconnectDrive,
     selectProject,
-    simulateOAuth,
+    startGoogleSignIn,
     switchAccount
   };
 }

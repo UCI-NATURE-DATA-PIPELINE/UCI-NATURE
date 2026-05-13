@@ -15,7 +15,7 @@
   <div class="upload-summary-strip">
     <div class="upload-summary-card"><div class="upload-summary-val" id="upload-manual-total">0</div><div class="upload-summary-lbl">Selected Images</div></div>
     <div class="upload-summary-card"><div class="upload-summary-val" id="upload-manual-size" style="color:var(--blue)">—</div><div class="upload-summary-lbl">Total Size</div></div>
-    <div class="upload-summary-card"><div class="upload-summary-val" id="upload-manual-site" style="color:var(--muted)">Site 1</div><div class="upload-summary-lbl">Camera Site</div></div>
+    <div class="upload-summary-card"><div class="upload-summary-val" id="upload-manual-site" style="color:var(--muted)">—</div><div class="upload-summary-lbl">Camera Site</div></div>
     <div class="upload-summary-card"><div class="upload-summary-val" id="upload-manual-status" style="color:var(--muted)">Ready</div><div class="upload-summary-lbl">Status</div></div>
   </div>
 
@@ -23,25 +23,36 @@
     <div class="upload-main-column">
       <div class="card card-p">
         <div class="card-title">Upload wildlife camera images</div>
-        <div class="upload-subtitle">Drop image files or a ZIP archive. Results will be exported as a CSV after processing.</div>
+        <div class="upload-subtitle">Drop image files, folders, or ZIP archives. Each detected batch is queued separately.</div>
         <div class="upload-dropzone" id="upload-zone" role="button" tabindex="0" aria-label="Drop wildlife camera images or click to browse">
           <div class="dropzone-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#718096" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></div>
           <div class="dropzone-title">Drop images, a folder, or a ZIP file here</div>
           <div class="dropzone-sub">From SD card, USB drive, or local folder</div>
-          <div class="dropzone-meta">JPG · PNG · TIFF · ZIP &nbsp;·&nbsp; Results will be exported as a CSV</div>
+          <div class="dropzone-meta">JPG · PNG · TIFF · ZIP &nbsp;·&nbsp; Queue for processing when ready</div>
           <div class="dropzone-actions">
-            <button type="button" class="dropzone-browse-btn" id="upload-browse-files-btn">
+            <button type="button" class="dropzone-browse-btn" id="upload-browse-menu-btn" aria-haspopup="true" aria-expanded="false">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-              Browse files
+              Browse files or folder
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
-            <button type="button" class="dropzone-browse-btn dropzone-browse-secondary" id="upload-browse-folder-btn">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-              Browse folder
-            </button>
+            <div class="dropzone-browse-menu" id="upload-browse-menu" hidden>
+              <button type="button" class="dropzone-browse-menu-item" id="upload-browse-files-btn">Choose files or ZIP</button>
+              <button type="button" class="dropzone-browse-menu-item" id="upload-browse-folder-btn">Choose folder</button>
+            </div>
           </div>
           <!-- Hidden inputs: one for files (incl. ZIP), one for whole-folder selection. -->
           <input type="file" id="upload-file-input" class="visually-hidden" multiple accept=".jpg,.jpeg,.png,.tif,.tiff,.zip,image/jpeg,image/png,image/tiff,application/zip" />
           <input type="file" id="upload-folder-input" class="visually-hidden" multiple webkitdirectory directory />
+        </div>
+      </div>
+
+      <div class="card card-p upload-import-summary-card" id="upload-import-summary-card">
+        <div class="card-title">Import Summary</div>
+        <div class="upload-import-summary-grid">
+          <div class="upload-summary-row"><span>Uploads detected</span><strong id="upload-import-summary-uploads">0</strong></div>
+          <div class="upload-summary-row"><span>Camera sites detected</span><strong id="upload-import-summary-sites">0</strong></div>
+          <div class="upload-summary-row"><span>Total images</span><strong id="upload-import-summary-images">0</strong></div>
+          <div class="upload-summary-row"><span>Upload types</span><strong id="upload-import-summary-types">—</strong></div>
         </div>
       </div>
 
@@ -64,7 +75,7 @@
             <button type="button" class="btn btn-outline btn-sm" id="upload-clear-btn" disabled>Clear</button>
             <button type="button" class="btn btn-primary btn-sm btn-upload" id="upload-start-btn" disabled>
               <span class="btn-icon btn-icon-upload" style="margin-right:5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></span>
-              Process selected images
+              Queue for Processing
             </button>
           </div>
         </div>
@@ -78,23 +89,59 @@
 
     <div class="upload-side-column">
       <div class="card card-p">
-        <div class="card-title">Assign Camera Site</div>
-        <div class="upload-sidebar-intro">Which camera site should this batch use? Files are grouped under this site in the backend staging folder.</div>
-        <div class="location-select-grid upload-location-grid-two">
-          <div class="loc-select-card selected" data-upload-site="Site 1" onclick="selectLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 1</div></div>
-          <div class="loc-select-card" data-upload-site="Site 2" onclick="selectLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 2</div></div>
-          <div class="loc-select-card" data-upload-site="Site 3" onclick="selectLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 3</div></div>
-          <div class="loc-select-card" data-upload-site="Site 4" onclick="selectLocCard(this)"><div class="loc-select-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="loc-select-name">Site 4</div></div>
+        <div class="upload-site-title-row">
+          <div class="card-title">Camera site</div>
+          <span class="upload-site-help-wrap">
+            <button type="button" class="upload-site-help" id="upload-site-help-btn" aria-label="Camera site help" aria-expanded="false" aria-controls="upload-site-help-popover">?</button>
+            <span class="upload-site-popover" id="upload-site-help-popover" role="tooltip">
+              We use the folder, ZIP, or Drive folder name as the camera site. You can also create one manually.
+            </span>
+          </span>
+        </div>
+        <div class="upload-site-panel">
+          <button type="button" class="loc-select-card upload-site-card selected" id="upload-site-auto-card" aria-pressed="true">
+            <span>
+              <span class="loc-select-name">Auto-detect camera site</span>
+              <strong class="upload-site-card-value" id="upload-site-detected">Auto-detect unavailable</strong>
+            </span>
+            <span class="loc-select-check" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          </button>
+          <button type="button" class="loc-select-card upload-site-card" id="upload-site-create-card" aria-pressed="false">
+            <span>
+              <span class="loc-select-name">Create new camera site</span>
+              <strong class="upload-site-card-value muted" id="upload-site-custom-value">No site selected</strong>
+            </span>
+            <span class="loc-select-check" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          </button>
+          <input type="text" id="upload-site-input" class="visually-hidden" autocomplete="off" spellcheck="false" />
+          <button type="button" id="upload-site-apply-btn" class="visually-hidden">Use this name</button>
+          <span id="upload-site-helper-path" class="visually-hidden">data/staging/&lt;site&gt;/</span>
+        </div>
+      </div>
+
+      <div class="upload-site-modal-overlay" id="upload-site-modal" hidden>
+        <div class="upload-site-modal" role="dialog" aria-modal="true" aria-labelledby="upload-site-modal-title">
+          <div class="upload-site-modal-title" id="upload-site-modal-title">Create camera site</div>
+          <input type="text" id="upload-site-modal-input" class="upload-site-input" placeholder="Camera site name" autocomplete="off" spellcheck="false" />
+          <div class="upload-site-modal-actions">
+            <button type="button" class="btn btn-outline btn-sm" id="upload-site-modal-cancel">Cancel</button>
+            <button type="button" class="btn btn-primary btn-sm" id="upload-site-modal-save">Save</button>
+          </div>
         </div>
       </div>
 
       <div class="card card-p">
-        <div class="card-title">What happens next</div>
-        <div class="upload-session-info-list">
-          <div class="upload-session-info-row"><span>1. Upload</span><strong>Images sent to backend staging</strong></div>
-          <div class="upload-session-info-row"><span>2. Process</span><strong>Run Model page</strong></div>
-          <div class="upload-session-info-row"><span>3. Review</span><strong>Validate &amp; correct labels</strong></div>
-          <div class="upload-session-info-row upload-session-info-row-accent"><span>4. Export</span><strong>CSV results per site</strong></div>
+        <div class="card-title">Upload summary</div>
+        <div class="upload-summary-list">
+          <div class="upload-summary-row"><span>Camera site</span><strong id="upload-summary-site">—</strong></div>
+          <div class="upload-summary-row"><span>Files selected</span><strong id="upload-summary-files">0</strong></div>
+          <div class="upload-summary-row"><span>Total size</span><strong id="upload-summary-size">—</strong></div>
+          <div class="upload-summary-row"><span>Upload type</span><strong id="upload-summary-type">—</strong></div>
+          <div class="upload-summary-row"><span>Staging location</span><strong id="upload-summary-staging">data/staging/&lt;camera_site&gt;</strong></div>
+          <div class="upload-summary-row"><span>Last upload status</span><strong id="upload-summary-last-status">Ready</strong></div>
+        </div>
+        <div class="upload-runtime-warning" id="upload-runtime-warning" hidden>
+          Model runtime not ready. Uploads can still be staged, but processing will require SpeciesNet.
         </div>
       </div>
 
