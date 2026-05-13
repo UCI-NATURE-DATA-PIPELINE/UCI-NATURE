@@ -40,11 +40,98 @@
 
 /* Main 3-col layout */
 .review-layout {
-  display:grid;
+  display: grid;
   grid-template-columns: 252px 1fr 272px;
-  gap:12px;
-  height:calc(100vh - var(--header-h) - 130px);
+  gap: 12px;
+  min-height: calc(100vh - var(--header-h) - 130px);  
+  align-items: start;                                   
 }
+
+/* Queue layout */
+
+.review-queue-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.review-queue-item:hover {
+  background: #F7FAFC;
+  border-color: #CBD5E0;
+}
+
+.review-queue-item.selected {
+  background: #EBF8FF;
+  border-color: #90CDF4;
+  border-width: 1.5px;
+}
+
+/* Top row: filename + confidence pill */
+.rq-row-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rq-file {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;  
+}
+
+.rq-confidence-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.rq-confidence-pill.high { background: #F0FFF4; color: #276749; }
+.rq-confidence-pill.med  { background: #FFFAF0; color: #C05621; }
+.rq-confidence-pill.low  { background: #FFF5F5; color: #C53030; }
+
+/* Bottom row: species + status badge */
+.rq-row-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rq-species {
+  font-size: 11.5px;
+  color: var(--muted);
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rq-status-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+.rq-status-badge.pending   { background: #FFFAF0; color: #C05621; }
+.rq-status-badge.confirmed { background: #F0FFF4; color: #276749; }
+.rq-status-badge.flagged   { background: #FFF5F5; color: #C53030; }
 
 /* Left — Queue Panel */
 .review-queue { overflow-y:auto; display:flex; flex-direction:column; gap:0; }
@@ -100,12 +187,14 @@
 .rq-burst-sub   { font-size:10.5px; color:#C05621; margin-top:1px; }
 
 /* Center — Image Viewer */
-.review-viewer-wrap { display:flex; flex-direction:column; gap:10px; min-height:0; }
+.review-viewer-wrap { display:flex; flex-direction:column; gap:10px; min-height:0; justify-content: flex-start; }
 .review-viewer {
-  flex:1; border-radius:14px; background:#1A202C;
+  border-radius:14px; background:#1A202C;
   display:flex; flex-direction:column; align-items:center;
   justify-content:center; position:relative; overflow:hidden;
-  min-height:320px;
+  width: 100%;
+  aspect-ratio: 16 / 10;   /* matches typical trail-cam aspect ratio */
+  max-height: calc(100vh - var(--header-h) - 200px);
 }
 .review-viewer-img {
   font-size:120px; line-height:1;
@@ -147,5 +236,3 @@
 .review-nav-btn:hover { background:#F7FAFC; border-color:#CBD5E0; box-shadow:0 2px 8px rgba(0,0,0,.06); }
 .review-nav-btn:disabled { opacity:.35; cursor:not-allowed; }
 .review-nav-counter { font-size:13px; color:var(--muted); min-width:60px; text-align:center; font-weight:500; }
-
-/* Right — Classification + Actions Panel */

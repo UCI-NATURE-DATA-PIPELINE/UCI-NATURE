@@ -25,6 +25,13 @@ function getImageUrlFromPath(csvFilePath) {
   }
 }
 
+function getConfidenceClass(confidence) {
+  // const num = Number(confidence) || 0;
+  // if (num >= 70) return "high";
+  // if (num >= 40) return "med";
+  return "high";
+}
+
 export function createReviewRender(app, stateApi) {
   function renderReviewQueue() {
     const container = document.getElementById("review-queue-list");
@@ -50,9 +57,27 @@ export function createReviewRender(app, stateApi) {
         renderReviewQueue();
         renderReviewViewer();
       };
-      row.innerHTML = `<div class="rq-top"><div class="rq-file">${item.filename}</div><div class="rq-confidence">${item.confidence}%</div></div><div class="rq-sub">${item.species} · ${item.camera}</div><div class="rq-status ${item.status}">${capitalize(item.status)}</div>`;
+      row.innerHTML = `
+        <div class="rq-row-main">
+          <div class="rq-file" title="${item.filename}">${item.filename}</div>
+          <div class="rq-confidence-pill ${getConfidenceClass(item.confidence)}">${item.confidence}%</div>
+        </div>
+        <div class="rq-row-sub">
+          <span class="rq-species">${item.species || "Unknown"}</span>
+          <span class="rq-status-badge ${item.status}">${capitalize(item.status)}</span>
+        </div>
+      `;
       container.appendChild(row);
     });
+
+    const selectedRow = container.children[app.state.reviewIndex];
+      if (selectedRow) {
+        selectedRow.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+          inline: "nearest"
+      });
+    }
 
     const allDone = app.state.reviewItems.length > 0 && app.state.reviewItems.every((item) => item.status === "confirmed" || item.status === "flagged");
     if (completeBanner) completeBanner.style.display = allDone ? "block" : "none";
@@ -86,7 +111,9 @@ export function createReviewRender(app, stateApi) {
       imageContainer.style.justifyContent = "center";
       // imageContainer.style.padding = "5x"; 
       
-      imageContainer.innerHTML = `<img src="${dynamicUrl}" alt="${item.species}" style="max-width: 100%; max-height: 90%; object-fit: contain; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);" />`;
+      imageContainer.innerHTML = `<img src="${dynamicUrl}" alt="${item.species}" 
+        style="width: 95%; height: 95%; object-fit: contain; 
+        border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);" />`;
     }
     setText("viewer-filename", item.filename);
     setText("viewer-pos", `${app.state.reviewIndex + 1} of ${items.length}`);

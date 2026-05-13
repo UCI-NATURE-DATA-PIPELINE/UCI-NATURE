@@ -1,4 +1,17 @@
-.review-panel { display:flex; flex-direction:column; gap:10px; overflow-y:auto; }
+.review-panel { 
+  display: flex; 
+  flex-direction: column; 
+  gap: 10px; 
+  align-items: stretch;
+}
+
+.review-panel #normal-panel,
+.review-panel .card {
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  flex-shrink: 0;
+}
 
 .review-species-overlay {
   position: absolute;
@@ -31,6 +44,12 @@
 .review-det-val.no     { color:var(--muted); }
 .review-det-val.warn   { color:#E53E3E; }
 
+.review-conf-overlay,
+.review-species-overlay,
+.review-human-overlay {
+  z-index: 10;
+}
+
 /* Species display + edit */
 .review-species-display {
   display:flex; align-items:center; justify-content:space-between;
@@ -59,11 +78,27 @@
 .review-edit-actions { display:flex; gap:7px; }
 
 /* Metadata */
-.review-meta { font-size:12.5px; }
-.review-meta .meta-row { display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--border); }
-.review-meta .meta-row:last-child { border-bottom:none; }
+.review-meta {
+  width: 100%;
+}
+
+.review-meta .meta-row {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
 .meta-key { color:var(--muted); font-size:12px; }
-.meta-val { font-weight:500; color:var(--text); font-size:12.5px; display:inline-flex; align-items:center; gap:5px; }
+.meta-val {
+  font-weight: 500;
+  color: var(--text);
+  font-size: 12.5px;
+  display: block;
+  text-align: right;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  flex: 1 1 0;
+}
 
 /* Three main action buttons */
 .review-action-bar { display:flex; flex-direction:column; gap:8px; padding-top:4px; }
