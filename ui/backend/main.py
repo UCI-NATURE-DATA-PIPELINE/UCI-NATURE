@@ -39,7 +39,7 @@ from scripts.pipeline.simple_outputs import (
     USER_FACING_FILENAMES_ORDERED,
     normalize_species,
 )
-from scripts.pipeline.validate_output import validate_csv
+from scripts.pipeline.validate_output import validate_csv, REQUIRED_COLUMNS
 from ui.backend.auth.routes import get_google_auth_state, router as google_auth_router
 from ui.backend.auth.routes_drive import (
     complete_drive_sync_operation,
