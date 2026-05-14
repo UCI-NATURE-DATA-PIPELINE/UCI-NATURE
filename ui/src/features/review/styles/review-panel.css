@@ -132,3 +132,99 @@
 .review-btn-flag:hover { background:#FED7D7; border-color:#FC8181; }
 .review-btn-confirm:active, .review-btn-edit:active, .review-btn-flag:active { transform:scale(.97); }
 
+/* Species combobox */
+.species-combobox {
+  position: relative;
+  width: 100%;
+}
+
+.species-combobox-input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1.5px solid var(--blue);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  background: #fff;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.species-combobox-input:focus {
+  box-shadow: 0 0 0 3px rgba(0, 100, 164, 0.12);
+}
+
+.species-combobox-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  display: none;
+}
+
+.species-combobox-dropdown.open {
+  display: block;
+}
+
+.species-combobox-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  transition: background 0.12s;
+}
+
+.species-combobox-option:hover {
+  background: #F7FAFC;
+}
+
+.species-combobox-option.highlighted {
+  background: #EBF8FF;
+}
+
+.species-combobox-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.species-combobox-remove:hover {
+  background: #FFF5F5;
+  color: #C53030;
+}
+
+.species-combobox-empty {
+  padding: 10px 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.species-combobox-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  margin-left: 2px;
+}

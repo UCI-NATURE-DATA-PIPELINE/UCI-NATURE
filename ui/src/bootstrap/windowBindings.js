@@ -53,6 +53,9 @@ export function bindGlobals(app, showPage) {
   window.openSpeciesEdit = app.features.review.openSpeciesEdit;
   window.saveSpeciesEdit = app.features.review.saveSpeciesEdit;
   window.cancelSpeciesEdit = app.features.review.cancelSpeciesEdit;
+  window.showSpeciesDropdown = app.features.review.showSpeciesDropdown;
+  window.hideSpeciesDropdown = app.features.review.hideSpeciesDropdown;
+  window.filterSpeciesOptions = app.features.review.filterSpeciesOptions;
   window.undoLastAction = app.features.review.undoLastAction;
   window.askBurstConfirm = app.features.review.askBurstConfirm;
   window.burstAction = app.features.review.burstAction;

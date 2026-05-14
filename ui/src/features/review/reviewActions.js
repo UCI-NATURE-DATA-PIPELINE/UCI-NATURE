@@ -12,15 +12,68 @@ export function createReviewActions(app, api, stateApi, renderApi) {
     renderApi.renderReviewViewer();
   }
 
-  function reviewAction(action) {
-    const item = stateApi.currentItems()[app.state.reviewIndex];
+  // function reviewAction(action) {
+  //   const item = stateApi.currentItems()[app.state.reviewIndex];
+  //   if (!item) return;
+  //   const originalStatus = item.status;
+  //   item.status = action === "confirm" ? "confirmed" : "flagged";
+  //   app.state.lastUndoAction = { type: "review-status", itemId: item.id, oldStatus: originalStatus };
+  //   renderApi.showUndoToast(action === "confirm" ? "Confirmed" : "Flagged");
+  //   renderApi.renderReviewQueue();
+  //   renderApi.renderReviewViewer();
+  // }
+
+  async function reviewAction(action) {
+    const items = stateApi.currentItems();
+    const item = items[app.state.reviewIndex];
     if (!item) return;
+    
     const originalStatus = item.status;
-    item.status = action === "confirm" ? "confirmed" : "flagged";
+    const newStatus = action === "confirm" ? "confirmed" : "flagged";
+    const wasInFilter = true;  // the item was visible at this index
+    
+    // Update UI immediately for instant feedback
+    item.status = newStatus;
     app.state.lastUndoAction = { type: "review-status", itemId: item.id, oldStatus: originalStatus };
     renderApi.showUndoToast(action === "confirm" ? "Confirmed" : "Flagged");
+    
+    // Re-fetch the filtered list after the status change
+    const newItems = stateApi.currentItems();
+    
+    // If the item is still in the filtered list (e.g., "All" filter),
+    // advance forward. Otherwise stay on the same index since items shifted up.
+    const itemStillVisible = newItems.some(i => i.id === item.id);
+    
+    if (itemStillVisible) {
+      // Item is still here (e.g., on "All" filter) → advance to next
+      if (app.state.reviewIndex < newItems.length - 1) {
+        app.state.reviewIndex += 1;
+      }
+    } else {
+      // Item disappeared (e.g., on "Pending" filter) → stay at current index
+      // because everything shifted up. But cap to the new list length.
+      if (app.state.reviewIndex >= newItems.length) {
+        app.state.reviewIndex = Math.max(0, newItems.length - 1);
+      }
+    }
+    
     renderApi.renderReviewQueue();
     renderApi.renderReviewViewer();
+    
+    // Save to backend
+    try {
+      await api.saveReviewDecision({
+        filepath: item.filepath || item.file_path || item.filename,
+        reviewStatus: newStatus,
+        reviewedSpecies: item.species || "",
+        reviewReason: action === "flag" ? "user_flagged_uncertain" : "user_confirmed"
+      });
+    } catch (error) {
+      item.status = originalStatus;
+      renderApi.renderReviewQueue();
+      renderApi.renderReviewViewer();
+      app.showToast(`Failed to save decision: ${error.message}`, "warn");
+    }
   }
 
   function undoLastAction() {

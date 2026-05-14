@@ -33,11 +33,41 @@ function getConfidenceClass(confidence) {
 }
 
 export function createReviewRender(app, stateApi) {
+  function renderReviewProgressBar() {
+    const items = app.state.reviewItems || [];
+    const total = items.length;
+    const reviewed = items.filter(i => i.status === "confirmed" || i.status === "flagged").length;
+    const remaining = total - reviewed;
+    const humanCount = items.filter(i => i.humanDetected).length;
+    const percent = total > 0 ? (reviewed / total) * 100 : 0;
+  
+    const progressFill = document.querySelector(".review-progress-bar-fill");
+    if (progressFill) progressFill.style.width = `${percent}%`;
+  
+    const reviewedChip = document.querySelector(".review-stat-chip.blue");
+    if (reviewedChip) reviewedChip.textContent = `${reviewed} / ${total} reviewed`;
+  
+    const remainingChip = document.querySelector(".review-stat-chip.gray");
+    if (remainingChip) remainingChip.textContent = `${remaining} remaining`;
+  
+    const humanChip = document.getElementById("human-chip");
+    if (humanChip) {
+      // Preserve the icon, just update the count
+      humanChip.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>${humanCount} Human Detection${humanCount === 1 ? "" : "s"}
+      `;
+    }
+  }
   function renderReviewQueue() {
     const container = document.getElementById("review-queue-list");
     const count = document.getElementById("queue-count");
     const completeBanner = document.getElementById("review-complete-banner");
     if (!container) return;
+
+    renderReviewProgressBar();
 
     const items = stateApi.currentItems();
     container.innerHTML = "";
@@ -131,6 +161,21 @@ export function createReviewRender(app, stateApi) {
     setText("species-name", item.species);
     setText("species-certainty", `${item.confidence}% model certainty`);
     setHTML("review-meta", `<div class="meta-row"><span class="meta-key">Filename</span><span class="meta-val">${item.filename}</span></div><div class="meta-row"><span class="meta-key">Site</span><span class="meta-val">${item.camera}</span></div><div class="meta-row"><span class="meta-key">Date / Time</span><span class="meta-val">${item.datetime}</span></div><div class="meta-row"><span class="meta-key">Burst Group</span><span class="meta-val">${item.burst}</span></div><div class="meta-row"><span class="meta-key">Status</span><span class="meta-val">${capitalize(item.status)}</span></div>`);
+    const detAnimal = document.getElementById("det-animal");
+    if (detAnimal) {
+      detAnimal.className = item.animalDetected ? "review-det-val yes" : "review-det-val no";
+      detAnimal.innerHTML = item.animalDetected
+        ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>Yes`
+        : `<span style="font-size:14px;line-height:1;font-weight:500">—</span>No`;
+    }
+
+    const detHuman = document.getElementById("det-human");
+    if (detHuman) {
+      detHuman.className = item.humanDetected ? "review-det-val warn" : "review-det-val no";
+      detHuman.innerHTML = item.humanDetected
+        ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>Yes`
+        : `<span style="font-size:14px;line-height:1;font-weight:500">—</span>No`;
+    }
     document.getElementById("human-overlay")?.style.setProperty("display", item.humanDetected ? "inline-flex" : "none");
   }
 

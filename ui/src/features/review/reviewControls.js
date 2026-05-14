@@ -1,4 +1,33 @@
 /** Review controls for filters, species edits, and burst-review confirmation flows. */
+
+const SPECIES_STORAGE_KEY = "uci_nature_species_list";
+const DEFAULT_SPECIES = ["Coyote", "Raccoon", "Squirrel", "Bird", "Opossum", "Rabbit", "Unknown", "Empty (No Animal)"];
+
+function loadSpeciesList() {
+  try {
+    const stored = localStorage.getItem(SPECIES_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) { /* fall through */ }
+  return [...DEFAULT_SPECIES];
+}
+
+function saveSpeciesList(list) {
+  try {
+    localStorage.setItem(SPECIES_STORAGE_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.warn("Failed to save species list", e);
+  }
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
 export function createReviewControls(app, stateApi, renderApi, actionApi) {
   function askFlagConfirm() {
     app.openConfirmModal({
@@ -29,25 +58,133 @@ export function createReviewControls(app, stateApi, renderApi, actionApi) {
     });
   }
 
+  function renderSpeciesDropdown(filterText = "") {
+    const dropdown = document.getElementById("species-dropdown");
+    if (!dropdown) return;
+    const list = loadSpeciesList();
+    const filter = filterText.trim().toLowerCase();
+    const matches = filter
+      ? list.filter(s => s.toLowerCase().includes(filter))
+      : list;
+
+    if (matches.length === 0) {
+      dropdown.innerHTML = `<div class="species-combobox-empty">No matches. Press Enter to add "${escapeHtml(filterText)}"</div>`;
+      return;
+    }
+
+    dropdown.innerHTML = matches.map(species => `
+      <div class="species-combobox-option" data-species="${escapeHtml(species)}">
+        <span class="species-combobox-label">${escapeHtml(species)}</span>
+        <button class="species-combobox-remove" data-remove="${escapeHtml(species)}" title="Remove this species" aria-label="Remove ${escapeHtml(species)}">×</button>
+      </div>
+    `).join("");
+
+    dropdown.querySelectorAll(".species-combobox-option").forEach(opt => {
+      opt.addEventListener("click", (e) => {
+        if (e.target.classList.contains("species-combobox-remove")) return;
+        const input = document.getElementById("species-input");
+        if (input) input.value = opt.dataset.species;
+        hideSpeciesDropdown();
+      });
+    });
+
+    dropdown.querySelectorAll(".species-combobox-remove").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const speciesToRemove = btn.dataset.remove;
+        const updated = loadSpeciesList().filter(s => s !== speciesToRemove);
+        saveSpeciesList(updated);
+        const input = document.getElementById("species-input");
+        renderSpeciesDropdown(input ? input.value : "");
+      });
+    });
+  }
+
+  function handleOutsideClick(e) {
+    if (!e.target.closest(".species-combobox") && !e.target.closest(".review-edit-btn")) {
+      hideSpeciesDropdown();
+    }
+  }
+
+  function showSpeciesDropdown() {
+    const dropdown = document.getElementById("species-dropdown");
+    if (dropdown) dropdown.classList.add("open");
+    setTimeout(() => {
+      document.addEventListener("click", handleOutsideClick);
+    }, 0);
+  }
+
+  function hideSpeciesDropdown() {
+    const dropdown = document.getElementById("species-dropdown");
+    if (dropdown) dropdown.classList.remove("open");
+    document.removeEventListener("click", handleOutsideClick);
+  }
+
+  function filterSpeciesOptions() {
+    const input = document.getElementById("species-input");
+    if (!input) return;
+    renderSpeciesDropdown(input.value);
+  }
+
   function openSpeciesEdit() {
     const item = stateApi.currentItems()[app.state.reviewIndex];
     if (!item) return;
     document.getElementById("species-display")?.style.setProperty("display", "none");
     document.getElementById("species-edit")?.style.setProperty("display", "block");
-    const select = document.getElementById("species-select");
-    if (select) select.value = item.species;
+    const input = document.getElementById("species-input");
+    if (input) {
+      input.value = item.species || "";
+      input.focus();
+      input.select(); 
+      input.onkeydown = (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const value = input.value.trim();
+          if (!value) return;
+          const list = loadSpeciesList();
+          if (!list.some(s => s.toLowerCase() === value.toLowerCase())) {
+            list.push(value);
+            saveSpeciesList(list);
+            app.showToast(`Added "${value}" to species list`, "success");
+          }
+          renderSpeciesDropdown(input.value);
+        } else if (e.key === "Escape") {
+          hideSpeciesDropdown();
+        }
+      };
+    }
+    document.getElementById("species-dropdown")?.classList.add("open");
+    renderSpeciesDropdown("");
   }
 
   function saveSpeciesEdit() {
     const item = stateApi.currentItems()[app.state.reviewIndex];
-    const select = document.getElementById("species-select");
-    if (!item || !select) return;
-    item.species = select.value;
+    const input = document.getElementById("species-input");
+    if (!item || !input) return;
+    const newSpecies = input.value.trim();
+    if (!newSpecies) {
+      app.showToast("Please select or type a species name", "warn");
+      return;
+    }
+    item.species = newSpecies;
     document.getElementById("species-display")?.style.setProperty("display", "flex");
     document.getElementById("species-edit")?.style.setProperty("display", "none");
+    hideSpeciesDropdown();
     renderApi.renderReviewViewer();
     app.showToast("Species updated", "success");
   }
+
+  function cancelSpeciesEdit() {
+    document.getElementById("species-display")?.style.setProperty("display", "flex");
+    document.getElementById("species-edit")?.style.setProperty("display", "none");
+    hideSpeciesDropdown();
+  }
+
+  // document.addEventListener("click", (e) => {
+  //   if (!e.target.closest(".species-combobox")) {
+  //     hideSpeciesDropdown();
+  //   }
+  // });
 
   return {
     askBurstConfirm,
@@ -55,12 +192,12 @@ export function createReviewControls(app, stateApi, renderApi, actionApi) {
     burstAction: (kind) => {
       if (kind === "expand") app.showToast("Burst group expanded", "success");
     },
-    cancelSpeciesEdit: () => {
-      document.getElementById("species-display")?.style.setProperty("display", "flex");
-      document.getElementById("species-edit")?.style.setProperty("display", "none");
-    },
+    cancelSpeciesEdit,
     openSpeciesEdit,
     saveSpeciesEdit,
+    showSpeciesDropdown,
+    hideSpeciesDropdown,
+    filterSpeciesOptions,
     setRFilter: (element, value) => {
       app.state.reviewFilter = value;
       app.state.reviewIndex = 0;
