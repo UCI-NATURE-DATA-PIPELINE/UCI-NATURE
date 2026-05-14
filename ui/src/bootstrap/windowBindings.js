@@ -1,6 +1,6 @@
 /** App bootstrap helper for exposing legacy window callbacks expected by the markup. */
 import { closeConfirmModal, confirmModalOK } from "../components/common/confirmModal.js";
-import { openDP, pickDate } from "../components/common/datePickers.js";
+import { openDP, pickDate, dpNav } from "../components/common/datePickers.js";
 
 export function bindGlobals(app, showPage) {
   app.showPage = showPage;
@@ -10,6 +10,7 @@ export function bindGlobals(app, showPage) {
   window.closeConfirmModal = closeConfirmModal;
   window.confirmModalOK = confirmModalOK;
   window.openDP = openDP;
+  window.dpNav = dpNav;
   window.pickDate = pickDate;
   window.selectProject = app.features.auth.selectProject;
   // Login screen only advances forward via a single "Continue" button.
@@ -72,4 +73,6 @@ export function bindGlobals(app, showPage) {
   window.syncExportFilenamePreview = app.features.export.syncExportFilenamePreview;
   // Download a single export artifact CSV by filename
   window.downloadFile = app.features.export.downloadFile;
+  window.previewTimeCorrection = () => app.features.validate.previewTimeCorrection();
+  window.applyTimeCorrection = () => app.features.validate.applyTimeCorrection();
 }

@@ -3,6 +3,6 @@ import { getValidationIssues } from "../../services/api.js";
 
 export function createValidateApi() {
   return {
-    getValidationIssues
+    getValidationIssues: (opts) => getValidationIssues(opts)
   };
 }

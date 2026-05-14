@@ -18,7 +18,6 @@ export function createPageController(app) {
 
     if (pageName === "dashboard") {
       await Promise.all([
-        app.features.validate.loadValidationData(),
         app.features.dashboard.loadDashboardData()
       ]);
       return;
@@ -32,7 +31,7 @@ export function createPageController(app) {
       ]);
       return;
     }
-    if (pageName === "validate") return app.features.validate.loadValidationData({ showToastOnError: true });
+    if (pageName === "validate") return;
     if (pageName === "export") return app.features.export.loadExportData({ showToastOnError: true });
   }
 

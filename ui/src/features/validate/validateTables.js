@@ -7,8 +7,13 @@ export function createValidateTables(app) {
     if (!body) return;
     const files = (data?.files || []).filter((item) => Number(item.outside_range || 0) > 0);
     body.innerHTML = files.length
-      ? files.map((item) => `<tr><td>${escapeHtml(item.file)}</td><td>${escapeHtml((item.file || "Unknown").replace(/\.csv$/i, ""))}</td><td>Not available in current validation output</td><td>${formatNumber(item.outside_range)} row(s) flagged outside deployment interval</td></tr>`).join("")
-      : `<tr><td colspan="4" style="color:var(--muted)">No out-of-range rows were reported by the current validation artifacts.</td></tr>`;
+      ? files.map((item) => `<tr style="border-bottom:1px solid #F0F0F0">
+          <td style="padding:10px 8px">${escapeHtml(item.file)}</td>
+          <td style="padding:10px 8px">${escapeHtml((item.file || "Unknown").replace(/\.csv$/i, ""))}</td>
+          <td style="padding:10px 8px;color:#718096">${escapeHtml(item.sample_date || "—")}</td>
+          <td style="padding:10px 8px">${formatNumber(item.outside_range)} row(s) flagged outside deployment interval</td>
+        </tr>`).join("")
+      : `<tr><td colspan="4" style="padding:16px 8px;color:var(--muted)">No out-of-range rows were reported by the current validation artifacts.</td></tr>`;
   }
 
   function renderUnprocessedImages(data = app.state.validationData) {
@@ -16,8 +21,13 @@ export function createValidateTables(app) {
     if (!body) return;
     const unprocessed = Number(data?.unprocessed || 0);
     body.innerHTML = unprocessed
-      ? `<tr><td>manifest.csv</td><td>All locations</td><td>Not available in current validation output</td><td>${formatNumber(unprocessed)} image(s) are missing rows in ml_outputs.csv</td></tr>`
-      : `<tr><td colspan="4" style="color:var(--muted)">All manifest rows have corresponding ML output rows.</td></tr>`;
+      ? `<tr style="border-bottom:1px solid #F0F0F0">
+          <td style="padding:10px 8px">manifest.csv</td>
+          <td style="padding:10px 8px">All locations</td>
+          <td style="padding:10px 8px;color:#718096">—</td>
+          <td style="padding:10px 8px">${formatNumber(unprocessed)} image(s) are missing rows in ml_outputs.csv</td>
+        </tr>`
+      : `<tr><td colspan="4" style="padding:16px 8px;color:var(--muted)">All manifest rows have corresponding ML output rows.</td></tr>`;
   }
 
   return {
