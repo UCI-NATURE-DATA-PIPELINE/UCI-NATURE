@@ -154,8 +154,14 @@ export function getPipelineCurrentStepLabel(status) {
 }
 
 export function normalizeReviewItem(item) {
-  const species = (item?.species || "Unknown").trim() || "Unknown";
+  const species = (item?.species || "unknown").trim() || "unknown";
   const speciesLower = species.toLowerCase();
+  // Trust the backend `animal_detected` flag when present (the backend
+  // already simplifies labels and demotes uncertain blanks). Fall back to
+  // a token check for older payloads.
+  const animalDetected = item?.animal_detected != null
+    ? Boolean(item.animal_detected)
+    : !["blank", "human", "vehicle", "no cv result", "unknown", ""].includes(speciesLower);
 
   return {
     id: item?.id,
@@ -164,14 +170,16 @@ export function normalizeReviewItem(item) {
     file_path: item?.file_path,
     species,
     confidence: Number(item?.confidence || 0),
-    animalDetected: !["blank", "human", "vehicle", "no cv result"].includes(speciesLower),
-    humanDetected: speciesLower.includes("human"),
+    animalDetected,
+    humanDetected: speciesLower === "human",
     camera: item?.camera || "Unknown",
     datetime: item?.datetime || "Unknown",
     burst: item?.reason ? `Reason: ${item.reason}` : "Manual review item",
     status: item?.status || "pending",
     emoji: getSpeciesEmoji(speciesLower),
-    reason: item?.reason || ""
+    reason: item?.reason || "",
+    // Backend-supplied priority bucket (animals first, blanks last).
+    priority: typeof item?.priority === "number" ? item.priority : 99
   };
 }
 
@@ -187,7 +195,16 @@ export function getFilteredReviewItems(items, filters) {
   }
 
   if (filters.sortMode === "low-confidence") {
+    // Explicit user override — sort by ascending confidence regardless of
+    // the default animal-first ordering.
     nextItems.sort((left, right) => left.confidence - right.confidence);
+  } else {
+    // Default: keep the backend's animal-first priority ordering. Within
+    // a bucket, higher confidence wins.
+    nextItems.sort((left, right) => {
+      if (left.priority !== right.priority) return left.priority - right.priority;
+      return right.confidence - left.confidence;
+    });
   }
 
   return nextItems;

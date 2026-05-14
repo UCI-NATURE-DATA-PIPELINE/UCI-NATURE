@@ -10,6 +10,7 @@ from scripts.pipeline.extract_metadata import merge_metadata_with_ml_outputs
 from scripts.pipeline.make_manifest import append_manifest_file_ids_to_cache
 from scripts.pipeline.make_output import generate_output_csvs
 from scripts.pipeline.run_pipeline import resolve_source_root
+from scripts.pipeline.simple_outputs import build_simple_rows
 
 
 def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, object]]) -> None:
@@ -160,6 +161,103 @@ class PipelineBackendRefactorTests(unittest.TestCase):
             self.assertFalse(result["drive_index_present"])
             self.assertEqual(result["rows_written"], 1)
             self.assertTrue((out_dir / "all_results.csv").exists())
+            for filename in [
+                "final_results.csv",
+                "animal_results.csv",
+                "review_needed.csv",
+                "summary_by_camera.csv",
+            ]:
+                self.assertTrue((out_dir / filename).exists())
+
+    def test_simple_animal_results_exclude_human_and_vehicle_rows(self) -> None:
+        rows = build_simple_rows(
+            [
+                {
+                    "_filename": "coyote.jpg",
+                    "CameraName": "CameraA",
+                    "Date": "20260419",
+                    "Time": "08:00:00",
+                    "has_animal": "1",
+                    "Species": "Canis latrans",
+                    "model_certainty": "0.97",
+                    "# of Individuals": "1",
+                },
+                {
+                    "_filename": "person.jpg",
+                    "CameraName": "CameraA",
+                    "Date": "20260419",
+                    "Time": "08:01:00",
+                    "has_animal": "1",
+                    "Species": "human",
+                    "model_certainty": "0.99",
+                    "# of Individuals": "1",
+                },
+                {
+                    "_filename": "truck.jpg",
+                    "CameraName": "CameraA",
+                    "Date": "20260419",
+                    "Time": "08:02:00",
+                    "has_animal": "1",
+                    "Species": "vehicle",
+                    "model_certainty": "0.99",
+                    "# of Individuals": "1",
+                },
+            ]
+        )
+
+        animal_rows = [
+            row
+            for row in rows
+            if row["animal_detected"] == "yes"
+            and row["species"]
+            and row["species"] not in {"human", "vehicle", "blank"}
+        ]
+
+        self.assertEqual([row["species"] for row in rows], ["coyote", "human", "vehicle"])
+        self.assertEqual([row["image_name"] for row in animal_rows], ["coyote.jpg"])
+
+    def test_simple_rows_use_resolved_species_fields_without_collapsing_to_blank(self) -> None:
+        rows = build_simple_rows(
+            [
+                {
+                    "local_file_name": "coyote.jpg",
+                    "camera": "CameraA",
+                    "date": "20260419",
+                    "time": "08:00:00",
+                    "has_animal": "1",
+                    "species": "coyote",
+                    "model_certainty": "0.97",
+                },
+                {
+                    "local_file_name": "raccoon.jpg",
+                    "camera": "CameraA",
+                    "date": "20260419",
+                    "time": "08:01:00",
+                    "has_animal": "1",
+                    "species": "northern raccoon",
+                    "model_certainty": "0.88",
+                },
+                {
+                    "local_file_name": "blank.jpg",
+                    "camera": "CameraA",
+                    "date": "20260419",
+                    "time": "08:02:00",
+                    "has_animal": "0",
+                    "species": "blank",
+                    "model_certainty": "0.36",
+                    "count": "1",
+                },
+            ]
+        )
+
+        by_name = {row["image_name"]: row for row in rows}
+        self.assertEqual(by_name["coyote.jpg"]["animal_detected"], "yes")
+        self.assertEqual(by_name["coyote.jpg"]["species"], "coyote")
+        self.assertEqual(by_name["coyote.jpg"]["confidence"], "0.97")
+        self.assertEqual(by_name["raccoon.jpg"]["animal_detected"], "yes")
+        self.assertEqual(by_name["raccoon.jpg"]["species"], "raccoon")
+        self.assertEqual(by_name["blank.jpg"]["animal_detected"], "no")
+        self.assertEqual(by_name["blank.jpg"]["species"], "blank")
 
     def test_resolve_source_root_distinguishes_manual_and_staging_modes(self) -> None:
         with tempfile.TemporaryDirectory() as manual_dir, tempfile.TemporaryDirectory() as staging_dir:

@@ -20,11 +20,19 @@ from scripts.pipeline.review_decisions import (
     load_review_decisions,
     normalize_review_path,
 )
+from scripts.pipeline.simple_outputs import (
+    ANIMAL_RESULTS_CSV,
+    FINAL_RESULTS_CSV,
+    REVIEW_NEEDED_CSV,
+    SUMMARY_BY_CAMERA_CSV,
+    write_simple_outputs,
+)
 
 
 MANIFEST = Path("data/outputs/manifest.csv")
 META = Path("data/outputs/metadata.csv")
 DRIVE_INDEX = Path("data/outputs/drive_index.csv")
+SPECIESNET_RESULTS = Path("data/outputs/speciesnet_results.csv")
 
 OUT_DIR = Path("data/outputs/by_location")
 ANIMAL_UNCLASSIFIED = "animal_unclassified"
@@ -61,6 +69,115 @@ def load_csv_by_key(path: Path, key: str) -> dict:
             if value:
                 output[value] = row
     return output
+
+
+def _path_lookup_keys(*values: str) -> set[str]:
+    keys = set()
+    for value in values:
+        text = (value or "").strip()
+        if not text:
+            continue
+        keys.add(text)
+        keys.add(text.replace("\\", "/"))
+        try:
+            path = Path(text)
+            keys.add(path.name)
+            keys.add(str(path))
+            keys.add(str(path.resolve()))
+        except Exception:
+            pass
+    return {key for key in keys if key}
+
+
+def load_speciesnet_results(path: Path = SPECIESNET_RESULTS) -> dict[str, dict]:
+    """Load postprocessed resolved labels keyed by path and filename."""
+    lookup: dict[str, dict] = {}
+    if not path.exists():
+        return lookup
+
+    with open(path, "r", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            for key in _path_lookup_keys(
+                row.get("filepath", ""),
+                row.get("local_path", ""),
+                row.get("file_name", ""),
+                row.get("local_file_name", ""),
+            ):
+                lookup[key] = row
+    return lookup
+
+
+def lookup_speciesnet_result(lookup: dict[str, dict], *values: str) -> dict:
+    for key in _path_lookup_keys(*values):
+        if key in lookup:
+            return lookup[key]
+    return {}
+
+
+def _apply_resolved_prediction(metadata_row: dict, prediction_row: dict) -> dict:
+    """Overlay SpeciesNet postprocess fields onto metadata for output routing.
+
+    ``metadata.csv`` can legitimately contain top-level ``species=blank`` when
+    model output was rolled up to a broad taxonomy group. The postprocess CSV's
+    ``final_label`` / ``resolved_label`` is the resolved field the UI and simple
+    CSVs should use.
+    """
+    if not prediction_row:
+        return metadata_row
+
+    out = dict(metadata_row)
+    label = (
+        prediction_row.get("final_label")
+        or prediction_row.get("resolved_label")
+        or prediction_row.get("label_raw")
+        or ""
+    ).strip()
+    normalized_label = _normalize_species(label)
+    is_blank = _parse_bool(prediction_row.get("is_blank"))
+    is_human = _parse_bool(prediction_row.get("is_human")) or normalized_label == "human"
+    is_vehicle = normalized_label == "vehicle"
+
+    if normalized_label:
+        out["species"] = normalized_label
+        out["species_raw"] = (
+            prediction_row.get("resolved_label")
+            or prediction_row.get("final_label")
+            or prediction_row.get("label_raw")
+            or out.get("species_raw", "")
+        )
+    if prediction_row.get("resolved_score") or prediction_row.get("score"):
+        out["model_certainty"] = (
+            prediction_row.get("resolved_score")
+            or prediction_row.get("score")
+            or out.get("model_certainty", "")
+        )
+    if prediction_row.get("prediction_source") or prediction_row.get("resolved_source"):
+        out["prediction_source"] = (
+            prediction_row.get("prediction_source")
+            or prediction_row.get("resolved_source")
+            or out.get("prediction_source", "")
+        )
+        out["resolved_source"] = (
+            prediction_row.get("resolved_source")
+            or prediction_row.get("prediction_source")
+            or out.get("resolved_source", "")
+        )
+    if prediction_row.get("resolved_rank"):
+        out["species_rank"] = prediction_row.get("resolved_rank", "")
+
+    if is_human:
+        out["has_animal"] = "0"
+        out["has_human"] = "1"
+    elif is_blank or is_vehicle or normalized_label in {"", "blank", "no cv result"}:
+        out["has_animal"] = "0"
+        out["has_human"] = out.get("has_human", "0") or "0"
+    else:
+        out["has_animal"] = "1"
+        out["has_human"] = "0"
+        out["species_level"] = "1"
+        out["count"] = out.get("count") or out.get("animal_count") or "1"
+
+    return out
 
 
 def extract_image_number(filename: str) -> str:
@@ -366,6 +483,9 @@ def generate_output_csvs(
     manifest_by_id = load_csv_by_key(manifest_path, "file_id")
     meta_by_id = load_csv_by_key(meta_path, "file_id")
     meta_by_path = load_csv_by_key(meta_path, "local_path")
+    meta_by_local_name = load_csv_by_key(meta_path, "local_file_name")
+    meta_by_file_name = load_csv_by_key(meta_path, "file_name")
+    speciesnet_by_path = load_speciesnet_results(SPECIESNET_RESULTS)
     drive_by_id = (
         load_csv_by_key(drive_index_path, "file_id") if drive_index_path.exists() else {}
     )
@@ -441,7 +561,29 @@ def generate_output_csvs(
             filename = (row.get("file_name") or row.get("local_file_name") or "").strip()
 
             manifest_row = manifest_by_id.get(file_id, row) if file_id else row
-            metadata_row = meta_by_id.get(file_id) or meta_by_path.get((manifest_row.get("local_path") or row.get("local_path") or "").strip()) or {}
+            manifest_local_path = (
+                manifest_row.get("local_path") or row.get("local_path") or ""
+            ).strip()
+            manifest_local_name = (
+                manifest_row.get("local_file_name")
+                or row.get("local_file_name")
+                or filename
+            ).strip()
+            metadata_row = (
+                (meta_by_id.get(file_id) if file_id else None)
+                or meta_by_path.get(manifest_local_path)
+                or meta_by_local_name.get(manifest_local_name)
+                or meta_by_file_name.get(filename)
+                or {}
+            )
+            prediction_row = lookup_speciesnet_result(
+                speciesnet_by_path,
+                manifest_local_path,
+                metadata_row.get("local_path", ""),
+                manifest_local_name,
+                filename,
+            )
+            metadata_row = _apply_resolved_prediction(metadata_row, prediction_row)
             drive_row = drive_by_id.get(file_id, {})
 
             total_processed += 1
@@ -653,6 +795,7 @@ def generate_output_csvs(
                     "ReviewReason": review_reason,
                     "Notes": "; ".join(part for part in [notes_value, species_note] if part),
                     "_image_key": image_key,
+                    "_filename": filename,
                     "_timestamp": _parse_row_dt(date_value, time_value),
                 }
 
@@ -833,6 +976,28 @@ def generate_output_csvs(
     print(f"  animal_unclassified.csv rows: {len(animal_unclassified_rows)}")
     print(f"  excluded_non_animal.csv rows: {len(non_animal_rows)}")
 
+    # Always write the three simplified, user-facing CSVs alongside the
+    # backend debug files. These are what the frontend lists for download.
+    simple_summary = write_simple_outputs(
+        out_dir,
+        combined_rows,
+        animal_unclassified_rows,
+        non_animal_rows,
+    )
+    print("\nUser-facing CSVs (frontend will only show these):")
+    print(
+        f"  {FINAL_RESULTS_CSV}: {simple_summary['final_results_rows']} rows"
+    )
+    print(
+        f"  {ANIMAL_RESULTS_CSV}: {simple_summary['animal_results_rows']} rows"
+    )
+    print(
+        f"  {REVIEW_NEEDED_CSV}: {simple_summary['review_needed_rows']} rows"
+    )
+    print(
+        f"  {SUMMARY_BY_CAMERA_CSV}: {simple_summary['camera_count']} cameras"
+    )
+
     print("\nDetection fields:")
     print(
         "  \u2713 has_animal \u2014 "
@@ -869,6 +1034,13 @@ def generate_output_csvs(
         "excluded_rows_path": str(non_animal_path),
         "review_decisions_path": str(Path(review_decisions_path)),
         "excluded_humans": total_excluded_humans,
+        "final_results_path": simple_summary["final_results_path"],
+        "animal_results_path": simple_summary["animal_results_path"],
+        "review_needed_path": simple_summary["review_needed_path"],
+        "summary_by_camera_path": simple_summary["summary_by_camera_path"],
+        "final_results_rows": simple_summary["final_results_rows"],
+        "animal_results_rows": simple_summary["animal_results_rows"],
+        "review_needed_rows": simple_summary["review_needed_rows"],
     }
 
 

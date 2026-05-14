@@ -95,19 +95,27 @@ export function createPipelineRender(app, stateApi) {
 
   function buildPipelineResultRows(files = []) {
     if (!files.length) {
-      return `<tr><td colspan="4" style="padding:14px 12px;color:var(--muted)">No export CSV files are available yet.</td></tr>`;
+      return `<tr><td colspan="3" style="padding:14px 12px;color:var(--muted)">No results are available yet.</td></tr>`;
     }
 
     return files.map((file) => {
       const fileName = file.name || "";
+      // Friendly label from the backend ("Final results", "Needs review",
+      // "Summary by camera"). Falls back to filename if missing.
+      const baseLabel = file.label || fileName.replace(/\.csv$/i, "") || "Unknown";
+      // Mark the main export so non-technical users know which file to
+      // grab first.
+      const isPrimary = fileName === "final_results.csv";
+      const tag = isPrimary
+        ? `<span style="margin-left:8px;font-size:11px;font-weight:600;color:#2B6CB0;background:#EBF8FF;border:1px solid #BEE3F8;padding:2px 7px;border-radius:6px">Main file</span>`
+        : "";
       const downloadArg = escapeHtml(JSON.stringify(fileName));
 
       return `
-      <tr>
-        <td style="padding:12px">${escapeHtml(fileName || "Unknown")}</td>
+      <tr${isPrimary ? ' style="background:#F7FAFC"' : ""}>
+        <td style="padding:12px">${escapeHtml(baseLabel)}${tag}</td>
         <td style="padding:12px">${formatNumber(file.rows || 0)}</td>
-        <td style="padding:12px">${escapeHtml(file.path || "—")}</td>
-        <td style="padding:12px"><button class="btn btn-outline btn-sm" onclick="downloadPipelineResult(${downloadArg})">Download CSV</button></td>
+        <td style="padding:12px"><button class="btn btn-outline btn-sm" onclick="downloadPipelineResult(${downloadArg})">Download</button></td>
       </tr>
     `;
     }).join("");
@@ -121,15 +129,16 @@ export function createPipelineRender(app, stateApi) {
 
     if (note) {
       note.textContent = results?.status === "ready"
-        ? `Results ready from run ${results.run_id || "latest"}`
+        ? "Results are ready"
         : app.state.runningModel
-          ? "Waiting for the backend pipeline to finish…"
-          : "Run the pipeline to generate export-ready CSV files.";
+          ? "Processing your images…"
+          : "Run the pipeline to generate results.";
     }
     if (summary) {
+      // Keep this short and non-technical — no file paths, no jargon.
       summary.textContent = results?.status === "ready"
-        ? `${formatNumber(results.file_count || 0)} file(s) · ${formatNumber(results.total_rows || 0)} rows · ${results.output_dir || "data/outputs/by_site"}`
-        : results?.message || "No completed pipeline results are available yet.";
+        ? `${formatNumber(results.file_count || 0)} file(s) · ${formatNumber(results.total_rows || 0)} records`
+        : results?.message || "No results are available yet.";
     }
     if (tableBody) {
       tableBody.innerHTML = buildPipelineResultRows(results?.files || []);

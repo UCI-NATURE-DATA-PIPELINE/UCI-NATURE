@@ -29,6 +29,16 @@ from scripts.pipeline.review_decisions import (
     normalize_review_status,
     upsert_review_decision,
 )
+from scripts.pipeline.simple_outputs import (
+    ANIMAL_RESULTS_CSV,
+    FINAL_RESULTS_CSV,
+    REVIEW_NEEDED_CSV,
+    SUMMARY_BY_CAMERA_CSV,
+    USER_FACING_DISPLAY_LABELS,
+    USER_FACING_FILENAMES,
+    USER_FACING_FILENAMES_ORDERED,
+    normalize_species,
+)
 from scripts.pipeline.validate_output import validate_csv
 from ui.backend.auth.routes import get_google_auth_state, router as google_auth_router
 from ui.backend.auth.routes_drive import (
@@ -430,6 +440,27 @@ def get_location_csv_paths() -> List[Path]:
 
 
 def get_export_artifact_paths() -> List[Path]:
+    """Return only the user-facing CSVs the frontend should list.
+
+    Backend/debug CSVs (all_results.csv, per-camera *_results.csv,
+    animal_unclassified.csv, excluded_non_animal.csv) still live on disk
+    for validation and downstream tooling — they're just filtered out
+    here so non-technical researchers see a short, clean list.
+
+    The deliberate order is: final results, animals-only, review queue,
+    per-camera summary.
+    """
+    if not BY_LOCATION_DIR.exists():
+        return []
+    return [
+        BY_LOCATION_DIR / name
+        for name in USER_FACING_FILENAMES_ORDERED
+        if (BY_LOCATION_DIR / name).exists()
+    ]
+
+
+def get_all_export_csv_paths() -> List[Path]:
+    """Internal helper: every CSV in the output dir (includes debug files)."""
     if not BY_LOCATION_DIR.exists():
         return []
     return sorted(BY_LOCATION_DIR.glob("*.csv"))
@@ -459,10 +490,19 @@ def build_metadata_lookup() -> Dict[str, Dict[str, str]]:
 
 
 def _display_species_label(value: str) -> str:
-    text = (value or "").strip().replace("_", " ")
+    """Return the simple common-name label for the review UI.
+
+    Any raw model label / scientific name / verbose common name is run
+    through ``normalize_species`` first so researchers never see things
+    like "Northern Raccoon" or "Procyon lotor" in the review queue.
+    """
+    text = (value or "").strip()
     if not text:
         return "Unknown"
-    return text.title()
+    simplified = normalize_species(text)
+    if not simplified:
+        return "Unknown"
+    return simplified
 
 
 def _parse_candidate_options(raw_json: str, current_species: str) -> List[str]:
@@ -480,12 +520,38 @@ def _parse_candidate_options(raw_json: str, current_species: str) -> List[str]:
             if label and label not in options:
                 options.append(label)
 
-    for fallback in [current_species, "Animal Unclassified", "Blank", "Human"]:
+    for fallback in [current_species, "animal_unclassified", "blank", "human"]:
         label = _display_species_label(fallback)
         if label not in options:
             options.append(label)
 
     return options
+
+
+# Priority buckets used to order the review queue. Lower number = higher in
+# the list. Confident animals lead, animal_unclassified / uncertain rows
+# come next so they're easy to triage, humans/vehicles get filtered into
+# their own section, and confident "blank" frames are pushed to the bottom.
+_REVIEW_PRIORITY = {
+    "resolved_animal": 0,
+    "animal_unclassified": 1,
+    "human": 2,
+    "vehicle": 3,
+    "blank": 4,
+}
+
+
+def _review_priority_for(species: str) -> int:
+    simplified = (species or "").strip().lower()
+    if simplified == "animal_unclassified":
+        return _REVIEW_PRIORITY["animal_unclassified"]
+    if simplified == "human":
+        return _REVIEW_PRIORITY["human"]
+    if simplified == "vehicle":
+        return _REVIEW_PRIORITY["vehicle"]
+    if simplified in {"blank", "", "unknown"}:
+        return _REVIEW_PRIORITY["blank"]
+    return _REVIEW_PRIORITY["resolved_animal"]
 
 
 def _count_resolved_output_rows() -> int:
@@ -502,8 +568,15 @@ def build_validation_report() -> dict:
     column_issue_count = 0
     file_reports = []
 
-    for csv_path in get_export_artifact_paths():
+    # Validation runs over the backend/debug CSVs (per-camera *_results
+    # files) so it can still catch column/timestamp problems. The frontend
+    # only shows the four simplified CSVs, but validation needs the raw
+    # files to do its job.
+    for csv_path in get_all_export_csv_paths():
         if csv_path.name == ALL_RESULTS_FILENAME:
+            continue
+        if csv_path.name in USER_FACING_FILENAMES:
+            # Skip the simplified CSVs — they have a different schema.
             continue
         rows = read_csv_rows(csv_path)
         result = validate_csv(csv_path)
@@ -602,6 +675,11 @@ def build_review_items_data() -> List[dict]:
     metadata_lookup = build_metadata_lookup()
     items = []
 
+    # Low-confidence threshold for promoting suspect "blank" verdicts to
+    # animal_unclassified. Keeps researchers from confidently dismissing
+    # an image as empty when the model wasn't sure.
+    LOW_CONFIDENCE_THRESHOLD = 70
+
     for idx, row in enumerate(rows, start=1):
         filepath = (row.get("filepath") or "").strip()
         decision = decisions.get(normalize_review_path(filepath), {})
@@ -623,6 +701,16 @@ def build_review_items_data() -> List[dict]:
         )
         label = _display_species_label(label_value)
         confidence = round(float(row.get("resolved_score") or row.get("score") or 0) * 100)
+
+        # Demote low-confidence "blank" verdicts: if the model said blank
+        # but wasn't confident, surface as animal_unclassified instead.
+        if (
+            label == "blank"
+            and confidence > 0
+            and confidence < LOW_CONFIDENCE_THRESHOLD
+        ):
+            label = "animal_unclassified"
+
         status = decision.get("review_status") or "pending"
         candidate_options = _parse_candidate_options(
             row.get("candidate_labels_json", "[]"),
@@ -641,30 +729,51 @@ def build_review_items_data() -> List[dict]:
             "reason": (row.get("reason") or "").strip(),
             "prediction_source": (row.get("prediction_source") or "").strip(),
             "candidate_options": candidate_options,
+            "animal_detected": label not in {"blank", "human", "vehicle", "unknown", ""},
+            "priority": _review_priority_for(label),
+            "_idx": idx,
         })
+
+    # Order: confident animals → animal_unclassified → human → vehicle →
+    # blank. Within each bucket, higher confidence wins so the strongest
+    # detections sit on top of the list.
+    items.sort(key=lambda it: (
+        it["priority"],
+        -it.get("confidence", 0),
+        it["_idx"],
+    ))
+
+    for it in items:
+        it.pop("_idx", None)
 
     return items
 
 
 def build_export_artifact_summary() -> dict:
-    csv_paths = get_export_artifact_paths()
-    export_files = []
-    total_rows = _count_resolved_output_rows()
-    animal_unclassified_path = BY_LOCATION_DIR / ANIMAL_UNCLASSIFIED_FILENAME
-    excluded_path = BY_LOCATION_DIR / EXCLUDED_NON_ANIMAL_FILENAME
-    if animal_unclassified_path.exists():
-        total_rows += count_csv_rows(animal_unclassified_path)
-    if excluded_path.exists():
-        total_rows += count_csv_rows(excluded_path)
+    """Summary used by the frontend export page.
 
-    for path in csv_paths:
-        row_count = count_csv_rows(path)
+    Only the four simplified CSVs are surfaced to users
+    (final_results.csv, animal_results.csv, review_needed.csv,
+    summary_by_camera.csv).
+    Backend/debug CSVs stay on disk for validation but are filtered out
+    here so the export page stays clean.
+    """
+    user_facing_paths = get_export_artifact_paths()
+    export_files = []
+
+    final_results_path = BY_LOCATION_DIR / FINAL_RESULTS_CSV
+    total_rows = count_csv_rows(final_results_path) if final_results_path.exists() else 0
+
+    for path in user_facing_paths:
         export_files.append({
             "name": path.name,
-            "rows": row_count,
+            "label": USER_FACING_DISPLAY_LABELS.get(path.name, path.stem),
+            "rows": count_csv_rows(path),
             "path": str(path.relative_to(PROJECT_ROOT)),
         })
 
+    # Stats below come from the backend/debug CSVs and feed the existing
+    # "human detections excluded" / "burst duplicates removed" badges.
     human_count = 0
     burst_count = 0
     for p in get_location_csv_paths():

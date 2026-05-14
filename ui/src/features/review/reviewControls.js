@@ -1,7 +1,26 @@
 /** Review controls for filters, species edits, and burst-review confirmation flows. */
 
 const SPECIES_STORAGE_KEY = "uci_nature_species_list";
-const DEFAULT_SPECIES = ["Coyote", "Raccoon", "Squirrel", "Bird", "Opossum", "Rabbit", "Unknown", "Empty (No Animal)"];
+// Default species options shown in the manual-review combobox. Kept in
+// the simple-label vocabulary so the review UI never displays raw model
+// or taxonomy strings.
+const DEFAULT_SPECIES = [
+  "coyote",
+  "bobcat",
+  "deer",
+  "raccoon",
+  "rabbit",
+  "skunk",
+  "opossum",
+  "rodent",
+  "bird",
+  "human",
+  "dog",
+  "cat",
+  "vehicle",
+  "blank",
+  "animal_unclassified"
+];
 
 function loadSpeciesList() {
   try {

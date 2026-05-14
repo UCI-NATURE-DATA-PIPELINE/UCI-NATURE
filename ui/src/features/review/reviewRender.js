@@ -123,7 +123,7 @@ export function createReviewRender(app, stateApi) {
       setText("conf-overlay", "0% confidence");
       setText("species-name", "Nothing pending");
       setText("species-certainty", "Review queue is empty");
-      setHTML("review-meta", `<div class="meta-row"><span class="meta-key">Source</span><span class="meta-val">speciesnet_review.csv</span></div><div class="meta-row"><span class="meta-key">Status</span><span class="meta-val">No rows returned</span></div>`);
+      setHTML("review-meta", `<div class="meta-row"><span class="meta-key">Status</span><span class="meta-val">No items waiting for review</span></div>`);
       return;
     }
 
@@ -159,7 +159,7 @@ export function createReviewRender(app, stateApi) {
       }
     }
     setText("species-name", item.species);
-    setText("species-certainty", `${item.confidence}% model certainty`);
+    setText("species-certainty", `${item.confidence}% confidence`);
     setHTML("review-meta", `<div class="meta-row"><span class="meta-key">Filename</span><span class="meta-val">${item.filename}</span></div><div class="meta-row"><span class="meta-key">Site</span><span class="meta-val">${item.camera}</span></div><div class="meta-row"><span class="meta-key">Date / Time</span><span class="meta-val">${item.datetime}</span></div><div class="meta-row"><span class="meta-key">Burst Group</span><span class="meta-val">${item.burst}</span></div><div class="meta-row"><span class="meta-key">Status</span><span class="meta-val">${capitalize(item.status)}</span></div>`);
     const detAnimal = document.getElementById("det-animal");
     if (detAnimal) {

@@ -19,19 +19,30 @@ export function createExportRender(app) {
     }
 
     return files.map((file) => {
-      const displayName = escapeHtml((file.name || "Unknown").replace(/\.csv$/i, ""));
+      // Prefer the friendly label the backend supplies (e.g. "Final results"),
+      // and fall back to the bare filename without its .csv extension.
+      const rawLabel    = file.label || (file.name || "Unknown").replace(/\.csv$/i, "");
+      const displayName = escapeHtml(rawLabel);
       const safeName    = escapeHtml(file.name || "");
-      const safePath    = escapeHtml(file.path || file.name);
+      const isPrimary   = (file.name || "") === "final_results.csv";
+      // Subline avoids exposing internal paths — non-technical users only
+      // need the row count and the file's role.
+      const sublineText = isPrimary
+        ? `${formatNumber(file.rows)} rows · main file for researchers`
+        : `${formatNumber(file.rows)} rows`;
+      const mainBadge = isPrimary
+        ? `<span style="margin-left:8px;font-size:11px;font-weight:600;color:#2B6CB0;background:#EBF8FF;border:1px solid #BEE3F8;padding:2px 7px;border-radius:6px">Main file</span>`
+        : "";
 
-      return `<div class="export-folder-row">
+      return `<div class="export-folder-row"${isPrimary ? ' style="background:#F7FAFC"' : ""}>
         <div class="export-folder-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2B6CB0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
           </svg>
         </div>
         <div style="flex:1;min-width:0">
-          <div class="export-folder-name">${displayName}</div>
-          <div class="export-folder-sub">${formatNumber(file.rows)} rows · ${safePath}</div>
+          <div class="export-folder-name">${displayName}${mainBadge}</div>
+          <div class="export-folder-sub">${sublineText}</div>
         </div>
         <div class="export-folder-actions">
           <span class="export-sync-badge synced">
