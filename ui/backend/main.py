@@ -13,7 +13,7 @@ import threading
 import traceback
 import zipfile
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,7 +29,7 @@ from scripts.pipeline.review_decisions import (
     normalize_review_status,
     upsert_review_decision,
 )
-from scripts.pipeline.validate_output import validate_csv
+from scripts.pipeline.validate_output import validate_csv, REQUIRED_COLUMNS
 from ui.backend.auth.routes import get_google_auth_state, router as google_auth_router
 from ui.backend.auth.routes_drive import (
     complete_drive_sync_operation,
@@ -494,8 +494,30 @@ def _count_resolved_output_rows() -> int:
         return count_csv_rows(combined_path)
     return sum(count_csv_rows(path) for path in get_location_csv_paths())
 
-
-def build_validation_report() -> dict:
+def _is_outside_range(date_str: str, start_date: str, end_date: str) -> bool:
+    if not date_str or not start_date or not end_date:
+        return False
+    try:
+        from datetime import datetime as _dt
+        def parse(s):
+            for fmt in ("%Y-%m-%d", "%b %d, %Y", "%B %d, %Y"):
+                try:
+                    return _dt.strptime(s.strip(), fmt).date()
+                except Exception:
+                    pass
+            return None
+        d = parse(date_str)
+        s = parse(start_date)
+        e = parse(end_date)
+        if not d or not s or not e:
+            return False
+        if d < s: return True
+        if d > e: return True
+        return False
+    except Exception:
+        return False
+    
+def build_validation_report(start_date: str = "", end_date: str = "") -> dict:
     manifest_total = count_csv_rows(MANIFEST_CSV)
     ml_outputs_total = count_csv_rows(ML_OUTPUTS_CSV)
     outside_range = 0
@@ -505,30 +527,75 @@ def build_validation_report() -> dict:
     for csv_path in get_export_artifact_paths():
         if csv_path.name == ALL_RESULTS_FILENAME:
             continue
+        if csv_path.name == EXCLUDED_NON_ANIMAL_FILENAME:
+            continue
         rows = read_csv_rows(csv_path)
         result = validate_csv(csv_path)
         issues = result["column_issues"]
         column_issue_count += len(issues)
         outside_for_file = sum(
-            1
-            for row in rows
-            if "outside deployment interval" in ((row.get("Notes") or "").lower())
+            1 for row in rows
+            if _is_outside_range(row.get("Date", ""), start_date, end_date)
         )
         outside_range += outside_for_file
         file_reports.append({
-            "file": csv_path.name,
-            "rows": len(rows),
-            "outside_range": outside_for_file,
-            "column_issues": issues,
-        })
+        "file": csv_path.name,
+        "rows": len(rows),
+        "outside_range": outside_for_file,
+        "column_issues": issues,
+        "sample_date": next((row.get("Date", "") for row in rows if row.get("Date")), ""),
+    })
+
+    before_start = 0
+    after_end = 0
+    sample_date = ""
+    sample_time = ""
+    for csv_path in get_export_artifact_paths():
+        if csv_path.name == ALL_RESULTS_FILENAME:
+            continue
+        if csv_path.name == EXCLUDED_NON_ANIMAL_FILENAME:
+            continue
+        for row in read_csv_rows(csv_path):
+            date_val = (row.get("Date") or "").strip()
+            if not sample_date:
+                t = (row.get("Time") or row.get("CorrectedTime") or "").strip()
+                if date_val and t:
+                    sample_date = date_val
+                    sample_time = t
+            if not date_val or not start_date or not end_date:
+                continue
+            try:
+                from datetime import datetime as _dt
+                def parse(s):
+                    for fmt in ("%Y-%m-%d", "%b %d, %Y", "%B %d, %Y"):
+                        try:
+                            return _dt.strptime(s.strip(), fmt).date()
+                        except Exception:
+                            pass
+                    return None
+                d = parse(date_val)
+                s = parse(start_date)
+                e = parse(end_date)
+                if d and s and e:
+                    if d < s:
+                        before_start += 1
+                    elif d > e:
+                        after_end += 1
+            except Exception:
+                pass
 
     return {
         "outside_range": outside_range,
+        "before_start": before_start,
+        "after_end": after_end,
+        "sample_date": sample_date,
+        "sample_time": sample_time,
         "unprocessed": max(manifest_total - ml_outputs_total, 0),
         "column_issue_count": column_issue_count,
+        "columns_total": len(REQUIRED_COLUMNS),
+        "columns_present": len(REQUIRED_COLUMNS) - column_issue_count,
         "files": file_reports,
     }
-
 
 def build_dashboard_summary_data(project_name: str) -> dict:
     manifest_total = count_csv_rows(MANIFEST_CSV)
@@ -544,6 +611,7 @@ def build_dashboard_summary_data(project_name: str) -> dict:
     if animal_unclassified_path.exists():
         animals_detected += count_csv_rows(animal_unclassified_path)
 
+    
     validation = build_validation_report()
     ml_summary = read_json_file(ML_SUMMARY_JSON, {})
 
@@ -1730,9 +1798,95 @@ def apply_review_changes(
 
 
 @app.get("/api/validate/issues")
-def validate_issues(authorization: Optional[str] = Header(default=None)):
+def validate_issues(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None)
+):
     require_auth(authorization)
-    return build_validation_report()
+    return build_validation_report(start_date=start_date, end_date=end_date)
+@app.post("/api/validate/preview-correction")
+def validate_preview_correction(
+    payload: dict = Body(default={}),
+    authorization: Optional[str] = Header(default=None)
+):
+    require_auth(authorization)
+    offset_hours = int(payload.get("offset_hours", 0))
+    rows_preview = []
+    for csv_path in get_export_artifact_paths():
+        if csv_path.name == ALL_RESULTS_FILENAME:
+            continue
+        for row in read_csv_rows(csv_path):
+            date = (row.get("Date") or "").strip()
+            time = (row.get("Time") or "").strip()
+            image = (row.get("Image#") or "").strip()
+            camera = (row.get("CameraName") or "").strip()
+            if not date or not time:
+                continue
+            try:
+                h, m, s = map(int, time.split(":"))
+                corrected_h = ((h + offset_hours) % 24 + 24) % 24
+                corrected_time = f"{str(corrected_h).zfill(2)}:{str(m).zfill(2)}:{str(s).zfill(2)}"
+            except Exception:
+                corrected_time = time
+            rows_preview.append({
+                "image": image,
+                "camera": camera,
+                "before": f"{date} {time}",
+                "after": f"{date} {corrected_time}"
+            })
+    return {"rows": rows_preview, "total": len(rows_preview)}
+
+
+@app.post("/api/validate/apply-correction")
+def validate_apply_correction(
+    payload: dict = Body(default={}),
+    authorization: Optional[str] = Header(default=None)
+):
+    require_auth(authorization)
+    offset_hours = float(payload.get("offset_hours", 0))
+    shift_minutes = int(offset_hours * 60)
+    select_images = payload.get("select_images", "all")
+    start_date = payload.get("start_date", "")
+    end_date = payload.get("end_date", "")
+
+    # Determine which images to apply offset to
+    if select_images == "outside":
+        offset_apply_to = "both"
+        offset_start_date = start_date
+        offset_end_date = end_date
+    elif select_images == "before":
+        offset_apply_to = "before"
+        offset_start_date = ""
+        offset_end_date = start_date
+    elif select_images == "after":
+        offset_apply_to = "after"
+        offset_start_date = end_date
+        offset_end_date = ""
+    else:
+        offset_apply_to = "both"
+        offset_start_date = ""
+        offset_end_date = ""
+
+    settings = _latest_output_settings()
+    result = generate_output_csvs(
+        manifest=MANIFEST_CSV,
+        metadata=METADATA_CSV,
+        drive_index=OUTPUTS_DIR / "drive_index.csv",
+        out_dir=BY_LOCATION_DIR,
+        burst_seconds=settings["burst_seconds"],
+        burst_export=settings["burst_export"],
+        exclude_humans=settings["exclude_humans"],
+        review_decisions_path=REVIEW_DECISIONS_PATH,
+        shift_minutes=shift_minutes,
+        offset_apply_to=offset_apply_to,
+        offset_start_date=offset_start_date,
+        offset_end_date=offset_end_date,
+    )
+    return {
+        "message": f"Time correction applied: {shift_minutes} minutes shift",
+        "result": result,
+    }
 
 
 @app.post("/api/export/start")

@@ -2,8 +2,8 @@
 <div class="val-summary-strip">
   <div class="val-summary-card total"><div class="val-summary-val" id="val-total">--</div><div class="val-summary-lbl">Total Records</div></div>
   <div class="val-summary-card valid"><div class="val-summary-val" id="val-valid">--</div><div class="val-summary-lbl">Valid</div></div>
-  <div class="val-summary-card warning"><div class="val-summary-val" id="val-warnings">310</div><div class="val-summary-lbl">Warnings</div></div>
-  <div class="val-summary-card error"><div class="val-summary-val" id="val-errors">52</div><div class="val-summary-lbl">Errors</div></div>
+  <div class="val-summary-card warning"><div class="val-summary-val" id="val-warnings">--</div><div class="val-summary-lbl">Warnings</div></div>
+  <div class="val-summary-card error"><div class="val-summary-val" id="val-errors">--</div><div class="val-summary-lbl">Errors</div></div>
 </div>
 
 <div class="card card-p" style="margin-bottom:14px">
@@ -21,23 +21,73 @@
     </div>
   </div>
 
-  <div class="val-range-warn" id="range-warn-box">
-    <div class="val-range-warn-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D69E2E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-    <div style="flex:1;min-width:0"><div class="val-range-warn-title" id="range-warn-title">23 images outside deployment range</div><div class="val-range-warn-body" id="range-warn-body">Images with timestamps before <strong id="warn-start-label">Jan 15</strong> or after <strong id="warn-end-label">May 30</strong> — likely due to incorrect camera clock settings. Use Batch Time Correction below to adjust.</div><button class="val-range-warn-link" id="affected-toggle-btn" onclick="toggleAffectedPanel()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" id="affected-btn-chevron"><polyline points="9 18 15 12 9 6"/></svg>View affected images</button></div>
+  <div style="margin-top:12px;display:flex;justify-content:flex-end">
+    <button class="val-run-btn" style="font-size:13px;padding:9px 18px" onclick="runValidation()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      Apply Date Range
+    </button>
   </div>
 
-  <div class="affected-panel" id="affected-panel">
-    <div class="affected-panel-header"><div><div class="affected-panel-title" id="affected-panel-title">Affected images</div><div class="affected-panel-sub" id="affected-panel-sub">Timestamps compared against deployment range</div></div><button class="affected-panel-close" onclick="toggleAffectedPanel()">&#215;</button></div>
-    <div class="affected-table-wrap"><table class="affected-table"><thead><tr><th>Filename</th><th>Site</th><th>Timestamp</th><th>Issue</th></tr></thead><tbody id="affected-table-body"></tbody></table></div>
+  <div class="val-range-warn" id="range-warn-box" style="display:none;margin-top:12px">
+    <div class="val-range-warn-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D69E2E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+    <div style="flex:1;min-width:0">
+      <div class="val-range-warn-title" id="range-warn-title">0 images outside deployment range</div>
+      <div class="val-range-warn-body" id="range-warn-body">No generated output rows are outside the deployment range.</div>
+      <button class="val-range-warn-link" id="affected-toggle-btn" onclick="document.getElementById('affected-modal').style.display='flex'">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        View affected images
+      </button>
+    </div>
   </div>
 </div>
 
 <div class="card card-p" style="margin-bottom:14px">
   <div style="margin-bottom:14px"><div class="card-title" style="margin-bottom:2px">Batch Time Correction</div><div style="font-size:12px;color:var(--muted)">Apply a time offset to correct camera clock drift</div></div>
   <div class="val-correction-grid">
-    <div><label class="field-label">Select Images</label><select class="model-select" id="time-correct-select"><option>All images outside range (23)</option><option>Images before deployment start (8)</option><option>Images after deployment end (15)</option><option>All images</option></select></div>
+    <div><label class="field-label">Select Images</label><select class="model-select" id="time-correct-select">
+      <option id="opt-outside-range">All images outside range (0)</option>
+      <option id="opt-before-start">Images before deployment start (0)</option>
+      <option id="opt-after-end">Images after deployment end (0)</option>
+      <option>All images</option>
+    </select></div>
     <div><label class="field-label">Time Offset (hours)</label><input type="number" class="val-date-input" value="1" min="-12" max="12" id="offset-input" oninput="updateTimePreview(this.value)" style="font-variant-numeric:tabular-nums"></div>
-    <div><label class="field-label">Preview</label><div class="val-preview-box"><div class="val-preview-before">Before: 2024-03-10 01:30:00</div><div class="val-preview-after" id="time-preview-after">After:&nbsp; 2024-03-10 02:30:00</div></div></div>
+    <div><label class="field-label">Preview</label><div class="val-preview-box"><div class="val-preview-before" id="time-preview-before">Before: — —</div><div class="val-preview-after" id="time-preview-after">After:  — —</div></div></div>
   </div>
-  <div class="val-correction-btns"><button class="val-run-btn" style="font-size:13px;padding:9px 18px" onclick="showToast('Time correction applied to 23 images','success')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Apply Correction</button><button class="btn btn-outline btn-sm" onclick="showToast('Previewing changes…','')">Preview Changes</button></div>
+  <div class="val-correction-btns">
+    <button class="val-run-btn" id="apply-correction-btn" style="font-size:13px;padding:9px 18px" onclick="applyTimeCorrection()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Apply Correction</button>
+    <button class="btn btn-outline btn-sm" id="preview-correction-btn" onclick="previewTimeCorrection()">Preview Changes</button>
+  </div>
+</div>
+
+<!-- Affected Images Modal -->
+<div id="affected-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:24px;width:750px;max-height:80vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div>
+        <strong style="font-size:16px;color:#1A202C">Affected Images</strong>
+        <div style="font-size:12px;color:#718096;margin-top:2px">Images with timestamps outside the deployment range</div>
+      </div>
+      <button onclick="document.getElementById('affected-modal').style.display='none'" style="border:none;background:none;font-size:20px;cursor:pointer;color:#718096">&#215;</button>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#F7FAFC">
+        <th style="padding:10px 8px;text-align:left;border-bottom:1px solid #E2E8F0;color:#4A5568;font-weight:600">Filename</th>
+        <th style="padding:10px 8px;text-align:left;border-bottom:1px solid #E2E8F0;color:#4A5568;font-weight:600">Site</th>
+        <th style="padding:10px 8px;text-align:left;border-bottom:1px solid #E2E8F0;color:#4A5568;font-weight:600">Timestamp</th>
+        <th style="padding:10px 8px;text-align:left;border-bottom:1px solid #E2E8F0;color:#4A5568;font-weight:600">Issue</th>
+      </tr></thead>
+      <tbody id="affected-table-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Time Correction Preview Modal -->
+<div id="time-preview-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:24px;width:700px;max-height:80vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <strong style="font-size:16px;color:#1A202C">Time Correction Preview</strong>
+      <button onclick="document.getElementById('time-preview-modal').style.display='none'" style="border:none;background:none;font-size:20px;cursor:pointer;color:#718096">&#215;</button>
+    </div>
+    <div id="time-preview-modal-body">Loading...</div>
+  </div>
 </div>
