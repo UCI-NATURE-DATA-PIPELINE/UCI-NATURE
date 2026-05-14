@@ -274,6 +274,8 @@ def run_pipeline_service(
         speciesnet_json=config.speciesnet_json_path,
         out_csv=config.ml_outputs_path,
         threshold=threshold,
+        presence_threshold=0.50,
+        count_threshold=0.5,
     )
     ml_outputs_result = {
         "ml_outputs_path": str(config.ml_outputs_path),

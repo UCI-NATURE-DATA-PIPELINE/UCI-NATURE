@@ -1750,9 +1750,14 @@ def statistics_summary(authorization: Optional[str] = Header(default=None)):
     timeline_counter = Counter()
     cameras = set()
     total_detections = 0
+
+    skip_files = {"all_results.csv", "animal_unclassified.csv", "excluded_non_animal.csv"}
+
     if by_location_dir.exists():
         for csv_path in by_location_dir.glob("*.csv"):
-            cameras.add(csv_path.stem)
+            if csv_path.name in skip_files:
+                continue
+            cameras.add(csv_path.stem.replace("_results", ""))
             with open(csv_path, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:

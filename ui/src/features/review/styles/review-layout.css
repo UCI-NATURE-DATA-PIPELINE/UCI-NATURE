@@ -193,7 +193,7 @@
   display:flex; flex-direction:column; align-items:center;
   justify-content:center; position:relative; overflow:hidden;
   width: 100%;
-  aspect-ratio: 16 / 10;   /* matches typical trail-cam aspect ratio */
+  aspect-ratio: 16 / 10;   
   max-height: calc(100vh - var(--header-h) - 200px);
 }
 .review-viewer-img {
