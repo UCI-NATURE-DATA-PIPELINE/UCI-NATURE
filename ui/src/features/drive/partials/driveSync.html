@@ -194,15 +194,65 @@
         </div>
       </div>
 
-      <div class="card card-p">
-        <div class="card-title">Sync summary</div>
-        <div class="upload-summary-list">
-          <div class="upload-summary-row"><span>Selected Drive folder</span><strong id="drive-sync-summary-folder">None</strong></div>
-          <div class="upload-summary-row"><span>Camera site</span><strong id="drive-sync-summary-site">—</strong></div>
-          <div class="upload-summary-row"><span>Sync limit</span><strong id="drive-sync-summary-limit">All files</strong></div>
-          <div class="upload-summary-row"><span>Destination folder</span><strong id="drive-sync-summary-destination">data/staging/&lt;camera_site&gt;</strong></div>
-          <div class="upload-summary-row"><span>Connection status</span><strong id="drive-sync-summary-connection">Offline</strong></div>
-          <div class="upload-summary-row"><span>Last sync status</span><strong id="drive-sync-summary-status">Idle</strong></div>
+      <div class="card card-p upload-progress-card" id="drive-progress-card">
+        <div class="upload-progress-head">
+          <div class="upload-progress-title">Sync progress</div>
+          <span class="upload-progress-status-pill idle" id="drive-progress-status">Idle</span>
+        </div>
+        <!-- The duplicate "No Drive folder selected / Pick a Drive folder…"
+             placeholder card previously lived here. It mirrored the folder
+             picker above, so it has been removed. The renderer still writes
+             to the source-name / sub / site-pill ids harmlessly when those
+             nodes are absent. -->
+        <div class="upload-progress-bar-wrap">
+          <div class="upload-progress-bar-track">
+            <div class="upload-progress-bar-fill" id="drive-progress-fill"></div>
+          </div>
+          <div class="upload-progress-bar-meta">
+            <span><strong id="drive-progress-synced">0</strong> of <strong id="drive-progress-total">0</strong> files</span>
+            <strong id="drive-progress-pct">0%</strong>
+          </div>
+        </div>
+        <div class="upload-progress-stats">
+          <div>
+            <div class="upload-progress-stat-lbl">Downloaded / Total</div>
+            <div class="upload-progress-stat-val" id="drive-progress-downloaded-total">0 / 0</div>
+          </div>
+          <div>
+            <div class="upload-progress-stat-lbl">Speed</div>
+            <div class="upload-progress-stat-val" id="drive-progress-ips">—</div>
+          </div>
+          <div>
+            <div class="upload-progress-stat-lbl">ETA</div>
+            <div class="upload-progress-stat-val" id="drive-progress-eta">—</div>
+          </div>
+          <div>
+            <div class="upload-progress-stat-lbl">Failed</div>
+            <div class="upload-progress-stat-val" id="drive-progress-failed">0</div>
+          </div>
+        </div>
+        <!-- Legacy fields the renderer still writes to so existing callers
+             keep working — hidden so they don't add visual noise. -->
+        <div class="visually-hidden">
+          <span id="drive-progress-elapsed">—</span>
+          <span id="drive-progress-remaining">—</span>
+          <span id="drive-progress-skipped">0</span>
+          <span id="drive-progress-updated">—</span>
+          <span id="drive-progress-status-text">Idle</span>
+          <span id="drive-progress-limit">All files</span>
+        </div>
+        <div class="upload-progress-current" id="drive-progress-current" hidden>
+          Current: <strong id="drive-progress-current-file">—</strong>
+        </div>
+        <!-- Hidden mirrors of the previous summary ids so any other code that
+             references them keeps working (driveRender writes both). -->
+        <div class="visually-hidden">
+          <span id="drive-sync-summary-folder">None</span>
+          <span id="drive-sync-summary-site">—</span>
+          <span id="drive-sync-summary-limit">All files</span>
+          <span id="drive-sync-summary-destination">data/staging/&lt;camera_site&gt;</span>
+          <span id="drive-sync-summary-connection">Offline</span>
+          <span id="drive-sync-summary-status">Idle</span>
         </div>
         <div class="upload-runtime-warning" id="drive-runtime-warning" hidden>
           Model runtime not ready. Uploads can still be staged, but processing will require SpeciesNet.

@@ -33,6 +33,12 @@ export function createEmptyDriveSyncState() {
     downloaded_count: 0,
     remaining_count: 0,
     progress_percent: 0,
+    // Performance metrics emitted by the backend during a parallel sync.
+    failed_count: 0,
+    skipped_count: 0,
+    images_per_second: null,
+    eta_seconds: null,
+    elapsed_seconds: null,
     current_file: null,
     staging_dir: null,
     drive_index_path: null,

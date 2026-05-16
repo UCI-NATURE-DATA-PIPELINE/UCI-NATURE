@@ -316,10 +316,7 @@ export function createManualUploadFlow(app) {
       zone: getById("upload-zone"),
       fileInput: getById("upload-file-input"),
       folderInput: getById("upload-folder-input"),
-      browseMenuBtn: getById("upload-browse-menu-btn"),
-      browseMenu: getById("upload-browse-menu"),
       browseFilesBtn: getById("upload-browse-files-btn"),
-      browseFolderBtn: getById("upload-browse-folder-btn"),
       list: getById("upload-queue-list"),
       meta: getById("upload-queue-meta"),
       summaryWrap: getById("upload-queue-summary"),
@@ -424,7 +421,23 @@ export function createManualUploadFlow(app) {
     refreshSiteDetection();
     if (els.total) els.total.textContent = totalImageLabel();
     if (els.sizeStat) els.sizeStat.textContent = totalQueueCount() ? formatBytes(totalQueueBytes()) : "—";
-    if (els.siteStat) els.siteStat.textContent = detectedSiteCount() ? String(detectedSiteCount()) : "—";
+    // Mirror Drive mode's top strip: show the actual camera-site name when
+    // there's exactly one, "Multiple" when batches span more than one site,
+    // and "—" before anything is queued.
+    if (els.siteStat) {
+      const uniqueSites = Array.from(
+        new Set(
+          state.batches
+            .map((batch) => normalizeCameraSiteName(batch.cameraLocation))
+            .filter(Boolean)
+        )
+      );
+      els.siteStat.textContent = uniqueSites.length === 0
+        ? "—"
+        : uniqueSites.length === 1
+          ? uniqueSites[0]
+          : "Multiple";
+    }
     if (els.statusStat) els.statusStat.textContent = statusLabel();
     if (els.meta) {
       const parts = [];
@@ -533,6 +546,9 @@ export function createManualUploadFlow(app) {
       row.dataset.batchId = batch.id;
       const isZip = batch.type === "zip";
       const imageCountLabel = batch.imageCountPending ? "Counting…" : `${batch.imageCount} image${batch.imageCount === 1 ? "" : "s"}`;
+      // Per-row Camera Site input was removed — the side panel + Create
+      // camera site modal is the single naming flow now. Row layout is
+      // icon · name+meta · site tag · size · progress · status+remove.
       row.innerHTML = `
         <div class="queue-file-icon">
           ${isZip
@@ -543,10 +559,7 @@ export function createManualUploadFlow(app) {
           <div class="queue-file-name"></div>
           <div class="queue-file-meta"></div>
         </div>
-        <label class="queue-site-edit">
-          <span>Camera site</span>
-          <input type="text" class="queue-site-input" value="" data-batch-id="${batch.id}" aria-label="Camera site">
-        </label>
+        <span class="queue-location-tag"></span>
         <span class="queue-size-text"></span>
         <div class="queue-prog-wrap">
           <div class="queue-prog-bar"><div class="queue-prog-fill ${progressClass}" style="width:${fillWidth}%"></div></div>
@@ -559,9 +572,7 @@ export function createManualUploadFlow(app) {
       `;
       row.querySelector(".queue-file-name").textContent = batch.sourceName;
       row.querySelector(".queue-file-meta").textContent = `${batchTypeLabel(batch)} · ${imageCountLabel}`;
-      const input = row.querySelector(".queue-site-input");
-      input.value = batch.cameraLocation;
-      input.disabled = state.isUploading || batch.status === "uploaded";
+      row.querySelector(".queue-location-tag").textContent = batch.cameraLocation || "No site";
       row.querySelector(".queue-remove-btn").disabled = state.isUploading;
       row.querySelector(".queue-size-text").textContent = formatBytes(batchSize(batch));
       els.list.appendChild(row);
@@ -621,6 +632,120 @@ export function createManualUploadFlow(app) {
     if (els.runtimeWarning) {
       els.runtimeWarning.hidden = !appState.backendHealth?.connected || Boolean(appState.backendHealth?.pipelineRuntimeReady);
     }
+    renderProgressCard();
+  }
+
+  function renderProgressCard() {
+    const set = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    };
+    const fileCount = totalQueueCount();
+    const totalImages = totalKnownImages();
+    const status = statusLabel();              // Ready / Uploading / Uploaded / Error
+    const tone = state.error
+      ? "failed"
+      : state.isUploading
+        ? "active"
+        : state.lastResult
+          ? "done"
+          : "idle";
+
+    // Header pill
+    const pill = document.getElementById("upload-progress-status");
+    if (pill) {
+      pill.className = `upload-progress-status-pill ${tone}`;
+      pill.textContent = status;
+    }
+
+    // Source row (selected files / batches summary)
+    const batch = selectedBatch();
+    const sourceName = !fileCount
+      ? (state.lastResult ? "Queue cleared after upload" : "No files selected")
+      : fileCount === 1
+        ? batch?.sourceName || "1 upload"
+        : `${fileCount} uploads selected`;
+    const sub = state.error
+      ? state.error
+      : state.isUploading
+        ? `Uploading ${state.progress}%`
+        : state.lastResult
+          ? `${state.lastResult.uploaded_count || 0} image(s) staged`
+          : fileCount
+            ? `${totalImages || totalImageLabel()} image(s)`
+            : "Drop images, a folder, or a ZIP to begin.";
+    set("upload-progress-source-name", sourceName);
+    set("upload-progress-source-sub", sub);
+
+    // Camera-site pill (consistent with Drive mode)
+    const sitePill = document.getElementById("upload-progress-site-pill");
+    if (sitePill) {
+      const siteCount = detectedSiteCount();
+      const label = siteCount > 1
+        ? `${siteCount} sites`
+        : (batch?.cameraLocation || "");
+      if (label) {
+        sitePill.textContent = label;
+        sitePill.classList.remove("muted");
+      } else {
+        sitePill.textContent = "No site";
+        sitePill.classList.add("muted");
+      }
+    }
+
+    // Progress bar
+    const done = state.lastResult
+      ? (state.lastResult.uploaded_count || 0)
+      : state.isUploading
+        ? Math.round((state.progress / 100) * totalImages)
+        : 0;
+    const percent = Math.max(0, Math.min(100, Math.round(state.progress || (state.lastResult ? 100 : 0))));
+    const fill = document.getElementById("upload-progress-fill");
+    if (fill) {
+      fill.className = `upload-progress-bar-fill ${tone === "idle" ? "" : tone}`.trim();
+      fill.style.width = `${percent}%`;
+    }
+    set("upload-progress-pct", `${percent}%`);
+    set("upload-progress-done", String(done || (state.lastResult ? totalImages : 0)));
+    set("upload-progress-total", state.lastResult
+      ? String(state.lastResult.uploaded_count || totalImages || 0)
+      : (hasPendingZipCounts() ? totalImageLabel() : String(totalImages || 0)));
+
+    // Visible stats: Files · Size · Speed
+    const sizeLabel = fileCount ? formatBytes(totalQueueBytes()) : "—";
+    let ipsLabel = "—";
+    if (state.isUploading && state._uploadStartedAt && done > 0) {
+      const elapsed = Math.max(0.001, (Date.now() - state._uploadStartedAt) / 1000);
+      const ips = done / elapsed;
+      if (Number.isFinite(ips) && ips > 0) {
+        ipsLabel = `${ips.toFixed(ips >= 10 ? 0 : 1)} img/s`;
+      }
+    } else if (state.lastResult && state._uploadStartedAt && state._uploadEndedAt) {
+      const elapsed = Math.max(0.001, (state._uploadEndedAt - state._uploadStartedAt) / 1000);
+      const total = state.lastResult.uploaded_count || 0;
+      if (total > 0) {
+        const ips = total / elapsed;
+        if (Number.isFinite(ips) && ips > 0) {
+          ipsLabel = `${ips.toFixed(ips >= 10 ? 0 : 1)} img/s`;
+        }
+      }
+    }
+    set("upload-progress-files", String(totalImages || fileCount || 0));
+    set("upload-progress-size", sizeLabel);
+    set("upload-progress-ips", ipsLabel);
+
+    // Hidden legacy fields kept so any earlier code that still reads them
+    // does not error out.
+    set("upload-progress-status-text", state.error || status);
+    set("upload-progress-batches", String(fileCount));
+    set("upload-progress-type", uploadTypeLabel());
+    const remaining = state.isUploading
+      ? Math.max(0, totalImages - done)
+      : (totalImages && !state.lastResult ? totalImages : 0);
+    set("upload-progress-remaining", remaining ? String(remaining) : (state.lastResult ? "0" : "—"));
+    set("upload-progress-updated",
+      state.lastResult ? "Just now" : state.isUploading ? "Live" : (fileCount ? "Just now" : "—")
+    );
   }
 
   function renderControls() {
@@ -792,6 +917,8 @@ export function createManualUploadFlow(app) {
     state.progress = 0;
     state.error = "";
     state.lastResult = null;
+    state._uploadStartedAt = Date.now();
+    state._uploadEndedAt = null;
     render();
 
     // Each batch gets an equal slice of overall progress so unrelated
@@ -847,6 +974,7 @@ export function createManualUploadFlow(app) {
       app.showToast(message, "warn");
     } finally {
       state.isUploading = false;
+      state._uploadEndedAt = Date.now();
       render();
     }
   }
@@ -862,25 +990,87 @@ export function createManualUploadFlow(app) {
   function handleZoneDrop(event) {
     event.preventDefault();
     event.currentTarget.classList.remove("drag-over");
-    void addFiles(event.dataTransfer?.files);
+    void addFromDataTransfer(event.dataTransfer);
+  }
+
+  // Recursively walk an entries-style DataTransfer so dropping a *folder*
+  // (not just loose files) actually picks up every image inside, including
+  // nested subfolders. Falls back to a flat .files read on browsers that
+  // don't expose webkitGetAsEntry / FileSystemEntry.
+  async function addFromDataTransfer(dataTransfer) {
+    if (!dataTransfer) return;
+    const items = dataTransfer.items ? Array.from(dataTransfer.items) : [];
+    const entries = items
+      .map((item) => (typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null))
+      .filter(Boolean);
+
+    if (!entries.length) {
+      await addFiles(dataTransfer.files);
+      return;
+    }
+
+    const collected = [];
+    await Promise.all(entries.map((entry) => collectFilesFromEntry(entry, "", collected)));
+    if (!collected.length) {
+      await addFiles(dataTransfer.files);
+      return;
+    }
+    await addFiles(collected);
+  }
+
+  function collectFilesFromEntry(entry, relativePath, out) {
+    if (!entry) return Promise.resolve();
+    if (entry.isFile) {
+      return new Promise((resolve) => {
+        entry.file(
+          (file) => {
+            // Keep webkitRelativePath-style hint so detectTopLevelFolder()
+            // can still recognise folder-drop batches.
+            try {
+              const rel = relativePath ? `${relativePath}/${file.name}` : file.name;
+              if (!file.webkitRelativePath) {
+                Object.defineProperty(file, "webkitRelativePath", { value: rel, configurable: true });
+              }
+            } catch (error) { /* defineProperty on File can fail on some browsers; ignore */ }
+            out.push(file);
+            resolve();
+          },
+          () => resolve()
+        );
+      });
+    }
+    if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const childRelative = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+      return new Promise((resolve) => {
+        const readBatch = () => {
+          reader.readEntries(async (batch) => {
+            if (!batch.length) {
+              resolve();
+              return;
+            }
+            await Promise.all(batch.map((child) => collectFilesFromEntry(child, childRelative, out)));
+            readBatch();
+          }, () => resolve());
+        };
+        readBatch();
+      });
+    }
+    return Promise.resolve();
   }
   function handleZoneClick(event) {
-    if (event.target.closest("#upload-browse-menu")) return;
-    if (event.target.closest("#upload-browse-menu-btn")) return;
     if (event.target.closest("#upload-browse-files-btn")) return;
-    if (event.target.closest("#upload-browse-folder-btn")) return;
-    elements().fileInput?.click();
+    const els = elements();
+    if (event.shiftKey && els.folderInput) els.folderInput.click();
+    else els.fileInput?.click();
   }
   function handleZoneKeydown(event) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      elements().fileInput?.click();
+      const els = elements();
+      if (event.shiftKey && els.folderInput) els.folderInput.click();
+      else els.fileInput?.click();
     }
-  }
-  function closeBrowseMenu() {
-    const els = elements();
-    if (els.browseMenu) els.browseMenu.hidden = true;
-    if (els.browseMenuBtn) els.browseMenuBtn.setAttribute("aria-expanded", "false");
   }
   function closeSiteHelpPopovers() {
     elements().siteHelpWraps?.forEach((wrap) => {
@@ -898,26 +1088,12 @@ export function createManualUploadFlow(app) {
     wrap.classList.add("open");
     event.currentTarget.setAttribute("aria-expanded", "true");
   }
-  function toggleBrowseMenu(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    const els = elements();
-    if (!els.browseMenu) return;
-    const willOpen = els.browseMenu.hidden;
-    els.browseMenu.hidden = !willOpen;
-    els.browseMenuBtn?.setAttribute("aria-expanded", willOpen ? "true" : "false");
-  }
   function handleBrowseFilesClick(event) {
     event.preventDefault();
     event.stopPropagation();
-    closeBrowseMenu();
-    elements().fileInput?.click();
-  }
-  function handleBrowseFolderClick(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    closeBrowseMenu();
-    elements().folderInput?.click();
+    const els = elements();
+    if (event.shiftKey && els.folderInput) els.folderInput.click();
+    else els.fileInput?.click();
   }
   function handleFileInputChange(event) {
     void addFiles(event.target?.files);
@@ -997,11 +1173,24 @@ export function createManualUploadFlow(app) {
   }
 
   function handleQueueClick(event) {
-    if (event.target.closest(".queue-site-input")) return;
     const removeBtn = event.target.closest(".queue-remove-btn");
     if (removeBtn) {
       event.preventDefault();
       removeBatch(removeBtn.dataset.batchId);
+      return;
+    }
+    const tag = event.target.closest(".queue-location-tag");
+    if (tag) {
+      // Clicking the site pill inside a row is a shortcut to rename — open
+      // the same modal the review strip uses, for that row's batch.
+      event.preventDefault();
+      const row = tag.closest(".upload-batch-item");
+      const batchId = row?.dataset.batchId || "";
+      if (batchId && state.batches.some((b) => b.id === batchId)) {
+        state.selectedBatchId = batchId;
+        openSiteModal();
+        render();
+      }
       return;
     }
     const row = event.target.closest(".upload-batch-item");
@@ -1009,21 +1198,6 @@ export function createManualUploadFlow(app) {
     state.selectedBatchId = row.dataset.batchId || "";
     renderSitePanel();
     renderQueue();
-  }
-
-  function handleQueueInput(event) {
-    const input = event.target.closest(".queue-site-input");
-    if (!input) return;
-    const batch = state.batches.find((item) => item.id === input.dataset.batchId);
-    if (!batch) return;
-    batch.siteOverride = input.value;
-    normalizeBatchSite(batch);
-    state.selectedBatchId = batch.id;
-    state.error = "";
-    renderSummaryCards();
-    renderSitePanel();
-    renderUploadSummary();
-    renderControls();
   }
 
   function bindEvents() {
@@ -1036,14 +1210,11 @@ export function createManualUploadFlow(app) {
     els.zone.addEventListener("keydown", handleZoneKeydown);
     els.fileInput.addEventListener("change", handleFileInputChange);
     els.folderInput?.addEventListener("change", handleFileInputChange);
-    els.browseMenuBtn?.addEventListener("click", toggleBrowseMenu);
     els.browseFilesBtn?.addEventListener("click", handleBrowseFilesClick);
-    els.browseFolderBtn?.addEventListener("click", handleBrowseFolderClick);
     els.startBtn?.addEventListener("click", () => { void startUpload(); });
     els.clearBtn?.addEventListener("click", clearFiles);
     els.toggleBtn?.addEventListener("click", handleToggleList);
     els.list?.addEventListener("click", handleQueueClick);
-    els.list?.addEventListener("input", handleQueueInput);
     els.siteInput?.addEventListener("input", handleSiteInputChange);
     els.siteInput?.addEventListener("keydown", handleSiteInputKeydown);
     els.siteApplyBtn?.addEventListener("click", applySiteOverride);
@@ -1057,11 +1228,9 @@ export function createManualUploadFlow(app) {
       if (event.target === els.siteModal) closeSiteModal();
     });
     document.addEventListener("click", (event) => {
-      if (!els.manualRoot?.contains(event.target) || !event.target.closest(".dropzone-actions")) closeBrowseMenu();
       if (!event.target.closest(".upload-site-help-wrap")) closeSiteHelpPopovers();
     });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") closeBrowseMenu();
       if (event.key === "Escape") closeSiteHelpPopovers();
     });
     bound = true;

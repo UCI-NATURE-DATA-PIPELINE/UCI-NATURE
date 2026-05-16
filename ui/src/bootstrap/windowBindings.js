@@ -75,4 +75,9 @@ export function bindGlobals(app, showPage) {
   window.downloadFile = app.features.export.downloadFile;
   window.previewTimeCorrection = () => app.features.validate.previewTimeCorrection();
   window.applyTimeCorrection = () => app.features.validate.applyTimeCorrection();
+  // Replay any login clicks that landed before bindings were ready. See the
+  // inline shim in ui/index.html for context.
+  if (typeof window.__uciNatureFlushDeferred === "function") {
+    try { window.__uciNatureFlushDeferred(); } catch (err) { console.error(err); }
+  }
 }

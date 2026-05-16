@@ -257,9 +257,12 @@ def update_drive_sync_progress(
     current_file: Optional[str],
     staging_dir: Optional[str],
     message: str,
+    failed_count: Optional[int] = None,
+    images_per_second: Optional[float] = None,
+    eta_seconds: Optional[float] = None,
+    elapsed_seconds: Optional[float] = None,
 ) -> None:
-    _update_active_drive_sync_state(
-        session_key,
+    updates: Dict[str, Any] = dict(
         folder={
             "id": folder.get("id"),
             "name": folder.get("name"),
@@ -270,6 +273,15 @@ def update_drive_sync_progress(
         staging_dir=staging_dir,
         last_sync_message=message,
     )
+    if failed_count is not None:
+        updates["failed_count"] = int(failed_count or 0)
+    if images_per_second is not None:
+        updates["images_per_second"] = float(images_per_second or 0.0)
+    if eta_seconds is not None:
+        updates["eta_seconds"] = float(eta_seconds)
+    if elapsed_seconds is not None:
+        updates["elapsed_seconds"] = float(elapsed_seconds)
+    _update_active_drive_sync_state(session_key, **updates)
 
 
 def complete_drive_sync_operation(
@@ -294,6 +306,15 @@ def complete_drive_sync_operation(
         error=None,
         last_sync_message=message,
     )
+    # Carry through performance metrics the sync service produced so the UI
+    # sees the final img/sec + elapsed when the run finishes.
+    completed_state["failed_count"] = int(sync_result.get("failed_count") or 0)
+    completed_state["skipped_count"] = int(sync_result.get("already_staged_count") or 0)
+    if sync_result.get("images_per_second") is not None:
+        completed_state["images_per_second"] = float(sync_result.get("images_per_second") or 0)
+    if sync_result.get("elapsed_seconds") is not None:
+        completed_state["elapsed_seconds"] = float(sync_result.get("elapsed_seconds") or 0)
+    completed_state["eta_seconds"] = 0.0
     _set_active_drive_sync_state(session_key, completed_state)
     _persist_drive_sync_state(session, session_key, completed_state)
     return completed_state
@@ -369,6 +390,11 @@ def serialize_drive_sync_state(
     else:
         progress_percent = 0
 
+    failed_count = int(state.get("failed_count") or 0)
+    images_per_second = state.get("images_per_second")
+    eta_seconds = state.get("eta_seconds")
+    elapsed_seconds = state.get("elapsed_seconds")
+
     return {
         "status": state.get("status") or "idle",
         "source_ready": bool(state.get("source_ready") and selected_folder_matches),
@@ -380,6 +406,15 @@ def serialize_drive_sync_state(
         "discovered_count": discovered_count,
         "downloaded_count": downloaded_count,
         "remaining_count": remaining_count,
+        "failed_count": failed_count,
+        "skipped_count": int(state.get("skipped_count") or 0),
+        "images_per_second": (
+            float(images_per_second) if images_per_second is not None else None
+        ),
+        "eta_seconds": float(eta_seconds) if eta_seconds is not None else None,
+        "elapsed_seconds": (
+            float(elapsed_seconds) if elapsed_seconds is not None else None
+        ),
         "progress_percent": progress_percent,
         "current_file": state.get("current_file"),
         "staging_dir": state.get("staging_dir"),
@@ -806,17 +841,25 @@ def sync_selected_folder(
     )
 
     def progress_callback(progress: Dict[str, Any]) -> None:
+        downloaded = int(progress.get("downloaded_count") or 0)
+        discovered = int(progress.get("discovered_count") or 0)
+        failed = int(progress.get("failed_count") or 0)
+        message = (
+            f"Downloaded {downloaded} of {discovered} image(s)"
+            + (f" · {failed} failed" if failed else "")
+        )
         update_drive_sync_progress(
             session_key,
             folder=selected_folder,
-            discovered_count=int(progress.get("discovered_count") or 0),
-            downloaded_count=int(progress.get("downloaded_count") or 0),
+            discovered_count=discovered,
+            downloaded_count=downloaded,
             current_file=progress.get("current_file"),
             staging_dir=progress.get("staging_dir"),
-            message=(
-                f"Downloaded {int(progress.get('downloaded_count') or 0)} "
-                f"of {int(progress.get('discovered_count') or 0)} image(s)"
-            ),
+            message=message,
+            failed_count=failed,
+            images_per_second=progress.get("images_per_second"),
+            eta_seconds=progress.get("eta_seconds"),
+            elapsed_seconds=progress.get("elapsed_seconds"),
         )
 
     try:

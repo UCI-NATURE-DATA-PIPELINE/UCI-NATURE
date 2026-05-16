@@ -3,8 +3,11 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import shutil
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 
@@ -20,11 +23,54 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 DEFAULT_DRIVE_INDEX_PATH = Path("data/outputs/drive_index.csv")
-DOWNLOAD_RETRY_ATTEMPTS = 8
-RETRYABLE_DOWNLOAD_STATUS_CODES = {500, 502, 503, 504}
+DOWNLOAD_RETRY_ATTEMPTS = 5
+RETRYABLE_DOWNLOAD_STATUS_CODES = {429, 500, 502, 503, 504}
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 STAGING_MANIFEST_NAME = ".drive_staging_manifest.json"
+
+
+def _env_int(name: str, default: int, *, low: int = 1, high: int = 64) -> int:
+    """Read a positive integer from the environment, clamped to [low, high]."""
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, value))
+
+
+def _env_float(name: str, default: float, *, low: float = 0.0, high: float = 10.0) -> float:
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, value))
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+# Parallel-download tunables. Sensible defaults; override via env on AWS if
+# the host has more cores / bandwidth.
+DRIVE_DOWNLOAD_MAX_WORKERS = _env_int("UCI_NATURE_DRIVE_WORKERS", 8, low=1, high=32)
+# Throttle how often progress_callback runs, so we don't write the session
+# JSON 1000 times for a 1000-image sync (that destroys throughput on AWS EBS).
+DRIVE_PROGRESS_MIN_INTERVAL_SECONDS = _env_float(
+    "UCI_NATURE_DRIVE_PROGRESS_INTERVAL", 0.4, low=0.05, high=5.0
+)
+# Per-file "Downloaded: ..." prints are off by default; flip this on for
+# debugging a stuck sync.
+DRIVE_DEBUG_LOG = _env_bool("UCI_NATURE_DRIVE_DEBUG", False)
 DRIVE_INDEX_FIELDS = [
     "file_name",
     "file_id",
@@ -107,7 +153,28 @@ def _build_drive_service(access_token: str, refresh_token: Optional[str] = None)
         client_secret=GOOGLE_OAUTH_CLIENT_SECRET if refresh_token else None,
         scopes=[DRIVE_READONLY_SCOPE],
     )
+    # cache_discovery=False avoids stale "discovery" warning spam and the
+    # multi-MB import cost each time we build a new client per worker thread.
     return build("drive", "v3", credentials=credentials, cache_discovery=False)
+
+
+def _make_drive_service_factory(access_token: str, refresh_token: Optional[str]):
+    """Return a callable that produces a thread-local Drive client.
+
+    googleapiclient.discovery.Resource instances are not safe to share across
+    threads. We hand each worker its own client (built lazily on first use)
+    so parallel downloads don't trip over each other.
+    """
+    thread_local = threading.local()
+
+    def get_service():
+        existing = getattr(thread_local, "service", None)
+        if existing is not None:
+            return existing
+        thread_local.service = _build_drive_service(access_token, refresh_token=refresh_token)
+        return thread_local.service
+
+    return get_service
 
 
 def _list_selected_folder_images(service, folder_id: str) -> List[Dict[str, object]]:
@@ -312,14 +379,28 @@ def stage_selected_drive_folder(
 
     resolved_staging_dir = _resolve_safe_staging_dir(staging_dir)
     resolved_drive_index_path = _repo_path(drive_index_path).resolve()
+    # The listing step uses a single Drive client (sequential paginated calls).
+    # Per-thread clients for downloads are produced by the factory below.
     service = _build_drive_service(access_token, refresh_token=refresh_token)
+    get_service = _make_drive_service_factory(access_token, refresh_token)
 
     print("Drive staging start")
     print(f"Selected Drive folder id: {folder_id}")
     print(f"Selected Drive folder name: {folder_name}")
     print(f"Drive staging target dir: {resolved_staging_dir}")
+    print(
+        f"Drive sync tunables: workers={DRIVE_DOWNLOAD_MAX_WORKERS} "
+        f"progress_interval={DRIVE_PROGRESS_MIN_INTERVAL_SECONDS}s "
+        f"debug_log={DRIVE_DEBUG_LOG}"
+    )
 
+    list_started = time.monotonic()
     files = _list_selected_folder_images(service, folder_id)
+    list_elapsed = time.monotonic() - list_started
+    print(
+        f"Drive listing complete in {list_elapsed:.2f}s — {len(files)} "
+        "supported image(s) discovered"
+    )
     available_count = len(files)
     if not files:
         if resolved_staging_dir.exists() and any(resolved_staging_dir.iterdir()):
@@ -355,13 +436,27 @@ def stage_selected_drive_folder(
             folder_name=folder_name,
         )
 
+    # Fast skip: a file is considered already-staged if the final path exists
+    # AND is non-empty. `.part` leftovers from previous interrupted syncs are
+    # NOT counted, so they get re-downloaded cleanly.
     staged_files: List[Dict[str, object]] = []
     pending_files: List[Dict[str, object]] = []
     for file_info in files:
         staged_path = resolved_staging_dir / Path(file_info["relative_local_path"])
-        if staged_path.exists():
+        try:
+            ready = staged_path.exists() and staged_path.stat().st_size > 0
+        except OSError:
+            ready = False
+        if ready:
             staged_files.append(file_info)
         else:
+            # Clean obvious leftovers so the next attempt has a fresh path.
+            part_path = staged_path.with_suffix(staged_path.suffix + ".part")
+            if part_path.exists():
+                try:
+                    part_path.unlink()
+                except OSError:
+                    pass
             pending_files.append(file_info)
 
     already_staged_count = len(staged_files)
@@ -400,11 +495,40 @@ def stage_selected_drive_folder(
     )
 
     downloaded_files: List[str] = []
-    for index, file_info in enumerate(files_to_download, start=1):
-        out_path = resolved_staging_dir / Path(file_info["relative_local_path"])
-        _download_file(service, str(file_info["file_id"]), out_path)
-        downloaded_files.append(str(file_info["relative_local_path"]))
-        print(f"Downloaded: {file_info['drive_path']} -> {out_path}")
+    failed_files: List[Dict[str, object]] = []
+
+    counters_lock = threading.Lock()
+    started_at_monotonic = time.monotonic()
+    started_at_wall = time.time()
+    last_progress_emit = [0.0]  # mutable holder for closure
+
+    def emit_running_progress(
+        *,
+        current_file: Optional[str],
+        force: bool = False,
+    ) -> None:
+        """Push live progress to the UI, throttled by interval to avoid
+        slamming the session JSON file (per-file emit dominated runtime)."""
+        now = time.monotonic()
+        # Always emit the very first event ("starting download...") and the
+        # very last one ("done"); throttle the middle ones.
+        if (
+            not force
+            and (now - last_progress_emit[0]) < DRIVE_PROGRESS_MIN_INTERVAL_SECONDS
+        ):
+            return
+        last_progress_emit[0] = now
+
+        with counters_lock:
+            done = len(downloaded_files)
+            failed = len(failed_files)
+        elapsed = max(now - started_at_monotonic, 1e-6)
+        ips = done / elapsed if elapsed > 0 else 0.0
+        eta_seconds: Optional[float] = None
+        remaining = max(discovered_count - done - failed, 0)
+        if ips > 0 and remaining > 0:
+            eta_seconds = remaining / ips
+
         _emit_progress(
             progress_callback,
             {
@@ -412,15 +536,69 @@ def stage_selected_drive_folder(
                 "folder_id": folder_id,
                 "folder_name": folder_name,
                 "discovered_count": discovered_count,
-                "downloaded_count": index,
+                "downloaded_count": done,
+                "failed_count": failed,
                 "available_count": available_count,
                 "already_staged_count": already_staged_count,
-                "staged_count": already_staged_count + index,
-                "remaining_count": max(remaining_unsynced_count - index, 0),
-                "current_file": str(file_info["drive_path"]),
+                "staged_count": already_staged_count + done,
+                "remaining_count": remaining,
+                "images_per_second": round(ips, 2),
+                "eta_seconds": round(eta_seconds, 1) if eta_seconds is not None else None,
+                "elapsed_seconds": round(elapsed, 1),
+                "started_at": started_at_wall,
+                "current_file": current_file,
                 "staging_dir": str(resolved_staging_dir),
             },
         )
+
+    def download_one(file_info: Dict[str, object]) -> Tuple[bool, Dict[str, object], Optional[str]]:
+        out_path = resolved_staging_dir / Path(file_info["relative_local_path"])
+        try:
+            _download_file(get_service(), str(file_info["file_id"]), out_path)
+            if DRIVE_DEBUG_LOG:
+                print(f"Downloaded: {file_info['drive_path']} -> {out_path}")
+            return True, file_info, None
+        except Exception as exc:  # noqa: BLE001 — we want to keep going
+            err = repr(exc)
+            print(
+                f"Drive sync failed for {file_info.get('drive_path')!r} "
+                f"({file_info.get('file_id')!r}): {err}"
+            )
+            return False, file_info, err
+
+    # ── Parallel download fan-out ──────────────────────────────────────
+    # 1 worker => current sequential behavior. The standalone CLI uses 16; we
+    # default to 8 because the UI session token + Drive quota tends to be
+    # more conservative under sustained parallelism.
+    if files_to_download:
+        emit_running_progress(current_file=None, force=True)
+
+        with ThreadPoolExecutor(
+            max_workers=DRIVE_DOWNLOAD_MAX_WORKERS,
+            thread_name_prefix="drive-sync",
+        ) as pool:
+            future_map = {
+                pool.submit(download_one, info): info for info in files_to_download
+            }
+            for future in as_completed(future_map):
+                ok, file_info, error = future.result()
+                with counters_lock:
+                    if ok:
+                        downloaded_files.append(str(file_info["relative_local_path"]))
+                    else:
+                        failed_files.append({
+                            "file_id": file_info.get("file_id"),
+                            "drive_path": file_info.get("drive_path"),
+                            "error": error,
+                        })
+                emit_running_progress(current_file=str(file_info["drive_path"]))
+
+        # Final emit so the UI lands on the exact final counts, no matter
+        # what the throttle was doing on the last few completions.
+        emit_running_progress(current_file=None, force=True)
+
+    sync_elapsed = time.monotonic() - started_at_monotonic
+    final_ips = (len(downloaded_files) / sync_elapsed) if sync_elapsed > 0 else 0.0
 
     staged_files = [
         file_info
@@ -436,8 +614,11 @@ def stage_selected_drive_folder(
         camera_location=camera_location,
     )
 
-    print(f"Files downloaded: {len(downloaded_files)}")
-    print(f"Files staged total: {staged_count}")
+    print(
+        f"Drive sync done in {sync_elapsed:.2f}s — "
+        f"downloaded={len(downloaded_files)} failed={len(failed_files)} "
+        f"skipped_existing={already_staged_count} ips={final_ips:.2f}"
+    )
     print(f"Final staging dir path: {resolved_staging_dir}")
     print(f"Drive index written: {resolved_drive_index_path}")
 
@@ -451,7 +632,11 @@ def stage_selected_drive_folder(
         "downloaded_count": staged_count,
         "newly_downloaded_count": len(downloaded_files),
         "already_staged_count": already_staged_count,
+        "failed_count": len(failed_files),
+        "failed_files": failed_files,
         "remaining_count": max(available_count - staged_count, 0),
         "max_files": max_files,
         "downloaded_files": downloaded_files,
+        "elapsed_seconds": round(sync_elapsed, 2),
+        "images_per_second": round(final_ips, 2),
     }

@@ -25,14 +25,26 @@ export function createAuthActions(app, api, stateApi, renderApi) {
    * /api/auth/login, fetch the Google auth URL from /api/auth/google/start,
    * then redirect the browser.
    */
+  function setLoginButtonBusy(button, busyLabel) {
+    if (!button) return () => {};
+    const labelEl = button.querySelector(".oauth-btn-label");
+    const originalLabel = labelEl ? labelEl.textContent : button.textContent;
+    button.disabled = true;
+    button.classList.add("loading");
+    if (labelEl) labelEl.textContent = busyLabel;
+    else button.textContent = busyLabel;
+    return () => {
+      button.disabled = false;
+      button.classList.remove("loading");
+      if (labelEl) labelEl.textContent = originalLabel;
+      else button.textContent = originalLabel;
+    };
+  }
+
   async function startGoogleSignIn() {
     const oauthBtn = document.getElementById("oauth-btn");
-    const originalText = oauthBtn?.innerHTML;
+    const restoreButton = setLoginButtonBusy(oauthBtn, "Continuing…");
     renderApi.setLoginStep(3);
-    if (oauthBtn) {
-      oauthBtn.disabled = true;
-      oauthBtn.textContent = "Connecting...";
-    }
 
     appState.currentDriveProfile = stateApi.getDriveProfile();
 
@@ -57,20 +69,13 @@ export function createAuthActions(app, api, stateApi, renderApi) {
       app.showToast(error.message || "Unable to start Google sign-in", "warn");
       renderApi.setLoginStep(2);
     } finally {
-      if (oauthBtn) {
-        oauthBtn.innerHTML = originalText;
-        oauthBtn.disabled = false;
-      }
+      restoreButton();
     }
   }
 
   async function continueWithoutGoogleDrive() {
     const localBtn = document.getElementById("local-login-btn");
-    const originalHtml = localBtn?.innerHTML;
-    if (localBtn) {
-      localBtn.disabled = true;
-      localBtn.textContent = "Opening Manual Upload...";
-    }
+    const restoreButton = setLoginButtonBusy(localBtn, "Continuing…");
 
     try {
       const response = await api.loginUser("", appState.selectedProject);
@@ -105,10 +110,7 @@ export function createAuthActions(app, api, stateApi, renderApi) {
       appState.signedInUser = null;
       app.showToast(error.message || "Unable to start a local session", "warn");
     } finally {
-      if (localBtn) {
-        localBtn.innerHTML = originalHtml;
-        localBtn.disabled = false;
-      }
+      restoreButton();
     }
   }
 

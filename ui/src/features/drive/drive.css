@@ -164,7 +164,9 @@
 .queue-site-edit span { font-size:10.5px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.3px; }
 .queue-site-input { width:100%; min-width:0; height:30px; border:1px solid var(--border); border-radius:8px; padding:0 9px; font:500 12.5px 'Inter',sans-serif; color:var(--text); background:#fff; outline:none; }
 .queue-site-input:focus { border-color:var(--blue); box-shadow:0 0 0 3px rgba(0,100,164,.1); }
-.queue-location-tag { font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; background:#EBF8FF; color:var(--blue); white-space:nowrap; align-self:center; }
+.queue-location-tag { font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; background:#EBF8FF; color:var(--blue); white-space:nowrap; align-self:center; cursor:pointer; transition:background .15s,border-color .15s; }
+#upload-manual .queue-location-tag:hover { background:#BEE3F8; }
+#upload-manual .queue-location-tag::after { content:" ✎"; opacity:0.5; font-size:10px; }
 .queue-size-text { font-size:12px; color:var(--muted); white-space:nowrap; align-self:center; }
 /* progress wrap: pushed down with padding-bottom to optically balance with status pill */
 .queue-prog-wrap { display:flex; flex-direction:column; gap:5px; padding-bottom:2px; }
@@ -180,7 +182,7 @@
 .queue-remove-btn:disabled { opacity:.5; cursor:not-allowed; text-decoration:none; color:var(--muted); }
 
 
-/* ─── MANUAL UPLOAD: dropzone subtitle, browse menu, queue summary ── */
+/* ─── MANUAL UPLOAD: dropzone subtitle and queue summary ── */
 .upload-subtitle {
   font-size:12.5px;
   color:var(--muted);
@@ -191,44 +193,9 @@
 .dropzone-actions {
   position:relative;
   display:inline-flex;
+  align-items:center;
+  justify-content:center;
   margin-top:14px;
-}
-
-.dropzone-browse-menu {
-  position:absolute;
-  top:calc(100% + 6px);
-  left:50%;
-  z-index:20;
-  min-width:190px;
-  padding:6px;
-  background:var(--card);
-  border:1px solid var(--border);
-  border-radius:10px;
-  box-shadow:0 10px 25px rgba(26,32,44,.16);
-  transform:translateX(-50%);
-  text-align:left;
-}
-.dropzone-browse-menu[hidden] {
-  display:none !important;
-}
-.dropzone-browse-menu-item {
-  width:100%;
-  border:0;
-  background:transparent;
-  color:var(--text);
-  border-radius:7px;
-  padding:9px 10px;
-  font-family:'Inter',sans-serif;
-  font-size:12.5px;
-  font-weight:600;
-  text-align:left;
-  cursor:pointer;
-}
-.dropzone-browse-menu-item:hover,
-.dropzone-browse-menu-item:focus {
-  background:#EBF8FF;
-  color:var(--blue);
-  outline:none;
 }
 
 .upload-queue-summary {
@@ -1026,3 +993,102 @@
     grid-template-columns:1fr;
   }
 }
+
+/* ─── SHARED UPLOAD PROGRESS CARD ────────────────────────
+   Used by BOTH the Manual Upload side panel and the Drive sync side panel
+   so the two upload modes feel like one component with different sources. */
+.upload-progress-card { display:flex; flex-direction:column; gap:14px; }
+.upload-progress-head {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+}
+.upload-progress-title {
+  font-size:13px; font-weight:700; color:var(--dark); letter-spacing:.2px;
+}
+.upload-progress-status-pill {
+  font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px;
+  background:#EDF2F7; color:var(--muted); text-transform:uppercase; letter-spacing:.4px;
+}
+.upload-progress-status-pill.idle    { background:#EDF2F7; color:#4A5568; }
+.upload-progress-status-pill.active  { background:#FEFCBF; color:#744210; }
+.upload-progress-status-pill.done    { background:#C6F6D5; color:#22543D; }
+.upload-progress-status-pill.failed  { background:#FED7D7; color:#822727; }
+
+/* Camera-site pill, shared by Manual + Drive so both modes show the same chip. */
+.camera-site-pill {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:4px 10px; border-radius:999px;
+  background:#EBF8FF; color:#1A4E8A;
+  border:1px solid #BEE3F8;
+  font-size:12px; font-weight:600; line-height:1; white-space:nowrap;
+}
+.camera-site-pill::before {
+  content:""; width:6px; height:6px; border-radius:50%;
+  background:#3182CE; box-shadow:0 0 0 3px rgba(49,130,206,.18);
+  flex-shrink:0;
+}
+.camera-site-pill.muted {
+  background:#F7FAFC; color:var(--muted); border-color:var(--border);
+}
+.camera-site-pill.muted::before { background:#A0AEC0; box-shadow:none; }
+
+.upload-progress-source {
+  display:flex; align-items:center; justify-content:space-between;
+  gap:10px; padding:10px 12px;
+  border:1px solid var(--border); border-radius:10px; background:#FAFBFC;
+}
+.upload-progress-source-name {
+  font-size:13px; font-weight:600; color:var(--text);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.upload-progress-source-sub {
+  font-size:11.5px; color:var(--muted); margin-top:2px;
+}
+
+.upload-progress-bar-wrap { display:flex; flex-direction:column; gap:6px; }
+.upload-progress-bar-track {
+  position:relative; height:8px; background:#E2E8F0;
+  border-radius:999px; overflow:hidden;
+}
+.upload-progress-bar-fill {
+  position:absolute; inset:0 auto 0 0; width:0%;
+  background:var(--blue); border-radius:999px;
+  transition:width .5s cubic-bezier(.4,0,.2,1);
+}
+.upload-progress-bar-fill.active {
+  background:linear-gradient(90deg,#0064A4 0%,#3182CE 100%);
+  position:relative;
+}
+.upload-progress-bar-fill.active::after {
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);
+  animation:shimmer 1.6s ease-in-out infinite;
+}
+.upload-progress-bar-fill.done   { background:#48BB78; }
+.upload-progress-bar-fill.failed { background:#E53E3E; }
+
+.upload-progress-bar-meta {
+  display:flex; align-items:center; justify-content:space-between;
+  font-size:11.5px; color:var(--muted);
+}
+.upload-progress-bar-meta strong { color:var(--text); font-weight:700; }
+
+.upload-progress-stats {
+  display:grid; grid-template-columns:repeat(2,1fr); gap:8px 14px;
+  padding:10px 0 0; border-top:1px solid var(--border);
+}
+#upload-progress-card .upload-progress-stats {
+  grid-template-columns:repeat(3,1fr);
+}
+.upload-progress-stat-lbl {
+  font-size:10.5px; font-weight:600; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.35px;
+}
+.upload-progress-stat-val {
+  font-size:13px; font-weight:600; color:var(--text); margin-top:2px;
+  word-break:break-word;
+}
+.upload-progress-current {
+  font-size:11.5px; color:var(--muted); margin-top:4px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.upload-progress-current strong { color:var(--text); font-weight:600; }
