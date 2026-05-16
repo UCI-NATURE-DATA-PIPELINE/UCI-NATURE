@@ -120,15 +120,62 @@
         </div>
       </div>
 
-      <div class="card card-p">
-        <div class="card-title">Upload summary</div>
-        <div class="upload-summary-list">
-          <div class="upload-summary-row"><span>Camera site</span><strong id="upload-summary-site">—</strong></div>
-          <div class="upload-summary-row"><span>Files selected</span><strong id="upload-summary-files">0</strong></div>
-          <div class="upload-summary-row"><span>Total size</span><strong id="upload-summary-size">—</strong></div>
-          <div class="upload-summary-row"><span>Upload type</span><strong id="upload-summary-type">—</strong></div>
-          <div class="upload-summary-row"><span>Staging location</span><strong id="upload-summary-staging">data/staging/&lt;camera_site&gt;</strong></div>
-          <div class="upload-summary-row"><span>Last upload status</span><strong id="upload-summary-last-status">Ready</strong></div>
+      <div class="card card-p upload-progress-card" id="upload-progress-card">
+        <div class="upload-progress-head">
+          <div class="upload-progress-title">Upload progress</div>
+          <span class="upload-progress-status-pill idle" id="upload-progress-status">Ready</span>
+        </div>
+        <div class="upload-progress-source">
+          <div style="min-width:0">
+            <div class="upload-progress-source-name" id="upload-progress-source-name">No files selected</div>
+            <div class="upload-progress-source-sub" id="upload-progress-source-sub">Drop images, a folder, or a ZIP to begin.</div>
+          </div>
+          <span class="camera-site-pill muted" id="upload-progress-site-pill">No site</span>
+        </div>
+        <div class="upload-progress-bar-wrap">
+          <div class="upload-progress-bar-track">
+            <div class="upload-progress-bar-fill" id="upload-progress-fill"></div>
+          </div>
+          <div class="upload-progress-bar-meta">
+            <span><strong id="upload-progress-done">0</strong> of <strong id="upload-progress-total">0</strong> images</span>
+            <strong id="upload-progress-pct">0%</strong>
+          </div>
+        </div>
+        <div class="upload-progress-stats">
+          <div>
+            <div class="upload-progress-stat-lbl">Total size</div>
+            <div class="upload-progress-stat-val" id="upload-progress-size">—</div>
+          </div>
+          <div>
+            <div class="upload-progress-stat-lbl">Status</div>
+            <div class="upload-progress-stat-val" id="upload-progress-status-text">Ready</div>
+          </div>
+          <div>
+            <div class="upload-progress-stat-lbl">Batches</div>
+            <div class="upload-progress-stat-val" id="upload-progress-batches">0</div>
+          </div>
+          <div>
+            <div class="upload-progress-stat-lbl">Upload type</div>
+            <div class="upload-progress-stat-val" id="upload-progress-type">—</div>
+          </div>
+          <div>
+            <div class="upload-progress-stat-lbl">Remaining</div>
+            <div class="upload-progress-stat-val" id="upload-progress-remaining">—</div>
+          </div>
+          <div>
+            <div class="upload-progress-stat-lbl">Last updated</div>
+            <div class="upload-progress-stat-val" id="upload-progress-updated">—</div>
+          </div>
+        </div>
+        <!-- Hidden mirrors of the previous summary ids so any other code that
+             reads them keeps working (manualUploadFlow writes both). -->
+        <div class="visually-hidden">
+          <span id="upload-summary-site">—</span>
+          <span id="upload-summary-files">0</span>
+          <span id="upload-summary-size">—</span>
+          <span id="upload-summary-type">—</span>
+          <span id="upload-summary-staging">data/staging/&lt;camera_site&gt;</span>
+          <span id="upload-summary-last-status">Ready</span>
         </div>
         <div class="upload-runtime-warning" id="upload-runtime-warning" hidden>
           Model runtime not ready. Uploads can still be staged, but processing will require SpeciesNet.

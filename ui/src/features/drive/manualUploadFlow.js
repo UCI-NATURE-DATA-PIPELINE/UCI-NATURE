@@ -621,6 +621,97 @@ export function createManualUploadFlow(app) {
     if (els.runtimeWarning) {
       els.runtimeWarning.hidden = !appState.backendHealth?.connected || Boolean(appState.backendHealth?.pipelineRuntimeReady);
     }
+    renderProgressCard();
+  }
+
+  function renderProgressCard() {
+    const set = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    };
+    const fileCount = totalQueueCount();
+    const totalImages = totalKnownImages();
+    const status = statusLabel();              // Ready / Uploading / Uploaded / Error
+    const tone = state.error
+      ? "failed"
+      : state.isUploading
+        ? "active"
+        : state.lastResult
+          ? "done"
+          : "idle";
+
+    // Header pill
+    const pill = document.getElementById("upload-progress-status");
+    if (pill) {
+      pill.className = `upload-progress-status-pill ${tone}`;
+      pill.textContent = status;
+    }
+
+    // Source row (selected files / batches / current file)
+    const batch = selectedBatch();
+    const sourceName = !fileCount
+      ? (state.lastResult ? "Queue cleared after upload" : "No files selected")
+      : fileCount === 1
+        ? batch?.sourceName || "1 upload"
+        : `${fileCount} uploads selected`;
+    const sub = state.error
+      ? state.error
+      : state.isUploading
+        ? `Uploading ${state.progress}% · ${totalImages} image(s)`
+        : state.lastResult
+          ? `${state.lastResult.uploaded_count || 0} image(s) staged`
+          : fileCount
+            ? `${uploadTypeLabel()} · ${formatBytes(totalQueueBytes())}`
+            : "Drop images, a folder, or a ZIP to begin.";
+    set("upload-progress-source-name", sourceName);
+    set("upload-progress-source-sub", sub);
+
+    // Camera-site pill (consistent with Drive mode)
+    const sitePill = document.getElementById("upload-progress-site-pill");
+    if (sitePill) {
+      const siteCount = detectedSiteCount();
+      const label = siteCount > 1
+        ? `${siteCount} sites`
+        : (batch?.cameraLocation || "");
+      if (label) {
+        sitePill.textContent = label;
+        sitePill.classList.remove("muted");
+      } else {
+        sitePill.textContent = "No site";
+        sitePill.classList.add("muted");
+      }
+    }
+
+    // Progress bar
+    const done = state.lastResult
+      ? (state.lastResult.uploaded_count || 0)
+      : state.isUploading
+        ? Math.round((state.progress / 100) * totalImages)
+        : 0;
+    const percent = Math.max(0, Math.min(100, Math.round(state.progress || (state.lastResult ? 100 : 0))));
+    const fill = document.getElementById("upload-progress-fill");
+    if (fill) {
+      fill.className = `upload-progress-bar-fill ${tone === "idle" ? "" : tone}`.trim();
+      fill.style.width = `${percent}%`;
+    }
+    set("upload-progress-pct", `${percent}%`);
+    set("upload-progress-done", String(done || (state.lastResult ? totalImages : 0)));
+    set("upload-progress-total", state.lastResult
+      ? String(state.lastResult.uploaded_count || totalImages || 0)
+      : (hasPendingZipCounts() ? totalImageLabel() : String(totalImages || 0)));
+
+    // Stats
+    set("upload-progress-size", fileCount ? formatBytes(totalQueueBytes()) : "—");
+    set("upload-progress-status-text", state.error || status);
+    set("upload-progress-batches", String(fileCount));
+    set("upload-progress-type", uploadTypeLabel());
+    const remaining = state.isUploading
+      ? Math.max(0, totalImages - done)
+      : (totalImages && !state.lastResult ? totalImages : 0);
+    set("upload-progress-remaining", remaining ? String(remaining) : (state.lastResult ? "0" : "—"));
+    set("upload-progress-updated",
+      state.lastResult ? "Just now" : state.isUploading ? "Live" : (fileCount ? "Just now" : "—")
+    );
   }
 
   function renderControls() {

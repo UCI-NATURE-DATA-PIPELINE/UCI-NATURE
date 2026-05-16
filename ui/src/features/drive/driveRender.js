@@ -1,6 +1,6 @@
 /** Drive feature rendering for badges, folder controls, and source summaries. */
 import { appState } from "../../state/appState.js";
-import { formatNumber, formatTimestampLabel } from "../../utils/format.js";
+import { formatDurationLabel, formatNumber, formatTimestampLabel } from "../../utils/format.js";
 import {
   formatDriveFolderOptionLabel,
   formatDriveSyncLimitLabel,
@@ -445,8 +445,133 @@ export function createDriveRender(app, stateApi, utilsApi) {
     const lastSyncMeta = document.getElementById("drive-last-sync-meta");
     if (lastSyncTitle) lastSyncTitle.textContent = "Last Sync Result";
     if (lastSyncMeta) lastSyncMeta.textContent = queuePresentation.lastSyncMeta;
+
+    // ── Shared upload progress card (mirror of the Manual Upload card) ──
+    renderDriveProgressCard(queuePresentation);
+
     syncDriveLocationCards();
     updatePipelineSourceSummary();
+  }
+
+  function renderDriveProgressCard(queuePresentation) {
+    const sync = appState.driveSyncState || {};
+    const syncStatus = queuePresentation.syncStatus;
+    const synced = queuePresentation.syncedCount || 0;
+    const total = queuePresentation.totalCount || 0;
+    const remaining = Math.max(0, total - synced);
+    const percent = queuePresentation.progressPercent;
+
+    // Prefer backend-reported elapsed/eta/img-per-sec (server measured the
+    // actual download work). Fall back to JS-derived numbers from
+    // started_at / finished_at when the backend hasn't filled them in yet.
+    let elapsedSec = typeof sync.elapsed_seconds === "number" && Number.isFinite(sync.elapsed_seconds)
+      ? sync.elapsed_seconds
+      : null;
+    if (elapsedSec === null && sync.started_at) {
+      const start = Date.parse(sync.started_at);
+      const end = sync.finished_at ? Date.parse(sync.finished_at) : Date.now();
+      if (!Number.isNaN(start) && !Number.isNaN(end)) {
+        elapsedSec = Math.max(0, (end - start) / 1000);
+      }
+    }
+    let etaSec = typeof sync.eta_seconds === "number" && Number.isFinite(sync.eta_seconds)
+      ? sync.eta_seconds
+      : null;
+    if (etaSec === null && syncStatus === "syncing" && elapsedSec && synced > 0 && remaining > 0) {
+      etaSec = (elapsedSec / synced) * remaining;
+    }
+    const ips = typeof sync.images_per_second === "number" && Number.isFinite(sync.images_per_second)
+      ? sync.images_per_second
+      : (elapsedSec && synced > 0 ? synced / Math.max(elapsedSec, 1e-6) : null);
+    const failedCount = Number(sync.failed_count || 0);
+    const skippedCount = Number(sync.skipped_count || 0);
+
+    const statusLabel = queuePresentation.isReady
+      ? "Complete"
+      : syncStatus === "syncing"
+        ? "Syncing"
+        : syncStatus === "failed"
+          ? "Failed"
+          : "Idle";
+    const statusTone = queuePresentation.isReady
+      ? "done"
+      : syncStatus === "syncing"
+        ? "active"
+        : syncStatus === "failed"
+          ? "failed"
+          : "idle";
+
+    const set = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    };
+
+    // Header status pill
+    const statusPill = document.getElementById("drive-progress-status");
+    if (statusPill) {
+      statusPill.className = `upload-progress-status-pill ${statusTone}`;
+      statusPill.textContent = statusLabel;
+    }
+
+    // Source row
+    set("drive-progress-source-name", queuePresentation.queueName);
+    set("drive-progress-source-sub", queuePresentation.hiddenStatusSub);
+
+    // Camera-site pill (consistent with the Manual mode pill)
+    const sitePill = document.getElementById("drive-progress-site-pill");
+    if (sitePill) {
+      const siteName = appState.driveCameraLocation || "";
+      if (siteName) {
+        sitePill.textContent = siteName;
+        sitePill.classList.remove("muted");
+      } else {
+        sitePill.textContent = "No site";
+        sitePill.classList.add("muted");
+      }
+    }
+
+    // Progress bar
+    const fill = document.getElementById("drive-progress-fill");
+    if (fill) {
+      fill.className = `upload-progress-bar-fill ${statusTone === "idle" ? "" : statusTone}`.trim();
+      fill.style.width = `${percent}%`;
+    }
+    set("drive-progress-pct", `${percent}%`);
+    set("drive-progress-synced", formatNumber(synced));
+    set("drive-progress-total", formatNumber(total));
+
+    // Stats grid
+    set(
+      "drive-progress-downloaded-total",
+      `${formatNumber(synced)} / ${formatNumber(total)}`
+    );
+    set(
+      "drive-progress-ips",
+      ips !== null && ips > 0 ? `${ips.toFixed(ips >= 10 ? 0 : 1)} img/s` : "—"
+    );
+    set("drive-progress-elapsed", elapsedSec === null ? "—" : formatDurationLabel(elapsedSec));
+    set("drive-progress-eta", etaSec === null ? "—" : formatDurationLabel(etaSec));
+    set("drive-progress-remaining", total ? formatNumber(remaining) : "—");
+    set("drive-progress-skipped", formatNumber(skippedCount));
+    set("drive-progress-failed", formatNumber(failedCount));
+    set("drive-progress-status-text", statusLabel);
+    set(
+      "drive-progress-updated",
+      sync.finished_at
+        ? formatTimestampLabel(sync.finished_at)
+        : sync.started_at
+          ? formatTimestampLabel(sync.started_at)
+          : "—"
+    );
+    set("drive-progress-limit", queuePresentation.appliedLimitLabel);
+
+    // Current file (only while syncing)
+    const currentRow = document.getElementById("drive-progress-current");
+    if (currentRow) {
+      const file = sync.current_file || "";
+      currentRow.hidden = !(syncStatus === "syncing" && file);
+      set("drive-progress-current-file", file || "—");
+    }
   }
 
   return {

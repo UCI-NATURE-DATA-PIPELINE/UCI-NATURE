@@ -142,8 +142,15 @@
 
 .login-option-divider {
   display: flex; align-items: center; gap: 10px;
-  margin: 16px 0 14px;
+  margin: 14px 0 12px;
   color: #9AA8B8; font-size: 11px; font-weight: 500;
+}
+.login-option-hint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.45;
 }
 .login-option-divider::before,
 .login-option-divider::after {
