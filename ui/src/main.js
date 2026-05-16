@@ -48,13 +48,19 @@ async function initializeApp() {
   console.log("App start");
   if (DEV_MODE) console.log("Local dev mode enabled");
   setBootSplashStatus("Starting Wildlife Research…", "Loading interface modules.");
-  await loadFeatureMarkup();
-  console.log("Markup loaded");
+
+  // Register features + window bindings BEFORE awaiting markup so that any
+  // inline onclick="startGoogleSignIn()" etc. resolves the moment the markup
+  // appears. Otherwise an early click during partial fetch produces
+  // "startGoogleSignIn is not defined" in the console.
   const backendStatusApi = createBackendStatus();
   registerFeatures(app);
   const { showPage } = createPageController(app);
   bindGlobals(app, showPage);
   bindLayoutNavigation({ showPage });
+
+  await loadFeatureMarkup();
+  console.log("Markup loaded");
   app.applyBackendHealthStatus = (health) => {
     backendStatusApi.applyBackendHealthStatus(health);
     // Keep the Upload page's backend banners / Process buttons in sync with the
@@ -120,5 +126,15 @@ async function initializeApp() {
 document.addEventListener("DOMContentLoaded", () => {
   void initializeApp().catch((error) => {
     console.error("App initialization failed:", error);
+    // Never trap the user on the boot spinner if something throws — surface
+    // the error in the splash and reveal the auth shell so login is reachable.
+    setBootSplashStatus(
+      "App failed to start",
+      error?.message || "Unexpected error. Reload the page or contact support.",
+      { error: true, showRetry: true }
+    );
+    revealAuthShells();
+    const retryEl = document.getElementById("app-boot-retry");
+    if (retryEl) retryEl.onclick = () => window.location.reload();
   });
 });

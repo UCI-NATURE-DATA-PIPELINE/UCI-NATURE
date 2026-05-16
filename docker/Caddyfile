@@ -1,17 +1,26 @@
-http://localhost, http://127.0.0.1 {
+(app_routes) {
     encode gzip zstd
 
+    # Backend API: proxy /api and everything under it to FastAPI.
     @api path /api /api/*
     reverse_proxy @api backend:8000
 
+    # Make sure HTML responses are never cached at the edge so cache-busting
+    # ?v=... in index.html actually flushes stale JS/CSS in users' browsers.
+    @html {
+        path / /index.html
+        path *.html
+    }
+    header @html Cache-Control "no-store, no-cache, must-revalidate"
+
+    # Everything else: serve the static UI container.
     reverse_proxy frontend:80
 }
 
+http://localhost, http://127.0.0.1 {
+    import app_routes
+}
+
 uci-nature-pipeline.duckdns.org {
-    encode gzip zstd
-
-    @api path /api /api/*
-    reverse_proxy @api backend:8000
-
-    reverse_proxy frontend:80
+    import app_routes
 }

@@ -6,15 +6,17 @@
 <title>Wildlife Research — Camera Pipeline</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232B4C7E'/%3E%3Cpath d='M7 24c4-10 14-10 18-5-5 0-9 4-10 10z' fill='%2397C24D'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./src/styles/global.css">
-<link rel="stylesheet" href="./src/features/auth/auth.css?v=local-login-card-2">
-<link rel="stylesheet" href="./src/features/dashboard/dashboard.css">
-<link rel="stylesheet" href="./src/features/drive/drive.css">
-<link rel="stylesheet" href="./src/features/pipeline/pipeline.css">
-<link rel="stylesheet" href="./src/features/review/review.css">
-<link rel="stylesheet" href="./src/features/validate/validate.css">
-<link rel="stylesheet" href="./src/features/export/export.css">
-<link rel="stylesheet" href="./src/features/statistics/statistics.css">
+<!-- Cache-busting: bump UCI_NATURE_ASSET_VERSION on every deploy so browsers
+     never serve stale CSS/JS behind Caddy/nginx. -->
+<link rel="stylesheet" href="./src/styles/global.css?v=20260515-1">
+<link rel="stylesheet" href="./src/features/auth/auth.css?v=20260515-1">
+<link rel="stylesheet" href="./src/features/dashboard/dashboard.css?v=20260515-1">
+<link rel="stylesheet" href="./src/features/drive/drive.css?v=20260515-1">
+<link rel="stylesheet" href="./src/features/pipeline/pipeline.css?v=20260515-1">
+<link rel="stylesheet" href="./src/features/review/review.css?v=20260515-1">
+<link rel="stylesheet" href="./src/features/validate/validate.css?v=20260515-1">
+<link rel="stylesheet" href="./src/features/export/export.css?v=20260515-1">
+<link rel="stylesheet" href="./src/features/statistics/statistics.css?v=20260515-1">
 </head>
 <body>
 <!-- App boot splash. Hidden once bootstrapAppState() decides whether to show
@@ -142,6 +144,43 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script type="module" src="./src/main.js"></script>
+<!-- Pre-bind no-op stubs for login button handlers. The real implementations
+     are wired by ui/src/bootstrap/windowBindings.js as soon as main.js runs.
+     This guard prevents "startGoogleSignIn is not defined" / "continueWithoutGoogleDrive
+     is not defined" if a user clicks before the module bundle finishes loading
+     (slow connection, browser still parsing modules, stale cache, etc.). -->
+<script>
+  (function () {
+    var queued = [];
+    function defer(name) {
+      if (typeof window[name] === "function") return;
+      window[name] = function () {
+        queued.push({ name: name, args: Array.prototype.slice.call(arguments) });
+        console.warn("[uci-nature] " + name + "() invoked before bindings ready; queued.");
+      };
+    }
+    [
+      "startGoogleSignIn",
+      "continueWithoutGoogleDrive",
+      "goToStep2",
+      "selectProject",
+      "confirmDrive",
+      "switchAccount",
+      "openDriveModal",
+      "reconnectDrive",
+      "showPage",
+      "closeConfirmModal",
+      "confirmModalOK"
+    ].forEach(defer);
+    window.__uciNatureFlushDeferred = function () {
+      while (queued.length) {
+        var item = queued.shift();
+        try { if (typeof window[item.name] === "function") window[item.name].apply(null, item.args); }
+        catch (err) { console.error("[uci-nature] flush " + item.name + " failed", err); }
+      }
+    };
+  })();
+</script>
+<script type="module" src="./src/main.js?v=20260515-1"></script>
 </body>
 </html>
