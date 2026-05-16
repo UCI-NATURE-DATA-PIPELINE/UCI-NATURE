@@ -1,0 +1,267 @@
+/* ============================================================
+   Wildlife Research — Mobile fallback (additive only).
+
+   This sheet is appended LAST so it can soft-override desktop
+   rules for narrow viewports without redesigning anything. All
+   rules below are scoped to @media (max-width: 900px) and
+   smaller — desktop layout is untouched at >900px.
+
+   Goal: when a researcher scans the expo QR poster on their
+   phone, the site loads readably, with no sideways scroll,
+   no off-screen content, and no giant empty space.
+   ============================================================ */
+
+/* ── Global overflow guard. Runs on every viewport so a stray
+      wide element (an image, a long URL, a misbehaving table)
+      never forces a horizontal scroll. */
+html, body {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+/* Anywhere inside the app, never let a child element exceed
+   the visible viewport width. */
+.app,
+.main,
+.content,
+.page {
+  max-width: 100%;
+}
+
+/* Images and SVGs should always shrink to their container. */
+img, svg, canvas, video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── TABLET (≤ 900 px): one column shell, sidebar collapses
+      to its icon-only mode so the main column has real room.
+      Cards stack, side rails fold under main content. */
+@media (max-width: 900px) {
+  :root {
+    /* shrink the desktop sidebar-width var so the existing
+       .sidebar { width: var(--sidebar-w) } rule produces a
+       compact icon strip without us having to redesign the
+       sidebar markup. */
+    --sidebar-w: var(--sidebar-collapsed);
+  }
+  .sidebar {
+    width: var(--sidebar-collapsed) !important;
+  }
+  .sidebar .logo-text,
+  .sidebar .nav-label,
+  .sidebar .collapse-label {
+    display: none !important;
+  }
+  .sidebar .nav-icon { width: 40px !important; }
+  .sidebar-logo { padding: 0 10px; }
+  .nav-item { padding-left: 10px; }
+  .collapse-btn { padding-left: 10px; }
+
+  /* Header text and badges should wrap when the row gets tight. */
+  .header {
+    padding: 0 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+    height: auto;
+    min-height: var(--header-h);
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .header-left h1 { font-size: 16px; }
+  .header-left p { font-size: 11.5px; }
+  .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .header-actions .backend-badge,
+  .header-actions .drive-badge {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  /* Page content padding — tighter so cards have room to breathe. */
+  .content { padding: 14px; }
+
+  /* Cards default to full width and never push the page wider. */
+  .card { width: 100%; max-width: 100%; }
+  .card-p { padding: 16px; }
+
+  /* Upload page main grid → single column. Already in drive.css
+     at 1100px, but we re-declare here so the rule survives even
+     if drive.css is overridden later. */
+  .upload-workspace-grid,
+  .drive-upload-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .upload-side-column,
+  .drive-side-column {
+    grid-template-columns: 1fr !important;
+    width: 100%;
+  }
+
+  /* Upload mode tabs (Manual / Drive) wrap to two rows if needed. */
+  .upload-mode-tabs {
+    flex-wrap: wrap;
+  }
+  .upload-mode-tab {
+    flex: 1 1 50%;
+    padding: 12px 10px;
+    font-size: 13px;
+    gap: 6px;
+  }
+  .upload-mode-tab .tab-badge { display: none; }
+
+  /* Top stat strip → 2 columns on tablet (was 4). */
+  .upload-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px;
+  }
+
+  /* Drive folder controls + sync controls stack. */
+  .drive-control-grid,
+  .drive-top-controls,
+  .drive-field-label-row,
+  .drive-sync-actions,
+  .drive-card-header,
+  .drive-manual-input-row {
+    grid-template-columns: 1fr !important;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Upload action bar (Clear + Queue) wraps so buttons don't overflow. */
+  .upload-action-bar {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .upload-action-bar-info { flex: 1 1 100%; min-width: 0; }
+  .upload-action-btns { flex: 1 1 100%; justify-content: flex-end; }
+
+  /* Queue rows: drop the desktop 6-column grid in favor of a
+     stacked layout that keeps icon + name on the first row and
+     everything else (tag, size, progress, actions) below. */
+  .upload-queue-item {
+    grid-template-columns: 36px minmax(0, 1fr);
+    grid-auto-rows: min-content;
+    row-gap: 8px;
+    align-items: start;
+    padding: 12px 14px;
+  }
+  .upload-queue-item .queue-batch-main { grid-column: 2; }
+  .upload-queue-item .queue-location-tag,
+  .upload-queue-item .queue-size-text,
+  .upload-queue-item .queue-prog-wrap,
+  .upload-queue-item .queue-batch-actions {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  .upload-queue-item .queue-batch-actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  /* Detected camera sites review chips wrap cleanly. */
+  .upload-site-review-head { flex-wrap: wrap; }
+  .upload-site-review-list { gap: 6px; }
+  .upload-site-chip { max-width: 100%; }
+
+  /* Shared upload progress card stats: 2 columns on tablet. */
+  .upload-progress-stats,
+  #upload-progress-card .upload-progress-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .upload-progress-source { gap: 8px; flex-wrap: wrap; }
+  .upload-progress-source-name { white-space: normal; }
+  .upload-progress-bar-meta { font-size: 11px; gap: 8px; }
+
+  /* Long auto-detected site / staging-path values should wrap, not blow out the row. */
+  .upload-summary-row strong,
+  .upload-session-info-row strong,
+  .drive-source-value {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: left;
+  }
+
+  /* Login card width adapts to the phone. */
+  .login-card {
+    width: calc(100vw - 24px);
+    max-width: 100%;
+  }
+  .login-body { padding: 22px 20px 24px; }
+
+  /* Confirm modal + drive modal width safety. */
+  .confirm-modal,
+  .upload-site-modal,
+  .drive-confirm-box {
+    width: calc(100vw - 28px) !important;
+    max-width: 100% !important;
+  }
+
+  /* Toasts must never push the viewport sideways. */
+  #toast-container {
+    left: 12px; right: 12px; bottom: 12px;
+    align-items: stretch;
+  }
+  .toast {
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
+/* ── MOBILE (≤ 640 px): single-column everything. */
+@media (max-width: 640px) {
+  .content { padding: 12px; }
+  .card-p { padding: 14px; }
+
+  /* Stat strip & stat grids → one column on phones. */
+  .upload-summary-strip {
+    grid-template-columns: 1fr !important;
+  }
+  .upload-progress-stats,
+  #upload-progress-card .upload-progress-stats,
+  .run-stats {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Big inline buttons (Browse files, Sync now) span the row. */
+  .dropzone-browse-btn,
+  .drive-sync-quick-btn,
+  .btn-upload {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Upload dropzone padding shrinks so the button is reachable. */
+  .upload-dropzone { padding: 28px 14px; }
+  .dropzone-title { font-size: 14px; }
+  .dropzone-sub,
+  .dropzone-meta { font-size: 11.5px; }
+
+  /* Header collapses to two rows: title + actions stacked. */
+  .header-actions { gap: 6px; }
+  .header-actions .backend-badge,
+  .header-actions .drive-badge {
+    flex: 1 1 100%;
+  }
+
+  /* Confirm-modal action buttons stack on the narrowest phones. */
+  .modal-btn-row,
+  .upload-site-modal-actions { flex-direction: column; }
+  .upload-site-modal-actions .btn { width: 100%; }
+}
+
+/* ── Very narrow phones (≤ 380 px): squeeze a bit more. */
+@media (max-width: 380px) {
+  .upload-mode-tab { flex: 1 1 100%; }
+  .nav-item { padding-left: 8px; }
+  .upload-summary-card { padding: 12px 14px; }
+  .upload-summary-val { font-size: 19px; }
+}

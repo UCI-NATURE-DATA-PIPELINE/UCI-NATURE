@@ -3,6 +3,9 @@
 @import "./segments/global-workspace.css";
 @import "./segments/global-overlays.css";
 @import "./segments/global-legacy.css";
+/* Mobile fallback — appended LAST so its @media rules can soft-override
+   anything above without modifying the desktop layout. */
+@import "./segments/global-mobile.css";
 
 /* App boot splash shown until bootstrapAppState() resolves. */
 .app-boot {
