@@ -30,15 +30,10 @@
           <div class="dropzone-sub">From SD card, USB drive, or local folder</div>
           <div class="dropzone-meta">JPG · PNG · TIFF · ZIP &nbsp;·&nbsp; Queue for processing when ready</div>
           <div class="dropzone-actions">
-            <button type="button" class="dropzone-browse-btn" id="upload-browse-menu-btn" aria-haspopup="true" aria-expanded="false">
+            <button type="button" class="dropzone-browse-btn" id="upload-browse-files-btn">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-              Browse files or folder
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+              Browse files
             </button>
-            <div class="dropzone-browse-menu" id="upload-browse-menu" hidden>
-              <button type="button" class="dropzone-browse-menu-item" id="upload-browse-files-btn">Choose files or ZIP</button>
-              <button type="button" class="dropzone-browse-menu-item" id="upload-browse-folder-btn">Choose folder</button>
-            </div>
           </div>
           <!-- Hidden inputs: one for files (incl. ZIP), one for whole-folder selection. -->
           <input type="file" id="upload-file-input" class="visually-hidden" multiple accept=".jpg,.jpeg,.png,.tif,.tiff,.zip,image/jpeg,image/png,image/tiff,application/zip" />
@@ -125,13 +120,10 @@
           <div class="upload-progress-title">Upload progress</div>
           <span class="upload-progress-status-pill idle" id="upload-progress-status">Ready</span>
         </div>
-        <div class="upload-progress-source">
-          <div style="min-width:0">
-            <div class="upload-progress-source-name" id="upload-progress-source-name">No files selected</div>
-            <div class="upload-progress-source-sub" id="upload-progress-source-sub">Drop images, a folder, or a ZIP to begin.</div>
-          </div>
-          <span class="camera-site-pill muted" id="upload-progress-site-pill">No site</span>
-        </div>
+        <!-- The duplicate "No files selected / Drop images…" placeholder card
+             previously lived here. It mirrored the dropzone above, so it has
+             been removed. The renderer still writes to the source-name / sub
+             / site-pill ids harmlessly when those nodes are absent. -->
         <div class="upload-progress-bar-wrap">
           <div class="upload-progress-bar-track">
             <div class="upload-progress-bar-fill" id="upload-progress-fill"></div>
@@ -143,29 +135,26 @@
         </div>
         <div class="upload-progress-stats">
           <div>
-            <div class="upload-progress-stat-lbl">Total size</div>
+            <div class="upload-progress-stat-lbl">Files</div>
+            <div class="upload-progress-stat-val" id="upload-progress-files">0</div>
+          </div>
+          <div>
+            <div class="upload-progress-stat-lbl">Size</div>
             <div class="upload-progress-stat-val" id="upload-progress-size">—</div>
           </div>
           <div>
-            <div class="upload-progress-stat-lbl">Status</div>
-            <div class="upload-progress-stat-val" id="upload-progress-status-text">Ready</div>
+            <div class="upload-progress-stat-lbl">Speed</div>
+            <div class="upload-progress-stat-val" id="upload-progress-ips">—</div>
           </div>
-          <div>
-            <div class="upload-progress-stat-lbl">Batches</div>
-            <div class="upload-progress-stat-val" id="upload-progress-batches">0</div>
-          </div>
-          <div>
-            <div class="upload-progress-stat-lbl">Upload type</div>
-            <div class="upload-progress-stat-val" id="upload-progress-type">—</div>
-          </div>
-          <div>
-            <div class="upload-progress-stat-lbl">Remaining</div>
-            <div class="upload-progress-stat-val" id="upload-progress-remaining">—</div>
-          </div>
-          <div>
-            <div class="upload-progress-stat-lbl">Last updated</div>
-            <div class="upload-progress-stat-val" id="upload-progress-updated">—</div>
-          </div>
+        </div>
+        <!-- Legacy fields the renderer still writes to so existing callers
+             keep working — hidden so they don't add visual noise. -->
+        <div class="visually-hidden">
+          <span id="upload-progress-status-text">Ready</span>
+          <span id="upload-progress-batches">0</span>
+          <span id="upload-progress-type">—</span>
+          <span id="upload-progress-remaining">—</span>
+          <span id="upload-progress-updated">—</span>
         </div>
         <!-- Hidden mirrors of the previous summary ids so any other code that
              reads them keeps working (manualUploadFlow writes both). -->

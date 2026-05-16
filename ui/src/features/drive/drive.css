@@ -164,7 +164,9 @@
 .queue-site-edit span { font-size:10.5px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.3px; }
 .queue-site-input { width:100%; min-width:0; height:30px; border:1px solid var(--border); border-radius:8px; padding:0 9px; font:500 12.5px 'Inter',sans-serif; color:var(--text); background:#fff; outline:none; }
 .queue-site-input:focus { border-color:var(--blue); box-shadow:0 0 0 3px rgba(0,100,164,.1); }
-.queue-location-tag { font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; background:#EBF8FF; color:var(--blue); white-space:nowrap; align-self:center; }
+.queue-location-tag { font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; background:#EBF8FF; color:var(--blue); white-space:nowrap; align-self:center; cursor:pointer; transition:background .15s,border-color .15s; }
+#upload-manual .queue-location-tag:hover { background:#BEE3F8; }
+#upload-manual .queue-location-tag::after { content:" ✎"; opacity:0.5; font-size:10px; }
 .queue-size-text { font-size:12px; color:var(--muted); white-space:nowrap; align-self:center; }
 /* progress wrap: pushed down with padding-bottom to optically balance with status pill */
 .queue-prog-wrap { display:flex; flex-direction:column; gap:5px; padding-bottom:2px; }
@@ -180,7 +182,7 @@
 .queue-remove-btn:disabled { opacity:.5; cursor:not-allowed; text-decoration:none; color:var(--muted); }
 
 
-/* ─── MANUAL UPLOAD: dropzone subtitle, browse menu, queue summary ── */
+/* ─── MANUAL UPLOAD: dropzone subtitle and queue summary ── */
 .upload-subtitle {
   font-size:12.5px;
   color:var(--muted);
@@ -191,44 +193,9 @@
 .dropzone-actions {
   position:relative;
   display:inline-flex;
+  align-items:center;
+  justify-content:center;
   margin-top:14px;
-}
-
-.dropzone-browse-menu {
-  position:absolute;
-  top:calc(100% + 6px);
-  left:50%;
-  z-index:20;
-  min-width:190px;
-  padding:6px;
-  background:var(--card);
-  border:1px solid var(--border);
-  border-radius:10px;
-  box-shadow:0 10px 25px rgba(26,32,44,.16);
-  transform:translateX(-50%);
-  text-align:left;
-}
-.dropzone-browse-menu[hidden] {
-  display:none !important;
-}
-.dropzone-browse-menu-item {
-  width:100%;
-  border:0;
-  background:transparent;
-  color:var(--text);
-  border-radius:7px;
-  padding:9px 10px;
-  font-family:'Inter',sans-serif;
-  font-size:12.5px;
-  font-weight:600;
-  text-align:left;
-  cursor:pointer;
-}
-.dropzone-browse-menu-item:hover,
-.dropzone-browse-menu-item:focus {
-  background:#EBF8FF;
-  color:var(--blue);
-  outline:none;
 }
 
 .upload-queue-summary {
@@ -1108,6 +1075,9 @@
 .upload-progress-stats {
   display:grid; grid-template-columns:repeat(2,1fr); gap:8px 14px;
   padding:10px 0 0; border-top:1px solid var(--border);
+}
+#upload-progress-card .upload-progress-stats {
+  grid-template-columns:repeat(3,1fr);
 }
 .upload-progress-stat-lbl {
   font-size:10.5px; font-weight:600; color:var(--muted);

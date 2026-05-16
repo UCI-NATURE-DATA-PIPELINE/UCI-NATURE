@@ -152,6 +152,22 @@
   text-align: center;
   line-height: 1.45;
 }
+
+/* Keep both step-2 buttons identical in structure: icon on the left,
+   label centered visually. Without this, swapping textContent during the
+   loading state would wipe the SVG and the buttons would look different. */
+#login-screen .oauth-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+#login-screen .oauth-btn-label {
+  display: inline-block;
+  font-weight: 600;
+}
 .login-option-divider::before,
 .login-option-divider::after {
   content: "";

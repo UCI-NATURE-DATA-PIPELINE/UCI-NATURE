@@ -199,13 +199,11 @@
           <div class="upload-progress-title">Sync progress</div>
           <span class="upload-progress-status-pill idle" id="drive-progress-status">Idle</span>
         </div>
-        <div class="upload-progress-source">
-          <div style="min-width:0">
-            <div class="upload-progress-source-name" id="drive-progress-source-name">No Drive folder selected</div>
-            <div class="upload-progress-source-sub" id="drive-progress-source-sub">Pick a Drive folder to begin syncing.</div>
-          </div>
-          <span class="camera-site-pill muted" id="drive-progress-site-pill">No site</span>
-        </div>
+        <!-- The duplicate "No Drive folder selected / Pick a Drive folder…"
+             placeholder card previously lived here. It mirrored the folder
+             picker above, so it has been removed. The renderer still writes
+             to the source-name / sub / site-pill ids harmlessly when those
+             nodes are absent. -->
         <div class="upload-progress-bar-wrap">
           <div class="upload-progress-bar-track">
             <div class="upload-progress-bar-fill" id="drive-progress-fill"></div>
@@ -225,37 +223,23 @@
             <div class="upload-progress-stat-val" id="drive-progress-ips">—</div>
           </div>
           <div>
-            <div class="upload-progress-stat-lbl">Elapsed</div>
-            <div class="upload-progress-stat-val" id="drive-progress-elapsed">—</div>
-          </div>
-          <div>
             <div class="upload-progress-stat-lbl">ETA</div>
             <div class="upload-progress-stat-val" id="drive-progress-eta">—</div>
-          </div>
-          <div>
-            <div class="upload-progress-stat-lbl">Remaining</div>
-            <div class="upload-progress-stat-val" id="drive-progress-remaining">—</div>
-          </div>
-          <div>
-            <div class="upload-progress-stat-lbl">Skipped existing</div>
-            <div class="upload-progress-stat-val" id="drive-progress-skipped">0</div>
           </div>
           <div>
             <div class="upload-progress-stat-lbl">Failed</div>
             <div class="upload-progress-stat-val" id="drive-progress-failed">0</div>
           </div>
-          <div>
-            <div class="upload-progress-stat-lbl">Last updated</div>
-            <div class="upload-progress-stat-val" id="drive-progress-updated">—</div>
-          </div>
-          <div>
-            <div class="upload-progress-stat-lbl">Status</div>
-            <div class="upload-progress-stat-val" id="drive-progress-status-text">Idle</div>
-          </div>
-          <div>
-            <div class="upload-progress-stat-lbl">Sync limit</div>
-            <div class="upload-progress-stat-val" id="drive-progress-limit">All files</div>
-          </div>
+        </div>
+        <!-- Legacy fields the renderer still writes to so existing callers
+             keep working — hidden so they don't add visual noise. -->
+        <div class="visually-hidden">
+          <span id="drive-progress-elapsed">—</span>
+          <span id="drive-progress-remaining">—</span>
+          <span id="drive-progress-skipped">0</span>
+          <span id="drive-progress-updated">—</span>
+          <span id="drive-progress-status-text">Idle</span>
+          <span id="drive-progress-limit">All files</span>
         </div>
         <div class="upload-progress-current" id="drive-progress-current" hidden>
           Current: <strong id="drive-progress-current-file">—</strong>
