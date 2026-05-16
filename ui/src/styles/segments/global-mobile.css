@@ -216,52 +216,276 @@ img, svg, canvas, video {
   }
 }
 
-/* ── MOBILE (≤ 640 px): single-column everything. */
-@media (max-width: 640px) {
-  .content { padding: 12px; }
-  .card-p { padding: 14px; }
+/* ── MOBILE (≤ 640 px): compact dashboard, not zoomed-in desktop.
 
-  /* Stat strip & stat grids → one column on phones. */
+   Goal: ~10-15% smaller fonts, tighter padding, smaller icons,
+   shorter header + sidebar, less vertical whitespace. Text stays
+   readable. ALL rules are scoped to this @media block so desktop
+   is unaffected. */
+@media (max-width: 640px) {
+  /* Base text scales down ~7% globally. Combined with the per-class
+     overrides below this lands at roughly the 10-15% reduction the
+     mobile target asks for, without sacrificing legibility. */
+  html, body { font-size: 13px; }
+
+  /* Skip the page-fade animation on phones — it stutters and adds
+     no value on a small screen. */
+  .page { animation: none; }
+
+  /* ─ Sidebar: even narrower than the tablet icon-strip. */
+  :root { --sidebar-collapsed: 54px; }
+  .sidebar { width: 54px !important; }
+  .sidebar-logo { height: 50px; padding: 0 8px; gap: 0; }
+  .logo-img {
+    width: 32px; height: 32px; min-width: 32px;
+    border-radius: 7px;
+  }
+  .sidebar-nav { padding: 6px 0 4px; }
+  .nav-item {
+    height: 38px;
+    padding-left: 9px;
+  }
+  .nav-icon { width: 36px !important; }
+  .nav-icon svg { width: 15px; height: 15px; }
+  .sidebar-footer { padding: 6px 0 8px; }
+  .collapse-btn { height: 32px; padding-left: 9px; }
+  .collapse-chevron { width: 14px; height: 14px; }
+
+  /* ─ Header: shorter, smaller type, actions wrap into one tidy row. */
+  .header {
+    padding: 8px 12px;
+    min-height: 50px;
+    gap: 6px;
+  }
+  .header-left h1 { font-size: 15px; }
+  .header-left p  { font-size: 11px; margin-top: 0; }
+  .header-actions { gap: 6px; }
+  .header-actions .backend-badge,
+  .header-actions .drive-badge {
+    flex: 1 1 100%;
+    font-size: 11.5px;
+    padding: 5px 9px;
+    border-radius: 7px;
+  }
+  .backend-dot,
+  .drive-dot { width: 7px; height: 7px; }
+
+  /* ─ Content + page padding: tighter so cards reach the edges. */
+  .content { padding: 10px; }
+
+  /* ─ Cards: smaller padding, smaller corner radius, smaller title. */
+  .card { border-radius: 10px; }
+  .card-p { padding: 12px; }
+  .card-title { font-size: 12.5px; margin-bottom: 10px; }
+
+  /* Reduce inter-card vertical gap on the Upload page. */
+  .upload-main-column,
+  .upload-side-column,
+  .drive-main-column,
+  .drive-side-column {
+    gap: 10px;
+  }
+
+  /* ─ Upload-mode tabs (Manual / Drive): shorter pills. */
+  .upload-mode-tabs {
+    margin-bottom: 12px;
+    border-radius: 10px;
+  }
+  .upload-mode-tab {
+    padding: 9px 8px;
+    font-size: 12.5px;
+    gap: 6px;
+  }
+  .upload-mode-tab svg { width: 14px; height: 14px; }
+
+  /* ─ Stat strip: single column, smaller cards. */
   .upload-summary-strip {
     grid-template-columns: 1fr !important;
+    gap: 8px;
+    margin-bottom: 12px;
   }
-  .upload-progress-stats,
-  #upload-progress-card .upload-progress-stats,
-  .run-stats {
-    grid-template-columns: 1fr !important;
+  .upload-summary-card { padding: 10px 12px; }
+  .upload-summary-val { font-size: 18px; }
+  .upload-summary-lbl {
+    font-size: 10px;
+    margin-top: 2px;
+    letter-spacing: .3px;
   }
 
-  /* Big inline buttons (Browse files, Sync now) span the row. */
+  /* ─ Dropzone: compact icon, compact text, full-width button. */
+  .upload-dropzone {
+    padding: 18px 12px;
+    border-radius: 12px;
+  }
+  .dropzone-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    margin: 0 auto 8px;
+  }
+  .dropzone-icon svg { width: 20px; height: 20px; }
+  .dropzone-title { font-size: 13px; }
+  .dropzone-sub   { font-size: 11px; margin-bottom: 6px; }
+  .dropzone-meta  { font-size: 10.5px; }
+  .dropzone-actions { margin-top: 10px; gap: 8px; }
   .dropzone-browse-btn,
   .drive-sync-quick-btn,
   .btn-upload {
     width: 100%;
     justify-content: center;
+    padding: 8px 14px;
+    font-size: 12.5px;
+  }
+  .upload-subtitle { font-size: 11.5px; margin: -4px 0 10px; }
+
+  /* ─ Upload Queue card heading + meta. */
+  .upload-card-head { margin-bottom: 10px; }
+  .upload-card-meta,
+  .drive-card-meta { font-size: 11px; }
+
+  /* ─ Upload progress card: tighter spacing + smaller stats. */
+  .upload-progress-card { gap: 10px; }
+  .upload-progress-head { gap: 8px; }
+  .upload-progress-title { font-size: 12px; }
+  .upload-progress-status-pill {
+    font-size: 10px;
+    padding: 2px 7px;
+  }
+  .upload-progress-bar-wrap { gap: 5px; }
+  .upload-progress-bar-track { height: 6px; }
+  .upload-progress-bar-meta { font-size: 11px; }
+  .upload-progress-stats,
+  #upload-progress-card .upload-progress-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 6px 10px;
+    padding-top: 8px;
+  }
+  .upload-progress-stat-lbl { font-size: 9.5px; }
+  .upload-progress-stat-val { font-size: 12px; }
+  .upload-progress-current  { font-size: 11px; }
+
+  /* ─ Queue rows: more compact, smaller icons + text. */
+  .upload-queue-item {
+    padding: 10px 12px;
+    row-gap: 6px;
+    gap: 10px;
+  }
+  .queue-file-icon { width: 30px; height: 30px; border-radius: 7px; }
+  .queue-file-icon svg { width: 15px; height: 15px; }
+  .queue-file-name { font-size: 12.5px; }
+  .queue-file-meta { font-size: 11px; margin-top: 2px; }
+  .queue-location-tag {
+    font-size: 10.5px;
+    padding: 2px 7px;
+  }
+  .queue-size-text,
+  .queue-prog-pct { font-size: 10.5px; }
+  .queue-prog-bar { height: 4px; }
+  .queue-remove-btn { font-size: 11px; }
+  .status-pill { font-size: 10.5px; padding: 2px 7px; }
+
+  /* ─ Detected camera sites review strip. */
+  .upload-site-review { padding: 8px 10px; margin: 4px 0 10px; }
+  .upload-site-review-title { font-size: 10.5px; }
+  .upload-site-review-hint  { font-size: 10.5px; }
+  .upload-site-chip {
+    padding: 4px 9px;
+    font-size: 11px;
   }
 
-  /* Upload dropzone padding shrinks so the button is reachable. */
-  .upload-dropzone { padding: 28px 14px; }
-  .dropzone-title { font-size: 14px; }
-  .dropzone-sub,
-  .dropzone-meta { font-size: 11.5px; }
+  /* ─ Action bar (Clear · Queue for Processing). */
+  .upload-action-bar { padding: 10px 0 0; gap: 8px; }
+  .upload-action-bar-info { font-size: 11.5px; }
 
-  /* Header collapses to two rows: title + actions stacked. */
-  .header-actions { gap: 6px; }
-  .header-actions .backend-badge,
-  .header-actions .drive-badge {
-    flex: 1 1 100%;
+  /* ─ Buttons + form fields: shorter, lighter. */
+  .btn { padding: 7px 12px; font-size: 12px; gap: 6px; }
+  .btn-sm { padding: 5px 9px; font-size: 11px; }
+  input[type="text"],
+  input[type="number"],
+  input[type="date"],
+  select, textarea {
+    padding: 7px 10px;
+    font-size: 12.5px;
+    border-radius: 7px;
+  }
+  label.field-label { font-size: 10.5px; letter-spacing: .3px; }
+
+  /* Help-bubble buttons + tooltip popovers shrink so they don't overpower the row. */
+  .help-icon,
+  .upload-site-help { width: 16px; height: 16px; font-size: 11px; }
+  .tooltip-box,
+  .upload-site-popover { font-size: 11px; }
+
+  /* ─ Toasts: thin, side-anchored, no wide min-width. */
+  #toast-container {
+    left: 10px; right: 10px; bottom: 10px;
+  }
+  .toast {
+    padding: 8px 12px;
+    font-size: 12px;
+    border-radius: 8px;
   }
 
-  /* Confirm-modal action buttons stack on the narrowest phones. */
+  /* ─ Modals: less padding, smaller titles, stacked actions. */
+  .confirm-modal,
+  .upload-site-modal {
+    padding: 18px 16px;
+    border-radius: 14px;
+  }
+  .modal-title,
+  .upload-site-modal-title { font-size: 14.5px; }
+  .modal-sub { font-size: 11.5px; margin-bottom: 14px; }
   .modal-btn-row,
-  .upload-site-modal-actions { flex-direction: column; }
+  .upload-site-modal-actions { flex-direction: column; gap: 8px; }
+  .modal-btn-row .btn,
   .upload-site-modal-actions .btn { width: 100%; }
+
+  /* Login card: smaller, less padding so it fits a small phone. */
+  .login-header { padding: 18px 18px 14px; }
+  .login-brand-uci,
+  .login-brand-nature { font-size: 17px; }
+  .login-brand-sub { font-size: 10px; }
+  .login-body { padding: 18px 16px 20px; }
+  .login-section-title { font-size: 14.5px; }
+  .login-section-sub   { font-size: 12px; margin-bottom: 16px; }
+  #login-screen button.oauth-button { min-height: 40px; padding: 10px 12px; font-size: 13px; }
+
+  /* Run Model page stat strip mirrors the new compactness. */
+  .run-stats {
+    grid-template-columns: 1fr !important;
+    gap: 6px;
+  }
+  .run-stat-val { font-size: 16px; }
+  .run-stat-lbl { font-size: 10px; }
 }
 
-/* ── Very narrow phones (≤ 380 px): squeeze a bit more. */
+/* ── Very narrow phones (≤ 380 px): one more squeeze. */
 @media (max-width: 380px) {
-  .upload-mode-tab { flex: 1 1 100%; }
-  .nav-item { padding-left: 8px; }
-  .upload-summary-card { padding: 12px 14px; }
-  .upload-summary-val { font-size: 19px; }
+  html, body { font-size: 12.5px; }
+
+  .content { padding: 8px; }
+  .card-p { padding: 10px; }
+  .card-title { font-size: 12px; margin-bottom: 8px; }
+
+  .header { padding: 6px 10px; min-height: 46px; }
+  .header-left h1 { font-size: 14px; }
+  .header-left p  { font-size: 10.5px; }
+
+  :root { --sidebar-collapsed: 48px; }
+  .sidebar { width: 48px !important; }
+  .nav-item { height: 36px; }
+  .nav-icon { width: 32px !important; }
+
+  .upload-mode-tab { flex: 1 1 100%; padding: 8px; font-size: 12px; }
+  .upload-summary-val { font-size: 17px; }
+  .upload-summary-card { padding: 9px 11px; }
+
+  .upload-dropzone { padding: 14px 10px; }
+  .dropzone-icon { width: 36px; height: 36px; margin-bottom: 6px; }
+  .dropzone-icon svg { width: 18px; height: 18px; }
+  .dropzone-title { font-size: 12.5px; }
+  .dropzone-sub,
+  .dropzone-meta { font-size: 10.5px; }
+
+  .upload-progress-bar-track { height: 5px; }
+  .upload-progress-stat-val { font-size: 11.5px; }
 }
