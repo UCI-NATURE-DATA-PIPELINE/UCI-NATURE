@@ -8,7 +8,7 @@ Live deployed UI: [https://uci-nature-pipeline.duckdns.org](https://uci-nature-p
 
 For full setup instructions, pipeline usage, and troubleshooting, see the documentation:
 
- https://ralkhleef.github.io/UCI-NATURE/
+ [https://ralkhleef.github.io/UCI-NATURE/](https://uci-nature-data-pipeline.github.io/UCI-NATURE-docs/)
 
 ## Problem
 
