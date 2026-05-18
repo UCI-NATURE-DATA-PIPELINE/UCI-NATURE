@@ -25,44 +25,44 @@ export function createValidateRender(app, tableApi) {
       setText("val-badge-columns", `-- / -- columns`);
     }
 
-    setText("range-warn-title", `${formatNumber(data?.outside_range || 0)} images outside deployment range`);
-    setHTML("range-warn-body", Number(data?.outside_range || 0) > 0
-      ? "Current output files include rows flagged as <strong>outside deployment interval</strong>."
-      : "No generated output rows are outside the deployment range.");
-    setText("val-sub-datetime", Number(data?.outside_range || 0) > 0
-      ? "Some rows are flagged outside the deployment interval"
-      : "No rows are outside the deployment interval");
-    setText("val-badge-datetime", `${formatNumber(data?.outside_range || 0)} outside range`);
     setText("val-run-note", data ? "Last validated: Current pipeline artifacts" : "Validation data unavailable");
-    document.getElementById("range-warn-box")?.style.setProperty("display", Number(data?.outside_range || 0) > 0 ? "flex" : "none");
 
     // Unprocessed badge and panel title
     const unprocessed = Number(data?.unprocessed || 0);
     setText("val-badge-unprocessed", `${formatNumber(unprocessed)} unprocessed`);
     setText("unproc-panel-title", `${formatNumber(unprocessed)} images — ML processing incomplete`);
 
-    // Time correction select options with real counts
-    const outsideRange = Number(data?.outside_range || 0);
-    const beforeStart = Number(data?.before_start || 0);
-    const afterEnd = Number(data?.after_end || 0);
-    const optOutside = document.getElementById("opt-outside-range");
-    const optBefore = document.getElementById("opt-before-start");
-    const optAfter = document.getElementById("opt-after-end");
-    if (optOutside) optOutside.textContent = `All images outside range (${formatNumber(outsideRange)})`;
-    if (optBefore) optBefore.textContent = `Images before deployment start (${formatNumber(beforeStart)})`;
-    if (optAfter) optAfter.textContent = `Images after deployment end (${formatNumber(afterEnd)})`;
+    // Resolve sample_date — use top-level field first, then fall back to
+    // the earliest sample_date found across the files array.
+    const fileSampleDate = (data?.files || [])
+      .map(f => f.sample_date || "")
+      .filter(Boolean)
+      .sort()[0] || "";
+    const fileSampleTime = (data?.files || [])
+      .map(f => f.sample_time || "")
+      .filter(Boolean)[0] || "";
 
-    // Time preview with real sample date/time
-    const sampleDate = data?.sample_date || "—";
-    const sampleTime = data?.sample_time || "—";
-    setText("time-preview-before", `Before: ${sampleDate} ${sampleTime}`);
-    setText("time-preview-after", `After:  ${sampleDate} ${sampleTime}`);
+    const sampleDate = data?.sample_date || fileSampleDate || "";
+    const sampleTime = data?.sample_time || fileSampleTime || "";
 
-    // Warn labels with current deployment dates
-    const startLabel = document.getElementById("dp-text-start")?.value || "—";
-    const endLabel = document.getElementById("dp-text-end")?.value || "—";
-    setText("warn-start-label", startLabel);
-    setText("warn-end-label", endLabel);
+    // Current image date info box
+    const infoBox = document.getElementById("current-date-info");
+    if (infoBox) {
+      if (sampleDate) {
+        infoBox.style.display = "block";
+        setText("current-date-value", sampleDate);
+        setText("current-time-value", sampleTime || "—");
+        const folderName = (data?.files || []).find(f => f.file?.includes("_results"))?.file?.replace("_results.csv", "") || "Current dataset";
+        setText("current-date-folder", folderName);
+      } else {
+        infoBox.style.display = "none";
+      }
+    }
+
+    // Time preview — set before value, then trigger multi-field preview update
+    setText("time-preview-before", sampleDate ? `Before: ${sampleDate} ${sampleTime}` : "Before: — —");
+    setText("time-preview-after", sampleDate ? `After:  ${sampleDate} ${sampleTime}` : "After:  — —");
+    if (typeof window.updateTimePreviewMulti === "function") window.updateTimePreviewMulti();
 
     tableApi.renderAffectedImages(data);
     tableApi.renderUnprocessedImages(data);

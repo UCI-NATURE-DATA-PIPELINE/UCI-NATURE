@@ -1918,11 +1918,13 @@ def validate_preview_correction(
     authorization: Optional[str] = Header(default=None)
 ):
     require_auth(authorization)
-    offset_hours = int(payload.get("offset_hours", 0))
+    offset_hours = float(payload.get("offset_hours", 0))
     rows_preview = []
+
     for csv_path in get_export_artifact_paths():
         if csv_path.name == ALL_RESULTS_FILENAME:
             continue
+        folder_name = csv_path.stem.replace("_results", "")
         for row in read_csv_rows(csv_path):
             date = (row.get("Date") or "").strip()
             time = (row.get("Time") or "").strip()
@@ -1931,19 +1933,23 @@ def validate_preview_correction(
             if not date or not time:
                 continue
             try:
-                h, m, s = map(int, time.split(":"))
-                corrected_h = ((h + offset_hours) % 24 + 24) % 24
-                corrected_time = f"{str(corrected_h).zfill(2)}:{str(m).zfill(2)}:{str(s).zfill(2)}"
+                from datetime import datetime as _dt, timedelta
+                dt = _dt.strptime(f"{date} {time}", "%Y-%m-%d %H:%M:%S")
+                corrected_dt = dt + timedelta(hours=offset_hours)
+                corrected_date = corrected_dt.strftime("%Y-%m-%d")
+                corrected_time = corrected_dt.strftime("%H:%M:%S")
             except Exception:
+                corrected_date = date
                 corrected_time = time
             rows_preview.append({
+                "folder": folder_name,
                 "image": image,
                 "camera": camera,
                 "before": f"{date} {time}",
-                "after": f"{date} {corrected_time}"
+                "after": f"{corrected_date} {corrected_time}",
             })
-    return {"rows": rows_preview, "total": len(rows_preview)}
 
+    return {"rows": rows_preview, "total": len(rows_preview)}
 
 @app.post("/api/validate/apply-correction")
 def validate_apply_correction(

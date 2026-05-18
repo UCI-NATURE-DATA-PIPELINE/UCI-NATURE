@@ -13,7 +13,6 @@ export function bindGlobals(app, showPage) {
   window.dpNav = dpNav;
   window.pickDate = pickDate;
   window.selectProject = app.features.auth.selectProject;
-  // Login screen only advances forward via a single "Continue" button.
   window.goToStep2 = () => app.features.auth.setLoginStep(2);
   window.startGoogleSignIn = app.features.auth.startGoogleSignIn;
   window.continueWithoutGoogleDrive = app.features.auth.continueWithoutGoogleDrive;
@@ -63,6 +62,7 @@ export function bindGlobals(app, showPage) {
   window.undoBurstAction = app.features.review.undoBurstAction;
   window.toggleAffectedPanel = app.features.validate.toggleAffectedPanel;
   window.updateTimePreview = app.features.validate.updateTimePreview;
+  window.updateTimePreviewMulti = () => app.features.validate.updateTimePreviewMulti();
   window.toggleUnprocPanel = app.features.validate.toggleUnprocPanel;
   window.runValidation = app.features.validate.runValidation;
   window.toggleExportOption = app.features.export.toggleExportOption;
@@ -71,12 +71,9 @@ export function bindGlobals(app, showPage) {
   window.closeExportModal = app.features.export.closeExportModal;
   window.confirmExport = app.features.export.confirmExport;
   window.syncExportFilenamePreview = app.features.export.syncExportFilenamePreview;
-  // Download a single export artifact CSV by filename
   window.downloadFile = app.features.export.downloadFile;
   window.previewTimeCorrection = () => app.features.validate.previewTimeCorrection();
   window.applyTimeCorrection = () => app.features.validate.applyTimeCorrection();
-  // Replay any login clicks that landed before bindings were ready. See the
-  // inline shim in ui/index.html for context.
   if (typeof window.__uciNatureFlushDeferred === "function") {
     try { window.__uciNatureFlushDeferred(); } catch (err) { console.error(err); }
   }
