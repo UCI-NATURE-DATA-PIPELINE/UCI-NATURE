@@ -17,6 +17,10 @@ export function createValidateActions(app, api, renderApi) {
     }
   }
 
+  async function onPageEnter() {
+    // Data loads only when user clicks Run Validation, not on page entry
+  }
+
   async function runValidation() {
     const data = await loadValidationData({ showToastOnError: true });
     if (!data) return;
@@ -75,6 +79,10 @@ export function createValidateActions(app, api, renderApi) {
 
   async function previewTimeCorrection() {
     const totalHours = getTotalOffsetHours();
+    if (totalHours === 0) {
+      app.showToast("Set a time offset before previewing", "warn");
+      return;
+    }
     const modal = document.getElementById("time-preview-modal");
     const body = document.getElementById("time-preview-modal-body");
     modal.style.display = "flex";
@@ -154,6 +162,11 @@ export function createValidateActions(app, api, renderApi) {
       });
       const data = await res.json();
       app.showToast(data.message || "Time correction applied", "success");
+      document.getElementById("offset-years").value = 0;
+      document.getElementById("offset-months").value = 0;
+      document.getElementById("offset-days").value = 0;
+      document.getElementById("offset-input").value = 0;
+      updateTimePreviewMulti();
       await loadValidationData({ showToastOnError: false });
     } catch (e) {
       app.showToast("Failed to apply time correction", "warn");
@@ -162,6 +175,7 @@ export function createValidateActions(app, api, renderApi) {
 
   return {
     loadValidationData,
+    onPageEnter,
     runValidation,
     previewTimeCorrection,
     applyTimeCorrection,

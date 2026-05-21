@@ -512,20 +512,24 @@ def generate_output_csvs(
     animal_unclassified_rows = []
     non_animal_rows = []
 
-    offset_enabled = bool(offset_start_date and offset_end_date) and (
+    has_date_range = bool(offset_start_date and offset_end_date)
+    has_correction = (
         args.shift_minutes != 0
         or args.set_year is not None
         or args.set_month is not None
         or args.set_day is not None
     )
+    offset_enabled = has_correction
+    offset_apply_all = has_correction and not has_date_range
 
-    offset_start_dt = _parse_row_dt(offset_start_date, offset_start_time) if offset_enabled else None
-    offset_end_dt = _parse_row_dt(offset_end_date, offset_end_time) if offset_enabled else None
+    offset_start_dt = _parse_row_dt(offset_start_date, offset_start_time) if (offset_enabled and has_date_range) else None
+    offset_end_dt = _parse_row_dt(offset_end_date, offset_end_time) if (offset_enabled and has_date_range) else None
     if (
-        offset_enabled
+        offset_enabled and has_date_range
         and (offset_start_dt is None or offset_end_dt is None or offset_end_dt < offset_start_dt)
     ):
         offset_enabled = False
+        offset_apply_all = False
 
     FINAL_FIELDS = [
         "CameraName",
@@ -649,8 +653,8 @@ def generate_output_csvs(
             corrected_time = ""
             if offset_enabled:
                 row_dt = _parse_row_dt(compare_date, compare_time)
-                if row_dt is not None and offset_start_dt is not None and offset_end_dt is not None:
-                    if offset_start_dt <= row_dt <= offset_end_dt:
+                if row_dt is not None and (offset_apply_all or (offset_start_dt is not None and offset_end_dt is not None and offset_start_dt <= row_dt <= offset_end_dt)):
+                    if True:
                         new_dt = row_dt
                         try:
                             year = args.set_year if args.set_year is not None else new_dt.year
@@ -666,7 +670,7 @@ def generate_output_csvs(
                             except Exception:
                                 pass
 
-                        new_date = f"{new_dt.year:04d}{new_dt.month:02d}{new_dt.day:02d}"
+                        new_date = f"{new_dt.year:04d}-{new_dt.month:02d}-{new_dt.day:02d}"
                         new_time = f"{new_dt.hour:02d}:{new_dt.minute:02d}:{new_dt.second:02d}"
 
                         if args.offset_apply_to == "date":

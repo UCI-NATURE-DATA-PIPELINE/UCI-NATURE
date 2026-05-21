@@ -1,6 +1,15 @@
 <!-- Validate checks markup for warnings, errors, reruns, and refresh actions. -->
 <div class="card card-p">
-  <div style="margin-bottom:16px"><div class="card-title" style="margin-bottom:2px">Validation Checks</div><div style="font-size:12px;color:var(--muted)">Automated checks run against the processed dataset</div></div>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px">
+    <div>
+      <div class="card-title" style="margin-bottom:2px">Validation Checks</div>
+      <div style="font-size:12px;color:var(--muted)">Automated checks run against the processed dataset</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;flex-shrink:0">
+      <span style="font-size:12px;color:var(--muted)" id="val-run-note"></span>
+      <button class="val-run-btn" id="val-run-btn" onclick="runValidation()" style="font-size:13px;padding:8px 18px;white-space:nowrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Run Validation</button>
+    </div>
+  </div>  
   <div class="val-check ok"><div class="check-left"><div class="check-icon icon-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div><div class="check-label">All required columns present</div><div class="check-sub">Image ID, location, date &amp; time, species, confidence, and 4 more fields</div></div></div><div class="check-right"><span class="check-badge ok" id="val-badge-columns">-- / -- columns</span></div></div>
   <div class="val-check ok"><div class="check-left"><div class="check-icon icon-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div><div class="check-label">Image IDs are unique</div><div class="check-sub">No duplicate file references detected</div></div></div><div class="check-right"><span class="check-badge ok" id="val-badge-unique">-- unique</span></div></div>
   <div class="val-check warn" id="val-check-datetime"><div class="check-left"><div class="check-icon icon-warn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div><div class="check-label">Date / Time within deployment range</div><div class="check-sub" id="val-sub-datetime">Some images fall outside Jan 15 – May 30 window</div></div></div><div class="check-right"><span class="check-badge warn" id="val-badge-datetime">0 outside range</span><button class="check-detail-btn" onclick="toggleAffectedPanel();document.getElementById('affected-panel').scrollIntoView({behavior:'smooth'})">Details</button></div></div>
@@ -12,5 +21,4 @@
     <div class="unproc-rerun-bar"><span class="unproc-rerun-note">Re-run detection on these images to resolve errors</span><button class="unproc-rerun-btn" onclick="showToast('Re-running model…','warn')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Re-run Model on These Images</button></div>
   </div>
 
-  <div class="val-run-row"><span class="val-run-note" id="val-run-note"><span class="val-run-note" id="val-run-note"></span></span><button class="val-run-btn" id="val-run-btn" onclick="runValidation()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Run Validation</button></div>
 </div>

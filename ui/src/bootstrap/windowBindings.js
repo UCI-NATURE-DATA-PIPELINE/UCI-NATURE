@@ -60,6 +60,7 @@ export function bindGlobals(app, showPage) {
   window.askBurstConfirm = app.features.review.askBurstConfirm;
   window.burstAction = app.features.review.burstAction;
   window.undoBurstAction = app.features.review.undoBurstAction;
+  window.onValidatePageEnter = () => app.features.validate.onPageEnter();
   window.toggleAffectedPanel = app.features.validate.toggleAffectedPanel;
   window.updateTimePreview = app.features.validate.updateTimePreview;
   window.updateTimePreviewMulti = () => app.features.validate.updateTimePreviewMulti();

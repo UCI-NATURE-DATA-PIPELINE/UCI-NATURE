@@ -31,7 +31,7 @@ export function createPageController(app) {
       ]);
       return;
     }
-    if (pageName === "validate") return;
+    if (pageName === "validate") return app.features.validate.onPageEnter();
     if (pageName === "export") return app.features.export.loadExportData({ showToastOnError: true });
   }
 
