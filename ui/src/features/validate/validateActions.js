@@ -30,8 +30,7 @@ export function createValidateActions(app, api, renderApi) {
     if (app.state.currentPage === "export") {
       app.features.export.applyExportData(app.state.exportData, data);
     }
-    app.showToast("Validation refreshed from current output artifacts", "success");
-  }
+      app.showToast("Validation complete", "success");  }
 
   function getTotalOffsetHours() {
     const years = Number(document.getElementById("offset-years")?.value || 0);
@@ -161,8 +160,7 @@ export function createValidateActions(app, api, renderApi) {
         })
       });
       const data = await res.json();
-      app.showToast(data.message || "Time correction applied", "success");
-      document.getElementById("offset-years").value = 0;
+      app.showToast("Time correction applied successfully", "success");      document.getElementById("offset-years").value = 0;
       document.getElementById("offset-months").value = 0;
       document.getElementById("offset-days").value = 0;
       document.getElementById("offset-input").value = 0;
