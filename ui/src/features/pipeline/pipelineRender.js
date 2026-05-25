@@ -40,12 +40,12 @@ export function createPipelineRender(app, stateApi) {
       button.classList.add(state === "running" ? "running" : "idle");
       button.disabled = state === "running" || (surface.kind === "drive" && !app.features.drive.canRunDrivePipeline());
     }
-    if (label) label.textContent = state === "running" ? "Pipeline Running" : surface.kind === "drive" ? "Run Pipeline (Drive Source)" : "Run Detection & Classification";
+    if (label) label.textContent = state === "running" ? "Pipeline Running" : surface.kind === "drive" ? "Run Pipeline (Drive Source)" : "Run Pipeline";
     if (note) {
       if (state === "running") note.textContent = status?.progress?.step || `Run ${status.run_id} started ${formatTimestampLabel(status.started_at)}.`;
       else if (state === "completed") note.textContent = `Last run ${status.run_id} completed ${formatTimestampLabel(status.finished_at)}.`;
       else if (state === "failed") note.textContent = status.error ? `Last run ${status.run_id} failed: ${status.error}` : `Last run ${status.run_id} failed.`;
-      else note.textContent = surface.kind === "drive" || app.state.uploadTab === "drive" ? app.features.drive.getDriveRunIdleNote() : "Ready to start a backend pipeline run";
+      else note.textContent = surface.kind === "drive" || app.state.uploadTab === "drive" ? app.features.drive.getDriveRunIdleNote() : "Connect Google Drive to sync a Drive folder.";
     }
   
     if (panel) panel.style.display = (!status || state === "idle") ? "none" : "block";
