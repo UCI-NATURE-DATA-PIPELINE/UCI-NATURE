@@ -33,3 +33,16 @@ export async function saveReviewDecision({ filepath, reviewStatus, reviewedSpeci
   });
   return handleResponse(res);
 }
+
+export async function applyReviewDecisions(options = {}) {
+  const res = await fetchWithTimeout(`${API_BASE}/review/apply`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      burst_seconds: options.burstSeconds ?? null,
+      burst_export: options.burstExport ?? null,
+      exclude_humans: options.excludeHumans ?? null
+    })
+  });
+  return handleResponse(res);
+}

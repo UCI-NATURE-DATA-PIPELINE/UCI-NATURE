@@ -16,6 +16,44 @@ import {
 const RUN_HISTORY_KEY = "uci_nature_run_history";
 const MAX_HISTORY = 50;
 
+const RUN_HISTORY_FILTER_KEY = "uci_nature_run_history_filter";
+
+function loadDateRange() {
+  try {
+    const stored = localStorage.getItem(RUN_HISTORY_FILTER_KEY);
+    if (!stored) return { from: "", to: "" };
+    const parsed = JSON.parse(stored);
+    return {
+      from: typeof parsed.from === "string" ? parsed.from : "",
+      to: typeof parsed.to === "string" ? parsed.to : ""
+    };
+  } catch (e) {
+    return { from: "", to: "" };
+  }
+}
+
+function saveDateRange(range) {
+  try {
+    if (range && (range.from || range.to)) {
+      localStorage.setItem(RUN_HISTORY_FILTER_KEY, JSON.stringify(range));
+    } else {
+      localStorage.removeItem(RUN_HISTORY_FILTER_KEY);
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+function matchesDateRange(run, range) {
+  if (!range || (!range.from && !range.to)) return true;
+  const runTimestamp = run.finished_at || run.started_at;
+  if (!runTimestamp) return false;
+  const runDate = String(runTimestamp).slice(0, 10);
+  if (range.from && runDate < range.from) return false;
+  if (range.to && runDate > range.to) return false;
+  return true;
+}
+
 function loadStoredRuns() {
   try {
     const stored = localStorage.getItem(RUN_HISTORY_KEY);
@@ -144,31 +182,40 @@ export function createPipelineState(app) {
   }
 
   function buildRunHistoryRows(status) {
-    // Record this run if it just completed/failed
     maybeRecordCompletedRun(status);
-
+  
     const storedRuns = loadStoredRuns();
     const liveRun = status?.run_id ? snapshotRun(status) : null;
-
-    // If we have a live run that's still running, show it on top
-    // (completed/failed runs will already be in storedRuns thanks to maybeRecordCompletedRun)
     const showLiveOnTop = liveRun && liveRun.status === "running";
-
+    const dateRange = loadDateRange();
+    const isFiltered = dateRange.from || dateRange.to;
+  
     const rows = [];
-    if (showLiveOnTop) {
+    if (showLiveOnTop && matchesDateRange(liveRun, dateRange)) {
       rows.push(renderHistoryRow(liveRun, { isLive: true }));
     }
-
+  
     for (const run of storedRuns) {
-      // Skip if it's the same as the live run we already rendered
       if (showLiveOnTop && run.run_id === liveRun.run_id) continue;
+      if (!matchesDateRange(run, dateRange)) continue;
       rows.push(renderHistoryRow(run));
     }
-
+  
     if (rows.length === 0) {
-      return `<tr><td colspan="7" style="color:var(--muted);padding:18px 12px">No real backend run history is available yet. Start a pipeline run from this page to populate the latest run state.</td></tr>`;
+      let message;
+      if (isFiltered) {
+        const rangeText = dateRange.from && dateRange.to
+          ? `between ${dateRange.from} and ${dateRange.to}`
+          : dateRange.from
+            ? `from ${dateRange.from} onward`
+            : `up to ${dateRange.to}`;
+        message = `No runs found ${rangeText}. <a href="#" onclick="clearRunHistoryFilter();return false;" style="color:var(--blue)">Clear filter</a>`;
+      } else {
+        message = "No runs yet. Start a pipeline run from this page to see history here.";
+      }
+      return `<tr><td colspan="7" style="color:var(--muted);padding:18px 12px">${message}</td></tr>`;
     }
-
+  
     return rows.join("");
   }
 
@@ -179,9 +226,57 @@ export function createPipelineState(app) {
     ];
   }
 
+  function applyDateFilter(range) {
+    // Accept either an object {from, to} or a single string for backward compat
+    let normalized;
+    if (typeof range === "string") {
+      normalized = { from: range, to: range };
+    } else if (range && typeof range === "object") {
+      normalized = {
+        from: range.from || "",
+        to: range.to || ""
+      };
+    } else {
+      normalized = { from: "", to: "" };
+    }
+  
+    saveDateRange(normalized);
+  
+    // Re-render the table
+    const historyBody = document.getElementById("run-history-body");
+    if (historyBody) {
+      historyBody.innerHTML = buildRunHistoryRows(app.state.pipelineStatus);
+    }
+  
+    // Show/hide clear button
+    const hasFilter = !!(normalized.from || normalized.to);
+    const clearBtn = document.getElementById("run-history-clear-btn");
+    if (clearBtn) {
+      clearBtn.style.display = hasFilter ? "inline-block" : "none";
+    }
+  
+    // Sync the inputs in case this was called programmatically
+    const fromInput = document.getElementById("run-history-date-from");
+    const toInput = document.getElementById("run-history-date-to");
+    if (fromInput && fromInput.value !== normalized.from) fromInput.value = normalized.from;
+    if (toInput && toInput.value !== normalized.to) toInput.value = normalized.to;
+  }
+  
+  function restoreDateFilter() {
+    const saved = loadDateRange();
+    const fromInput = document.getElementById("run-history-date-from");
+    const toInput = document.getElementById("run-history-date-to");
+    if (fromInput) fromInput.value = saved.from || "";
+    if (toInput) toInput.value = saved.to || "";
+    const clearBtn = document.getElementById("run-history-clear-btn");
+    if (clearBtn) clearBtn.style.display = (saved.from || saved.to) ? "inline-block" : "none";
+  }
+
   return {
     buildRunHistoryRows,
     getPipelinePanelSnapshot,
-    getRunSurfaceConfigs
+    getRunSurfaceConfigs,
+    applyDateFilter,
+    restoreDateFilter
   };
 }

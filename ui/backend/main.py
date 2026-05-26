@@ -757,15 +757,18 @@ def build_review_items_data() -> List[dict]:
             time_value=metadata.get("time", ""),
             fallback=metadata.get("modified_time", ""),
         )
-        label_value = (
-            decision.get("reviewed_species")
-            or row.get("final_label")
-            or row.get("resolved_label")
-            or row.get("burst_label")
-            or row.get("label_raw")
-            or "unknown"
-        )
-        label = _display_species_label(label_value)
+        reviewed_species = (decision.get("reviewed_species") or "").strip()
+        if reviewed_species:
+            label = reviewed_species
+        else:
+            label_value = (
+                row.get("final_label")
+                or row.get("resolved_label")
+                or row.get("burst_label")
+                or row.get("label_raw")
+                or "unknown"
+            )
+            label = _display_species_label(label_value)
         confidence = round(float(row.get("resolved_score") or row.get("score") or 0) * 100)
 
         # Demote low-confidence "blank" verdicts: if the model said blank

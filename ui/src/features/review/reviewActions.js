@@ -114,11 +114,29 @@ export function createReviewActions(app, api, stateApi, renderApi) {
     }
   }
 
+  async function proceedToValidate() {
+    try {
+      app.showToast("Applying review decisions to export files...", "");
+      await api.applyReviewDecisions();
+      app.showToast("Decisions applied. Loading export page.", "success");
+      
+      if (typeof window.showPage === "function") {
+        window.showPage("export");
+      } else if (typeof window.showPageFromReview === "function") {
+        window.showPageFromReview("export");
+      }
+    } catch (error) {
+      app.showToast(`Failed to apply decisions: ${error.message}`, "warn");
+    }
+  }
+
   return {
+    proceedToValidate,
     loadReviewData,
     navigateReview,
     reviewAction,
     undoLastAction,
     undoBurstAction: undoLastAction
   };
+
 }

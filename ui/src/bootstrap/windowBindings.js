@@ -19,6 +19,7 @@ export function bindGlobals(app, showPage) {
   window.confirmDrive = app.features.auth.confirmDrive;
   window.switchAccount = app.features.auth.switchAccount;
   window.openDriveModal = app.features.auth.openDriveModal;
+  window.proceedToValidate = app.features.review.proceedToValidate;
   window.reconnectDrive = app.features.auth.reconnectDrive;
   window.switchUploadTab = app.features.drive.switchUploadTab;
   window.selectLocCard = app.features.drive.selectLocCard;
@@ -74,6 +75,18 @@ export function bindGlobals(app, showPage) {
   window.syncExportFilenamePreview = app.features.export.syncExportFilenamePreview;
   window.downloadFile = app.features.export.downloadFile;
   window.previewTimeCorrection = () => app.features.validate.previewTimeCorrection();
+  window.filterRunHistoryByDate = function() {
+    const fromInput = document.getElementById("run-history-date-from");
+    const toInput = document.getElementById("run-history-date-to");
+    app.features.pipeline.applyDateFilter({
+      from: fromInput?.value || "",
+      to: toInput?.value || ""
+    });
+  };
+  
+  window.clearRunHistoryFilter = function() {
+    app.features.pipeline.applyDateFilter({ from: "", to: "" });
+  };
   window.applyTimeCorrection = () => app.features.validate.applyTimeCorrection();
   if (typeof window.__uciNatureFlushDeferred === "function") {
     try { window.__uciNatureFlushDeferred(); } catch (err) { console.error(err); }

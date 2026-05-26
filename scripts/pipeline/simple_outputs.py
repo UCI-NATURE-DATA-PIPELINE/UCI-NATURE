@@ -349,8 +349,32 @@ def _simplify_row(
     raw_certainty = str(raw_confidence or "").strip()
     individuals = _safe_int(_first_value(row, "# of Individuals", "count", "animal_count"))
 
-    if normalized_species == "human":
-        # Humans are not animals but we want to keep the label visible.
+    prediction_source = _first_value(row, "PredictionSource", "prediction_source", "resolved_source")
+    is_human_reviewed = "manual_review" in prediction_source.lower()
+
+    if is_human_reviewed:
+        human_species = (raw_species or "").strip()
+        if not human_species:
+            normalized_species = ""
+        else:
+            normalized_species = human_species.lower()
+    else:
+        normalized_species = normalize_species(raw_species)
+
+    if is_human_reviewed and normalized_species and normalized_species not in {"blank", ""}:
+        if normalized_species == "human":
+            animal_detected = "no"
+            species = "human"
+            confidence = round(confidence_raw, 2) if confidence_raw else 1.00
+        elif normalized_species == "vehicle":
+            animal_detected = "no"
+            species = "vehicle"
+            confidence = round(confidence_raw, 2) if confidence_raw else 1.00
+        else:
+            animal_detected = "yes"
+            species = normalized_species
+            confidence = round(confidence_raw, 2) if confidence_raw else 1.00
+    elif normalized_species == "human":
         animal_detected = "no"
         species = "human"
         confidence = 0.00
@@ -363,16 +387,12 @@ def _simplify_row(
         species = normalized_species or ANIMAL_UNCLASSIFIED
         confidence = round(confidence_raw, 2)
     else:
-        # Trust the final pipeline routing for blanks. Older intermediate
-        # rows can carry stale count/confidence values even when the resolved
-        # postprocess result is truly blank; those must not leak into the
-        # animals-only CSV as animal_unclassified.
         animal_detected = "no"
         species = "blank"
         confidence = 0.00
 
-    low_conf = animal_detected == "yes" and confidence_raw < low_confidence_threshold
-    unclassified = species == ANIMAL_UNCLASSIFIED
+    low_conf = animal_detected == "yes" and confidence_raw < low_confidence_threshold and not is_human_reviewed
+    unclassified = species == ANIMAL_UNCLASSIFIED and not is_human_reviewed
     bad_timestamp = timestamp_status in {"missing", "odd_timestamp"}
     review_needed = "yes" if (low_conf or unclassified or bad_timestamp) else "no"
 

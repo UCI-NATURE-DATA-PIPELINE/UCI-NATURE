@@ -45,7 +45,7 @@ export function createPipelineRender(app, stateApi) {
       if (state === "running") note.textContent = status?.progress?.step || `Run ${status.run_id} started ${formatTimestampLabel(status.started_at)}.`;
       else if (state === "completed") note.textContent = `Last run ${status.run_id} completed ${formatTimestampLabel(status.finished_at)}.`;
       else if (state === "failed") note.textContent = status.error ? `Last run ${status.run_id} failed: ${status.error}` : `Last run ${status.run_id} failed.`;
-      else note.textContent = surface.kind === "drive" || app.state.uploadTab === "drive" ? app.features.drive.getDriveRunIdleNote() : "Connect Google Drive to sync a Drive folder.";
+      else note.textContent = surface.kind === "drive" || app.state.uploadTab === "drive" ? app.features.drive.getDriveRunIdleNote() : "Click Run to start pipeline.";
     }
   
     if (panel) panel.style.display = (!status || state === "idle") ? "none" : "block";
@@ -87,10 +87,18 @@ export function createPipelineRender(app, stateApi) {
     const historyBody = document.getElementById("run-history-body");
     const historyNote = document.getElementById("run-history-note");
     if (historyBody) historyBody.innerHTML = stateApi.buildRunHistoryRows(status);
-    if (historyNote) historyNote.textContent = status?.run_id ? "Latest backend run" : "No real run history yet";
-    app.features.drive.syncDriveUI();
-
-
+    if (stateApi.restoreDateFilter) stateApi.restoreDateFilter();
+    if (historyNote) {
+      const stored = JSON.parse(localStorage.getItem("uci_nature_run_history") || "[]");
+      const count = stored.length;
+      if (count > 0) {
+        historyNote.textContent = `${count} run${count === 1 ? "" : "s"} stored`;
+      } else if (status?.run_id) {
+        historyNote.textContent = "Latest backend run";
+      } else {
+        historyNote.textContent = "";
+      }
+    }    app.features.drive.syncDriveUI();
   }
 
   function buildPipelineResultRows(files = []) {

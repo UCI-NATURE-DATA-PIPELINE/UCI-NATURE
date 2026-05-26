@@ -21,6 +21,10 @@ def normalize_review_path(filepath: str) -> str:
         path_value = path_value.replace("//", "/")
     if path_value.startswith("./"):
         path_value = path_value[2:]
+    marker = "data/staging/"
+    idx = path_value.find(marker)
+    if idx >= 0:
+        path_value = path_value[idx:]
     return path_value
 
 
