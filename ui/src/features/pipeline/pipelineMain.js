@@ -49,6 +49,7 @@ export function createPipelineFeature(app) {
   const actionApi = createPipelineActions(app, api, renderApi, loadPipelineStatus, loadPipelineResults);
 
   return {
+    ...stateApi,
     ...renderApi,
     ...pollingApi,
     ...actionApi,
