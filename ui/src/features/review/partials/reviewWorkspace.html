@@ -67,8 +67,15 @@
         </div>
         <div style="border-top:1px solid var(--border);margin:14px 0 12px"></div>
         <div class="review-action-bar">
-          <button class="review-btn-confirm" onclick="reviewAction('confirm')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Confirm &amp; Next</button>
-          <button class="review-btn-flag" style="width:100%;margin-top:0" onclick="askFlagConfirm()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>Flag as Uncertain</button>
+          <button class="review-btn-confirm" onclick="reviewAction('confirm')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Confirm &amp; Next
+          </button>
+          
+          <button class="review-btn-flag" style="width:100%;margin-top:0" onclick="reviewAction('flag')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+            Flag as Uncertain
+          </button>
         </div>
       </div>
     </div>

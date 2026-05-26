@@ -29,29 +29,24 @@ export function createReviewActions(app, api, stateApi, renderApi) {
     if (!item) return;
     
     const originalStatus = item.status;
-    const newStatus = action === "confirm" ? "confirmed" : "flagged";
-    const wasInFilter = true;  // the item was visible at this index
     
-    // Update UI immediately for instant feedback
+    const newStatus = action === "confirm" ? "confirmed" : "pending"; 
+    
     item.status = newStatus;
     app.state.lastUndoAction = { type: "review-status", itemId: item.id, oldStatus: originalStatus };
-    renderApi.showUndoToast(action === "confirm" ? "Confirmed" : "Flagged");
     
-    // Re-fetch the filtered list after the status change
+    renderApi.showUndoToast(action === "confirm" ? "Confirmed" : "Marked as Unconfirmed");
+    
     const newItems = stateApi.currentItems();
     
-    // If the item is still in the filtered list (e.g., "All" filter),
-    // advance forward. Otherwise stay on the same index since items shifted up.
+
     const itemStillVisible = newItems.some(i => i.id === item.id);
     
     if (itemStillVisible) {
-      // Item is still here (e.g., on "All" filter) → advance to next
       if (app.state.reviewIndex < newItems.length - 1) {
         app.state.reviewIndex += 1;
       }
     } else {
-      // Item disappeared (e.g., on "Pending" filter) → stay at current index
-      // because everything shifted up. But cap to the new list length.
       if (app.state.reviewIndex >= newItems.length) {
         app.state.reviewIndex = Math.max(0, newItems.length - 1);
       }
@@ -66,7 +61,8 @@ export function createReviewActions(app, api, stateApi, renderApi) {
         filepath: item.filepath || item.file_path || item.filename,
         reviewStatus: newStatus,
         reviewedSpecies: item.species || "",
-        reviewReason: action === "flag" ? "user_flagged_uncertain" : "user_confirmed"
+        // CHANGE 3: Update the reason sent to the backend
+        reviewReason: action === "flag" ? "user_reverted_to_pending" : "user_confirmed"
       });
     } catch (error) {
       item.status = originalStatus;
