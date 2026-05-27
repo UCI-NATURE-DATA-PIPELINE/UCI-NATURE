@@ -1,0 +1,54 @@
+# Version control
+.git
+.gitignore
+
+# Local environment files and secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Python environments and caches
+.venv/
+.venv*/
+venv/
+env/
+ENV/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local data, generated outputs, and test runs
+data/staging/
+data/outputs/
+data/cache/
+data/downloads/
+data/test_runs/
+ui/backend/data/
+downloads/
+cache/
+test_runs/
+logs/
+*.log
+
+# Frontend/tooling caches
+node_modules/
+ui/node_modules/
+dist/
+build/
+
+# OS/editor noise
+.DS_Store
+**/.DS_Store
+.vscode/
+.idea/

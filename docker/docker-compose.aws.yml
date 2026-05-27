@@ -1,0 +1,67 @@
+# Production stack for AWS.
+#
+#   docker compose -f docker/docker-compose.aws.yml up --build -d
+#
+# - Caddy terminates TLS for uci-nature-pipeline.duckdns.org and proxies:
+#     /api/*  → backend:8000 (FastAPI)
+#     /*      → frontend:80  (nginx serving ui/)
+# - Backend + frontend stay private; only Caddy is published on 80/443.
+# - Data folders are bind-mounted so staged images, outputs, sessions,
+#   logs, and secrets persist between container restarts.
+# - Caddy's auto-issued TLS cert + ACME state live in named volumes so
+#   certs survive container recreation.
+
+name: uci-nature-aws
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: uci-nature-backend
+    env_file:
+      - ../.env
+    environment:
+      UCI_NATURE_APP_ENV: cloud
+      # Worker / progress tunables — defaults are sane; override here
+      # without rebuilding the image if needed.
+      UCI_NATURE_DRIVE_WORKERS: "8"
+      UCI_NATURE_DRIVE_PROGRESS_INTERVAL: "0.4"
+      UCI_NATURE_DRIVE_DEBUG: "0"
+    expose:
+      - "8000"
+    volumes:
+      - ../data:/app/data
+      - ../ui/backend/data:/app/ui/backend/data
+      - ../secrets:/app/secrets:ro
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: uci-nature-frontend
+    depends_on:
+      - backend
+    expose:
+      - "80"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: uci-nature-caddy
+    depends_on:
+      - frontend
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

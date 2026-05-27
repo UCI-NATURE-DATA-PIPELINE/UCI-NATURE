@@ -4,10 +4,11 @@ import csv
 import io
 import json
 import os
+import queue
 import shutil
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 
@@ -20,14 +21,28 @@ from scripts.config import GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".heic", ".webp", ".tif", ".tiff"}
+SUPPORTED_IMAGE_MIME_TYPES = {
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/heic",
+    "image/heif",
+    "image/webp",
+    "image/tiff",
+    "image/x-tiff",
+}
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
+SHORTCUT_MIME_TYPE = "application/vnd.google-apps.shortcut"
 DEFAULT_DRIVE_INDEX_PATH = Path("data/outputs/drive_index.csv")
 DOWNLOAD_RETRY_ATTEMPTS = 5
 RETRYABLE_DOWNLOAD_STATUS_CODES = {429, 500, 502, 503, 504}
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 STAGING_MANIFEST_NAME = ".drive_staging_manifest.json"
+DRIVE_INDEX_CACHE_VERSION = 1
+DRIVE_INDEX_CACHE_CSV_NAME = "drive_index_cache.csv"
+DRIVE_INDEX_CACHE_MANIFEST_NAME = "drive_index_cache_manifest.json"
 
 
 def _env_int(name: str, default: int, *, low: int = 1, high: int = 64) -> int:
@@ -71,6 +86,7 @@ DRIVE_PROGRESS_MIN_INTERVAL_SECONDS = _env_float(
 # Per-file "Downloaded: ..." prints are off by default; flip this on for
 # debugging a stuck sync.
 DRIVE_DEBUG_LOG = _env_bool("UCI_NATURE_DRIVE_DEBUG", False)
+DRIVE_INDEX_CACHE_ENABLED = _env_bool("UCI_NATURE_DRIVE_INDEX_CACHE", True)
 DRIVE_INDEX_FIELDS = [
     "file_name",
     "file_id",
@@ -79,6 +95,7 @@ DRIVE_INDEX_FIELDS = [
     "modifiedTime",
     "size",
     "drive_path",
+    "relative_local_path",
     "site",
     "deployment_folder",
     "deployment_id",
@@ -122,8 +139,103 @@ def _sanitize_name(name: str) -> str:
 
 
 def _is_supported_image(file_name: str, mime_type: str) -> bool:
-    del mime_type
-    return Path(file_name).suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
+    normalized_mime_type = (mime_type or "").strip().lower()
+    if normalized_mime_type in SUPPORTED_IMAGE_MIME_TYPES:
+        return True
+    return Path(file_name or "").suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
+
+
+def _new_drive_listing_stats() -> Dict[str, object]:
+    return {
+        "folders_scanned": 0,
+        "files_scanned": 0,
+        "images_discovered": 0,
+        "first_image_names": [],
+    }
+
+
+def _increment_listing_stat(stats: Optional[Dict[str, object]], key: str) -> None:
+    if stats is None:
+        return
+    stats[key] = int(stats.get(key) or 0) + 1
+
+
+def _record_listing_image(stats: Optional[Dict[str, object]], file_name: str) -> None:
+    if stats is None:
+        return
+    _increment_listing_stat(stats, "images_discovered")
+    first_names = stats.setdefault("first_image_names", [])
+    if isinstance(first_names, list) and len(first_names) < 5:
+        first_names.append(file_name)
+
+
+def _get_drive_file_metadata(service, file_id: str) -> Dict[str, object]:
+    return service.files().get(
+        fileId=file_id,
+        fields=(
+            "id,name,mimeType,modifiedTime,size,driveId,webViewLink,"
+            "shortcutDetails(targetId,targetMimeType)"
+        ),
+        supportsAllDrives=True,
+    ).execute()
+
+
+def _resolve_selected_drive_folder(
+    service,
+    folder_id: str,
+    *,
+    folder_name: str,
+) -> Dict[str, object]:
+    selected_id = str(folder_id or "").strip()
+    if not selected_id:
+        raise FileNotFoundError("No Google Drive folder id was provided")
+
+    selected_metadata = _get_drive_file_metadata(service, selected_id)
+    selected_mime_type = str(selected_metadata.get("mimeType") or "").strip()
+    resolved_metadata = selected_metadata
+    shortcut_target_id: Optional[str] = None
+    seen_ids = {selected_id}
+
+    while str(resolved_metadata.get("mimeType") or "").strip() == SHORTCUT_MIME_TYPE:
+        details = resolved_metadata.get("shortcutDetails") or {}
+        if not isinstance(details, dict):
+            details = {}
+        target_id = str(details.get("targetId") or "").strip()
+        if not shortcut_target_id:
+            shortcut_target_id = target_id or None
+        if not target_id:
+            raise FileNotFoundError(
+                f"Google Drive shortcut {selected_id} does not expose a target folder id"
+            )
+        if target_id in seen_ids:
+            raise FileNotFoundError(
+                f"Google Drive shortcut {selected_id} resolves in a loop instead of a folder"
+            )
+        seen_ids.add(target_id)
+        resolved_metadata = _get_drive_file_metadata(service, target_id)
+
+    resolved_mime_type = str(resolved_metadata.get("mimeType") or "").strip()
+    if resolved_mime_type != FOLDER_MIME_TYPE:
+        display_name = str(selected_metadata.get("name") or folder_name or selected_id)
+        raise FileNotFoundError(
+            f"Selected Google Drive item is not a folder: {display_name} ({selected_id})"
+        )
+
+    resolved_id = str(resolved_metadata.get("id") or "").strip()
+    if not resolved_id:
+        raise FileNotFoundError(
+            f"Unable to resolve the selected Google Drive folder id: {folder_name} ({selected_id})"
+        )
+
+    return {
+        "selected_id": selected_id,
+        "selected_name": str(selected_metadata.get("name") or folder_name or selected_id),
+        "selected_mime_type": selected_mime_type,
+        "shortcut_target_id": shortcut_target_id,
+        "resolved_id": resolved_id,
+        "resolved_name": str(resolved_metadata.get("name") or folder_name or resolved_id),
+        "resolved_mime_type": resolved_mime_type,
+    }
 
 
 def _parse_drive_path(drive_path: str) -> Tuple[str, str, str, str]:
@@ -177,22 +289,32 @@ def _make_drive_service_factory(access_token: str, refresh_token: Optional[str])
     return get_service
 
 
-def _list_selected_folder_images(service, folder_id: str) -> List[Dict[str, object]]:
+def _iter_selected_folder_images(
+    service,
+    folder_id: str,
+    *,
+    seen_folders: Optional[Set[str]] = None,
+    stats: Optional[Dict[str, object]] = None,
+):
     stack: List[Tuple[str, Tuple[str, ...]]] = [(folder_id, ())]
-    seen_folders: Set[str] = set()
-    files: List[Dict[str, object]] = []
+    seen_folders = seen_folders if seen_folders is not None else set()
 
     while stack:
         current_folder_id, path_segments = stack.pop()
         if current_folder_id in seen_folders:
             continue
         seen_folders.add(current_folder_id)
+        _increment_listing_stat(stats, "folders_scanned")
 
         page_token = None
         while True:
             response = service.files().list(
                 q=f"'{current_folder_id}' in parents and trashed=false",
-                fields="nextPageToken, files(id, name, mimeType, modifiedTime, size)",
+                fields=(
+                    "nextPageToken, "
+                    "files(id, name, mimeType, modifiedTime, size, "
+                    "shortcutDetails(targetId,targetMimeType))"
+                ),
                 orderBy="name",
                 pageSize=1000,
                 pageToken=page_token,
@@ -201,6 +323,7 @@ def _list_selected_folder_images(service, folder_id: str) -> List[Dict[str, obje
             ).execute()
 
             for item in response.get("files", []):
+                _increment_listing_stat(stats, "files_scanned")
                 file_id = item.get("id", "")
                 raw_name = item.get("name", "") or file_id
                 safe_name = _sanitize_name(raw_name)
@@ -211,16 +334,37 @@ def _list_selected_folder_images(service, folder_id: str) -> List[Dict[str, obje
                     stack.append((file_id, next_segments))
                     continue
 
+                if mime_type == SHORTCUT_MIME_TYPE:
+                    details = item.get("shortcutDetails") or {}
+                    if not isinstance(details, dict):
+                        details = {}
+                    target_id = str(details.get("targetId") or "").strip()
+                    target_mime_type = ""
+                    if target_id:
+                        try:
+                            target_metadata = _get_drive_file_metadata(service, target_id)
+                            target_mime_type = str(target_metadata.get("mimeType") or "").strip()
+                        except Exception as exc:  # noqa: BLE001 — skip broken shortcuts, keep listing
+                            print(
+                                "Drive listing skipped shortcut with unreadable target: "
+                                f"{raw_name} ({file_id}) -> {target_id}: {exc!r}"
+                            )
+                            continue
+                    if target_id and target_mime_type == FOLDER_MIME_TYPE:
+                        stack.append((target_id, next_segments))
+                    continue
+
                 if not _is_supported_image(raw_name, mime_type):
                     continue
 
+                _record_listing_image(stats, raw_name)
                 drive_path = "/".join(next_segments)
                 relative_local_path = (
                     Path(*path_segments) / f"{file_id}__{safe_name}"
                     if path_segments
                     else Path(f"{file_id}__{safe_name}")
                 )
-                files.append({
+                yield {
                     "file_id": file_id,
                     "file_name": raw_name,
                     "drive_folder_id": current_folder_id,
@@ -229,12 +373,15 @@ def _list_selected_folder_images(service, folder_id: str) -> List[Dict[str, obje
                     "size": item.get("size", ""),
                     "drive_path": drive_path,
                     "relative_local_path": relative_local_path,
-                })
+                }
 
             page_token = response.get("nextPageToken")
             if not page_token:
                 break
 
+
+def _list_selected_folder_images(service, folder_id: str) -> List[Dict[str, object]]:
+    files = list(_iter_selected_folder_images(service, folder_id))
     return sorted(files, key=lambda item: str(item["drive_path"]).lower())
 
 
@@ -281,6 +428,56 @@ def _emit_progress(
         return
 
 
+def _drive_index_cache_paths(index_path: Path) -> Tuple[Path, Path]:
+    return (
+        index_path.parent / DRIVE_INDEX_CACHE_CSV_NAME,
+        index_path.parent / DRIVE_INDEX_CACHE_MANIFEST_NAME,
+    )
+
+
+def _normalize_relative_local_path(file_info: Dict[str, object]) -> Path:
+    raw_relative_path = str(file_info.get("relative_local_path") or "").strip()
+    if raw_relative_path:
+        return Path(raw_relative_path)
+
+    drive_path = str(file_info.get("drive_path") or "").strip()
+    path_segments = [
+        _sanitize_name(segment)
+        for segment in drive_path.split("/")[:-1]
+        if segment.strip()
+    ]
+    safe_name = _sanitize_name(str(file_info.get("file_name") or file_info.get("file_id") or "image"))
+    file_id = str(file_info.get("file_id") or "").strip()
+    local_name = f"{file_id}__{safe_name}" if file_id else safe_name
+    return Path(*path_segments, local_name) if path_segments else Path(local_name)
+
+
+def _row_to_file_info(row: Dict[str, str]) -> Dict[str, object]:
+    file_info: Dict[str, object] = {
+        "file_id": row.get("file_id", ""),
+        "file_name": row.get("file_name", ""),
+        "drive_folder_id": row.get("drive_folder_id", ""),
+        "mimeType": row.get("mimeType", ""),
+        "modifiedTime": row.get("modifiedTime", ""),
+        "size": row.get("size", ""),
+        "drive_path": row.get("drive_path", ""),
+        "relative_local_path": row.get("relative_local_path", ""),
+    }
+    file_info["relative_local_path"] = _normalize_relative_local_path(file_info)
+    return file_info
+
+
+def _read_drive_index(index_path: Path) -> List[Dict[str, object]]:
+    if not index_path.exists():
+        return []
+
+    try:
+        with open(index_path, newline="", encoding="utf-8") as f:
+            return [_row_to_file_info(row) for row in csv.DictReader(f)]
+    except Exception:
+        return []
+
+
 def _write_drive_index(
     index_path: Path,
     files: List[Dict[str, object]],
@@ -307,11 +504,203 @@ def _write_drive_index(
                 "modifiedTime": file_info["modifiedTime"],
                 "size": file_info["size"],
                 "drive_path": file_info["drive_path"],
+                "relative_local_path": str(_normalize_relative_local_path(file_info)),
                 "site": site,
                 "deployment_folder": deployment_folder,
                 "deployment_id": deployment_id,
                 "status": status,
             })
+
+
+def _read_drive_index_cache_manifest(manifest_path: Path) -> Optional[Dict[str, object]]:
+    if not manifest_path.exists():
+        return None
+
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except Exception:
+        return None
+
+    return payload if isinstance(payload, dict) else None
+
+
+def _get_drive_start_page_token(service) -> Optional[str]:
+    try:
+        response = service.changes().getStartPageToken(
+            supportsAllDrives=True,
+        ).execute()
+    except Exception as exc:
+        print(f"Drive index cache token unavailable; cache validation will be skipped: {exc!r}")
+        return None
+
+    return str(response.get("startPageToken") or "").strip() or None
+
+
+def _drive_cache_change_status(
+    service,
+    *,
+    start_page_token: str,
+    cached_files: List[Dict[str, object]],
+    cached_folder_ids: Set[str],
+) -> Tuple[bool, Optional[str]]:
+    """Return (has_relevant_changes, new_start_page_token).
+
+    We use the Drive Changes feed as a cheap cache validator. Any change to a
+    cached file, a known folder, or a file whose parent is a known folder means
+    the recursive tree may have changed and should be rebuilt.
+    """
+    known_file_ids = {
+        str(file_info.get("file_id") or "").strip()
+        for file_info in cached_files
+        if str(file_info.get("file_id") or "").strip()
+    }
+    page_token = str(start_page_token or "").strip()
+    new_start_page_token: Optional[str] = None
+
+    if not page_token:
+        return True, None
+
+    while page_token:
+        try:
+            response = service.changes().list(
+                pageToken=page_token,
+                pageSize=1000,
+                fields=(
+                    "nextPageToken,newStartPageToken,"
+                    "changes(fileId,removed,file(id,name,mimeType,modifiedTime,size,parents,trashed))"
+                ),
+                spaces="drive",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            ).execute()
+        except HttpError as exc:
+            status_code = getattr(getattr(exc, "resp", None), "status", None)
+            if status_code == 410:
+                print("Drive index cache token expired; rebuilding the recursive index.")
+            else:
+                print(f"Drive index cache validation failed; rebuilding recursive index: {exc!r}")
+            return True, None
+        except Exception as exc:
+            print(f"Drive index cache validation failed; rebuilding recursive index: {exc!r}")
+            return True, None
+
+        for change in response.get("changes", []):
+            file_id = str(change.get("fileId") or "").strip()
+            if file_id in known_file_ids or file_id in cached_folder_ids:
+                return True, response.get("newStartPageToken")
+
+            changed_file = change.get("file") or {}
+            parents = {str(parent).strip() for parent in changed_file.get("parents") or []}
+            if parents & cached_folder_ids:
+                return True, response.get("newStartPageToken")
+
+            if change.get("removed") and file_id in known_file_ids:
+                return True, response.get("newStartPageToken")
+
+        page_token = response.get("nextPageToken")
+        new_start_page_token = response.get("newStartPageToken") or new_start_page_token
+        if not page_token:
+            break
+
+    return False, str(new_start_page_token or "").strip() or None
+
+
+def _load_cached_drive_index(
+    service,
+    *,
+    folder_id: str,
+    cache_index_path: Path,
+    cache_manifest_path: Path,
+) -> Tuple[Optional[List[Dict[str, object]]], Optional[Dict[str, object]]]:
+    if not DRIVE_INDEX_CACHE_ENABLED:
+        return None, None
+
+    manifest = _read_drive_index_cache_manifest(cache_manifest_path)
+    if not manifest or int(manifest.get("version") or 0) != DRIVE_INDEX_CACHE_VERSION:
+        return None, None
+
+    if str(manifest.get("folder_id") or "").strip() != str(folder_id).strip():
+        return None, None
+
+    cached_files = _read_drive_index(cache_index_path)
+    if not cached_files:
+        print("Drive index cache has 0 images; falling back to live Drive listing")
+        return None, None
+
+    cached_folder_ids = {
+        str(folder).strip()
+        for folder in (manifest.get("folder_ids") or [])
+        if str(folder).strip()
+    }
+    cached_folder_ids.add(str(folder_id).strip())
+
+    changed, new_token = _drive_cache_change_status(
+        service,
+        start_page_token=str(manifest.get("start_page_token") or ""),
+        cached_files=cached_files,
+        cached_folder_ids=cached_folder_ids,
+    )
+    if changed:
+        return None, None
+
+    if new_token and new_token != manifest.get("start_page_token"):
+        manifest = {
+            **manifest,
+            "start_page_token": new_token,
+            "validated_at": time.time(),
+        }
+        _write_drive_index_cache_manifest(cache_manifest_path, manifest)
+
+    print(
+        f"Drive index cache hit: using {len(cached_files)} cached image(s) "
+        f"from {cache_index_path}"
+    )
+    return cached_files, manifest
+
+
+def _write_drive_index_cache_manifest(
+    manifest_path: Path,
+    payload: Dict[str, object],
+) -> None:
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = manifest_path.with_suffix(manifest_path.suffix + ".tmp")
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, sort_keys=True)
+    temp_path.replace(manifest_path)
+
+
+def _write_drive_index_cache(
+    *,
+    cache_index_path: Path,
+    cache_manifest_path: Path,
+    files: List[Dict[str, object]],
+    folder_ids: Set[str],
+    folder_id: str,
+    folder_name: str,
+    camera_location: Optional[str],
+    start_page_token: Optional[str],
+) -> None:
+    _write_drive_index(
+        cache_index_path,
+        files,
+        folder_name=folder_name,
+        camera_location=camera_location,
+    )
+    _write_drive_index_cache_manifest(
+        cache_manifest_path,
+        {
+            "version": DRIVE_INDEX_CACHE_VERSION,
+            "folder_id": folder_id,
+            "folder_name": folder_name,
+            "camera_location": camera_location,
+            "indexed_at": time.time(),
+            "file_count": len(files),
+            "folder_ids": sorted(str(folder) for folder in folder_ids if str(folder).strip()),
+            "cache_index_path": str(cache_index_path),
+            "start_page_token": start_page_token,
+        },
+    )
 
 
 def _clear_directory_contents(path: Path) -> None:
@@ -321,6 +710,37 @@ def _clear_directory_contents(path: Path) -> None:
             shutil.rmtree(child)
         else:
             child.unlink()
+
+
+def _prune_unexpected_staging_files(
+    staging_dir: Path,
+    expected_relative_paths: Set[Path],
+) -> int:
+    if not staging_dir.exists():
+        return 0
+
+    expected = {Path(path) for path in expected_relative_paths}
+    removed = 0
+    for path in sorted(staging_dir.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+        if path.is_dir():
+            try:
+                path.rmdir()
+            except OSError:
+                pass
+            continue
+
+        rel_path = path.relative_to(staging_dir)
+        if rel_path.name == STAGING_MANIFEST_NAME:
+            continue
+        if rel_path in expected:
+            continue
+        try:
+            path.unlink()
+            removed += 1
+        except OSError:
+            pass
+
+    return removed
 
 
 def _staging_manifest_path(staging_dir: Path) -> Path:
@@ -344,13 +764,20 @@ def _read_staging_manifest(staging_dir: Path) -> Optional[Dict[str, object]]:
     return payload
 
 
-def _write_staging_manifest(staging_dir: Path, *, folder_id: str, folder_name: str) -> Path:
+def _write_staging_manifest(
+    staging_dir: Path,
+    *,
+    folder_id: str,
+    folder_name: str,
+    selected_folder_id: Optional[str] = None,
+) -> Path:
     staging_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = _staging_manifest_path(staging_dir)
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(
             {
                 "folder_id": folder_id,
+                "selected_folder_id": selected_folder_id or folder_id,
                 "folder_name": folder_name,
                 "updated_at": time.time(),
             },
@@ -379,8 +806,7 @@ def stage_selected_drive_folder(
 
     resolved_staging_dir = _resolve_safe_staging_dir(staging_dir)
     resolved_drive_index_path = _repo_path(drive_index_path).resolve()
-    # The listing step uses a single Drive client (sequential paginated calls).
-    # Per-thread clients for downloads are produced by the factory below.
+    cache_index_path, cache_manifest_path = _drive_index_cache_paths(resolved_drive_index_path)
     service = _build_drive_service(access_token, refresh_token=refresh_token)
     get_service = _make_drive_service_factory(access_token, refresh_token)
 
@@ -391,116 +817,77 @@ def stage_selected_drive_folder(
     print(
         f"Drive sync tunables: workers={DRIVE_DOWNLOAD_MAX_WORKERS} "
         f"progress_interval={DRIVE_PROGRESS_MIN_INTERVAL_SECONDS}s "
-        f"debug_log={DRIVE_DEBUG_LOG}"
+        f"debug_log={DRIVE_DEBUG_LOG} "
+        f"index_cache={DRIVE_INDEX_CACHE_ENABLED}"
     )
 
-    list_started = time.monotonic()
-    files = _list_selected_folder_images(service, folder_id)
-    list_elapsed = time.monotonic() - list_started
-    print(
-        f"Drive listing complete in {list_elapsed:.2f}s — {len(files)} "
-        "supported image(s) discovered"
+    selected_folder_id = str(folder_id).strip()
+    resolved_folder = _resolve_selected_drive_folder(
+        service,
+        selected_folder_id,
+        folder_name=folder_name,
     )
-    available_count = len(files)
-    if not files:
-        if resolved_staging_dir.exists() and any(resolved_staging_dir.iterdir()):
-            _clear_directory_contents(resolved_staging_dir)
-            print(f"Cleared staging directory because the selected Drive folder is empty: {resolved_staging_dir}")
-        raise FileNotFoundError(
-            f"No supported image files were found in the selected Google Drive folder: {folder_name} ({folder_id})"
-        )
+    resolved_folder_id = str(resolved_folder["resolved_id"])
+    print(f"Selected Drive folder mimeType: {resolved_folder.get('selected_mime_type') or '(unknown)'}")
+    print(f"Drive shortcut target id: {resolved_folder.get('shortcut_target_id') or '(none)'}")
+    print(f"Resolved Drive folder id: {resolved_folder_id}")
+    print(f"Resolved Drive folder name: {resolved_folder.get('resolved_name') or folder_name}")
 
     existing_manifest = _read_staging_manifest(resolved_staging_dir)
     reset_staging = bool(
-        existing_manifest is None
-        or str(existing_manifest.get("folder_id") or "").strip() != str(folder_id).strip()
+        existing_manifest is not None
+        and str(existing_manifest.get("folder_id") or "").strip() != resolved_folder_id
     )
     if reset_staging:
         if resolved_staging_dir.exists() and any(resolved_staging_dir.iterdir()):
             _clear_directory_contents(resolved_staging_dir)
             print(
-                "Cleared staging directory because the selected Drive source changed or "
-                f"no Drive staging manifest was present: {resolved_staging_dir}"
+                "Cleared staging directory because the selected Drive source changed: "
+                f"{resolved_staging_dir}"
             )
         else:
             resolved_staging_dir.mkdir(parents=True, exist_ok=True)
-        _write_staging_manifest(
-            resolved_staging_dir,
-            folder_id=folder_id,
-            folder_name=folder_name,
-        )
-    else:
-        _write_staging_manifest(
-            resolved_staging_dir,
-            folder_id=folder_id,
-            folder_name=folder_name,
-        )
+    resolved_staging_dir.mkdir(parents=True, exist_ok=True)
+    _write_staging_manifest(
+        resolved_staging_dir,
+        folder_id=resolved_folder_id,
+        folder_name=folder_name,
+        selected_folder_id=selected_folder_id,
+    )
+
+    cached_files, cached_manifest = _load_cached_drive_index(
+        service,
+        folder_id=resolved_folder_id,
+        cache_index_path=cache_index_path,
+        cache_manifest_path=cache_manifest_path,
+    )
+    cache_hit = cached_files is not None
+    files: List[Dict[str, object]] = []
+    seen_folder_ids: Set[str] = set(cached_manifest.get("folder_ids") or []) if cached_manifest else set()
+    cache_start_page_token = None if cache_hit else _get_drive_start_page_token(service)
+    listing_stats = _new_drive_listing_stats()
+    live_listing_completed = False
 
     # Fast skip: a file is considered already-staged if the final path exists
     # AND is non-empty. `.part` leftovers from previous interrupted syncs are
     # NOT counted, so they get re-downloaded cleanly.
-    staged_files: List[Dict[str, object]] = []
-    pending_files: List[Dict[str, object]] = []
-    for file_info in files:
-        staged_path = resolved_staging_dir / Path(file_info["relative_local_path"])
-        try:
-            ready = staged_path.exists() and staged_path.stat().st_size > 0
-        except OSError:
-            ready = False
-        if ready:
-            staged_files.append(file_info)
-        else:
-            # Clean obvious leftovers so the next attempt has a fresh path.
-            part_path = staged_path.with_suffix(staged_path.suffix + ".part")
-            if part_path.exists():
-                try:
-                    part_path.unlink()
-                except OSError:
-                    pass
-            pending_files.append(file_info)
-
-    already_staged_count = len(staged_files)
-    remaining_unsynced_count = len(pending_files)
-    files_to_download = pending_files
-    if max_files is not None:
-        limited_count = max(0, int(max_files))
-        files_to_download = pending_files[:limited_count]
-        if limited_count and remaining_unsynced_count > limited_count:
-            print(
-                f"Applying sync limit: downloading next {limited_count} of "
-                f"{remaining_unsynced_count} unsynced image(s)"
-            )
-
-    discovered_count = len(files_to_download)
-    print(f"Supported image files discovered: {available_count}")
-    print(f"Already staged and skipped: {already_staged_count}")
-    print(f"Pending unsynced images: {remaining_unsynced_count}")
-    if not files_to_download:
-        print("No new Drive files needed for this sync; using the existing staged cache.")
-    _emit_progress(
-        progress_callback,
-        {
-            "event": "discovered",
-            "folder_id": folder_id,
-            "folder_name": folder_name,
-            "discovered_count": discovered_count,
-            "downloaded_count": 0,
-            "available_count": available_count,
-            "already_staged_count": already_staged_count,
-            "staged_count": already_staged_count,
-            "remaining_count": remaining_unsynced_count,
-            "current_file": None,
-            "staging_dir": str(resolved_staging_dir),
-        },
-    )
-
+    discovered_lock = threading.Lock()
+    counters_lock = threading.Lock()
+    discovered_total = 0
+    target_count = 0
+    already_staged_count = 0
+    scheduled_download_count = 0
     downloaded_files: List[str] = []
     failed_files: List[Dict[str, object]] = []
 
-    counters_lock = threading.Lock()
     started_at_monotonic = time.monotonic()
     started_at_wall = time.time()
     last_progress_emit = [0.0]  # mutable holder for closure
+    last_discovery_log = [0]
+    last_download_log = [0]
+    download_queue: "queue.Queue[Optional[Dict[str, object]]]" = queue.Queue(
+        maxsize=max(DRIVE_DOWNLOAD_MAX_WORKERS * 4, 1)
+    )
 
     def emit_running_progress(
         *,
@@ -520,12 +907,17 @@ def stage_selected_drive_folder(
         last_progress_emit[0] = now
 
         with counters_lock:
-            done = len(downloaded_files)
+            new_downloads = len(downloaded_files)
             failed = len(failed_files)
+        with discovered_lock:
+            current_target_count = target_count
+            current_available_count = discovered_total
+            current_skipped_count = already_staged_count
+            current_staged_count = current_skipped_count + new_downloads
         elapsed = max(now - started_at_monotonic, 1e-6)
-        ips = done / elapsed if elapsed > 0 else 0.0
+        ips = new_downloads / elapsed if elapsed > 0 else 0.0
         eta_seconds: Optional[float] = None
-        remaining = max(discovered_count - done - failed, 0)
+        remaining = max(current_target_count - current_staged_count - failed, 0)
         if ips > 0 and remaining > 0:
             eta_seconds = remaining / ips
 
@@ -533,14 +925,17 @@ def stage_selected_drive_folder(
             progress_callback,
             {
                 "event": "downloaded",
-                "folder_id": folder_id,
+                "folder_id": selected_folder_id,
+                "resolved_folder_id": resolved_folder_id,
                 "folder_name": folder_name,
-                "discovered_count": discovered_count,
-                "downloaded_count": done,
+                "discovered_count": current_target_count,
+                "downloaded_count": current_staged_count,
+                "newly_downloaded_count": new_downloads,
                 "failed_count": failed,
-                "available_count": available_count,
-                "already_staged_count": already_staged_count,
-                "staged_count": already_staged_count + done,
+                "available_count": current_available_count,
+                "already_staged_count": current_skipped_count,
+                "skipped_count": current_skipped_count,
+                "staged_count": current_staged_count,
                 "remaining_count": remaining,
                 "images_per_second": round(ips, 2),
                 "eta_seconds": round(eta_seconds, 1) if eta_seconds is not None else None,
@@ -551,8 +946,68 @@ def stage_selected_drive_folder(
             },
         )
 
+    def maybe_log_discovery(*, force: bool = False) -> None:
+        with discovered_lock:
+            current_available_count = discovered_total
+            current_skipped_count = already_staged_count
+        if force or current_available_count - last_discovery_log[0] >= 500:
+            last_discovery_log[0] = current_available_count
+            print(f"Discovered {current_available_count} images")
+            print(f"Skipped already staged {current_skipped_count}")
+
+    def maybe_log_download(*, force: bool = False) -> None:
+        with counters_lock:
+            new_downloads = len(downloaded_files)
+        with discovered_lock:
+            current_available_count = discovered_total
+        if force or new_downloads - last_download_log[0] >= 100:
+            last_download_log[0] = new_downloads
+            print(f"Downloaded {new_downloads} / discovered {current_available_count}")
+
+    def staged_path_for(file_info: Dict[str, object]) -> Path:
+        return resolved_staging_dir / _normalize_relative_local_path(file_info)
+
+    def is_already_staged(file_info: Dict[str, object]) -> bool:
+        staged_path = staged_path_for(file_info)
+        try:
+            return staged_path.exists() and staged_path.stat().st_size > 0
+        except OSError:
+            return False
+
+    def clean_partial_download(file_info: Dict[str, object]) -> None:
+        staged_path = staged_path_for(file_info)
+        part_path = staged_path.with_suffix(staged_path.suffix + ".part")
+        if part_path.exists():
+            try:
+                part_path.unlink()
+            except OSError:
+                pass
+
+    def record_discovered_file(file_info: Dict[str, object]) -> bool:
+        nonlocal already_staged_count, discovered_total, scheduled_download_count, target_count
+
+        file_info["relative_local_path"] = _normalize_relative_local_path(file_info)
+        files.append(file_info)
+        ready = is_already_staged(file_info)
+        schedule = False
+        with discovered_lock:
+            discovered_total += 1
+            if ready:
+                already_staged_count += 1
+                target_count += 1
+            else:
+                clean_partial_download(file_info)
+                if max_files is None or scheduled_download_count < max(0, int(max_files)):
+                    scheduled_download_count += 1
+                    target_count += 1
+                    schedule = True
+
+        maybe_log_discovery()
+        emit_running_progress(current_file=str(file_info.get("drive_path") or ""), force=False)
+        return schedule
+
     def download_one(file_info: Dict[str, object]) -> Tuple[bool, Dict[str, object], Optional[str]]:
-        out_path = resolved_staging_dir / Path(file_info["relative_local_path"])
+        out_path = staged_path_for(file_info)
         try:
             _download_file(get_service(), str(file_info["file_id"]), out_path)
             if DRIVE_DEBUG_LOG:
@@ -566,46 +1021,144 @@ def stage_selected_drive_folder(
             )
             return False, file_info, err
 
-    # ── Parallel download fan-out ──────────────────────────────────────
-    # 1 worker => current sequential behavior. The standalone CLI uses 16; we
-    # default to 8 because the UI session token + Drive quota tends to be
-    # more conservative under sustained parallelism.
-    if files_to_download:
-        emit_running_progress(current_file=None, force=True)
-
-        with ThreadPoolExecutor(
-            max_workers=DRIVE_DOWNLOAD_MAX_WORKERS,
-            thread_name_prefix="drive-sync",
-        ) as pool:
-            future_map = {
-                pool.submit(download_one, info): info for info in files_to_download
-            }
-            for future in as_completed(future_map):
-                ok, file_info, error = future.result()
+    def download_worker() -> None:
+        while True:
+            file_info = download_queue.get()
+            try:
+                if file_info is None:
+                    return
+                ok, downloaded_info, error = download_one(file_info)
                 with counters_lock:
                     if ok:
-                        downloaded_files.append(str(file_info["relative_local_path"]))
+                        downloaded_files.append(str(_normalize_relative_local_path(downloaded_info)))
                     else:
                         failed_files.append({
-                            "file_id": file_info.get("file_id"),
-                            "drive_path": file_info.get("drive_path"),
+                            "file_id": downloaded_info.get("file_id"),
+                            "drive_path": downloaded_info.get("drive_path"),
                             "error": error,
                         })
-                emit_running_progress(current_file=str(file_info["drive_path"]))
+                maybe_log_download()
+                emit_running_progress(current_file=str(downloaded_info.get("drive_path") or ""))
+            finally:
+                download_queue.task_done()
 
-        # Final emit so the UI lands on the exact final counts, no matter
-        # what the throttle was doing on the last few completions.
-        emit_running_progress(current_file=None, force=True)
+    emit_running_progress(current_file=None, force=True)
+    print(f"Download workers started: {DRIVE_DOWNLOAD_MAX_WORKERS}")
+
+    with ThreadPoolExecutor(
+        max_workers=DRIVE_DOWNLOAD_MAX_WORKERS,
+        thread_name_prefix="drive-sync",
+    ) as pool:
+        worker_futures = [
+            pool.submit(download_worker)
+            for _ in range(DRIVE_DOWNLOAD_MAX_WORKERS)
+        ]
+
+        try:
+            if cache_hit and cached_files is not None:
+                files = []
+                with discovered_lock:
+                    seen_folder_ids.add(resolved_folder_id)
+                print(f"Discovered {len(cached_files)} images from Drive index cache")
+                for file_info in cached_files:
+                    if record_discovered_file(file_info):
+                        download_queue.put(file_info)
+            else:
+                print("Drive listing started")
+                list_started = time.monotonic()
+                for file_info in _iter_selected_folder_images(
+                    service,
+                    resolved_folder_id,
+                    seen_folders=seen_folder_ids,
+                    stats=listing_stats,
+                ):
+                    if record_discovered_file(file_info):
+                        download_queue.put(file_info)
+                live_listing_completed = True
+                list_elapsed = time.monotonic() - list_started
+                maybe_log_discovery(force=True)
+                print(
+                    f"Drive listing complete in {list_elapsed:.2f}s — "
+                    f"{len(files)} supported image(s) discovered"
+                )
+        finally:
+            for _ in range(DRIVE_DOWNLOAD_MAX_WORKERS):
+                download_queue.put(None)
+
+        for future in worker_futures:
+            future.result()
+
+    maybe_log_discovery(force=True)
+    maybe_log_download(force=True)
+    emit_running_progress(current_file=None, force=True)
 
     sync_elapsed = time.monotonic() - started_at_monotonic
     final_ips = (len(downloaded_files) / sync_elapsed) if sync_elapsed > 0 else 0.0
+    available_count = len(files)
+    if cache_hit:
+        listing_folders_scanned = len(seen_folder_ids)
+        listing_files_scanned = len(files)
+        listing_images_discovered = len(files)
+    else:
+        listing_folders_scanned = int(listing_stats.get("folders_scanned") or 0)
+        listing_files_scanned = int(listing_stats.get("files_scanned") or 0)
+        listing_images_discovered = int(listing_stats.get("images_discovered") or 0)
+    first_discovered_names = [
+        str(file_info.get("file_name") or "")
+        for file_info in files[:5]
+        if str(file_info.get("file_name") or "").strip()
+    ]
+    print(
+        "Drive listing summary: "
+        f"folders_scanned={listing_folders_scanned} "
+        f"files_scanned={listing_files_scanned} "
+        f"images_discovered={listing_images_discovered}"
+    )
+    print(f"First discovered image names: {first_discovered_names}")
+
+    if not files:
+        if (
+            live_listing_completed
+            and listing_folders_scanned > 0
+            and resolved_staging_dir.exists()
+            and any(resolved_staging_dir.iterdir())
+        ):
+            _clear_directory_contents(resolved_staging_dir)
+            print(f"Cleared staging directory because the selected Drive folder is empty: {resolved_staging_dir}")
+        else:
+            print(
+                "Preserved staging directory because Drive listing did not complete "
+                "a successful resolved-folder scan."
+            )
+        raise FileNotFoundError(
+            f"No supported image files were found in the selected Google Drive folder: {folder_name} ({folder_id})"
+        )
+
+    removed_unexpected = _prune_unexpected_staging_files(
+        resolved_staging_dir,
+        {_normalize_relative_local_path(file_info) for file_info in files},
+    )
+    if removed_unexpected:
+        print(f"Removed {removed_unexpected} unexpected staging file(s) not present in the Drive index")
 
     staged_files = [
         file_info
         for file_info in files
-        if (resolved_staging_dir / Path(file_info["relative_local_path"])).exists()
+        if is_already_staged(file_info)
     ]
     staged_count = len(staged_files)
+
+    if not cache_hit:
+        _write_drive_index_cache(
+            cache_index_path=cache_index_path,
+            cache_manifest_path=cache_manifest_path,
+            files=files,
+            folder_ids=seen_folder_ids,
+            folder_id=resolved_folder_id,
+            folder_name=folder_name,
+            camera_location=camera_location,
+            start_page_token=cache_start_page_token,
+        )
 
     _write_drive_index(
         resolved_drive_index_path,
@@ -619,14 +1172,21 @@ def stage_selected_drive_folder(
         f"downloaded={len(downloaded_files)} failed={len(failed_files)} "
         f"skipped_existing={already_staged_count} ips={final_ips:.2f}"
     )
+    print(f"Supported image files discovered: {available_count}")
+    print(f"Skipped already staged {already_staged_count}")
+    print(f"Downloaded {len(downloaded_files)} / discovered {available_count}")
     print(f"Final staging dir path: {resolved_staging_dir}")
     print(f"Drive index written: {resolved_drive_index_path}")
+    print(f"Drive index cache path: {cache_index_path}")
 
     return {
-        "folder_id": folder_id,
+        "folder_id": selected_folder_id,
+        "resolved_folder_id": resolved_folder_id,
         "folder_name": folder_name,
         "staging_dir": str(resolved_staging_dir),
         "drive_index_path": str(resolved_drive_index_path),
+        "drive_index_cache_path": str(cache_index_path),
+        "drive_index_cache_manifest_path": str(cache_manifest_path),
         "discovered_count": staged_count,
         "available_count": available_count,
         "downloaded_count": staged_count,

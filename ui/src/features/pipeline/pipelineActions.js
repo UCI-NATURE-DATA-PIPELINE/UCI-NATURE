@@ -23,7 +23,7 @@ export function createPipelineActions(app, api, renderApi, loadPipelineStatus, l
 
     const health = await app.refreshBackendHealth?.({ silent: true });
     if (!health?.connected) {
-      return app.showToast("Backend offline. Start FastAPI on http://127.0.0.1:8000 before running the pipeline.", "warn");
+      return app.showToast("Backend offline. Start the backend (docker compose up) before running the pipeline.", "warn");
     }
 
     if (sourceMode === "drive") {
