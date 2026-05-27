@@ -1,6 +1,6 @@
 /** Shared HTTP helpers for backend API modules in the browser-native frontend. */
 const DEFAULT_REQUEST_TIMEOUT_MS = 5000;
-const DEFAULT_BACKEND_BASE = "http://127.0.0.1:8000";
+const DEFAULT_BACKEND_BASE = "http://18.222.193.87:8000";
 
 function normalizeBaseUrl(value) {
   return String(value || "").replace(/\/+$/, "");

@@ -132,6 +132,76 @@
 }
 .oauth-btn.loading { background: #f8f9fa; }
 
+/* Step-1 "Continue" button. Without this rule the markup at
+   <button class="oauth-btn" id="continue-btn"> falls back to the
+   browser-native button look (gray border, default font), which is the
+   "ugly default" reported on the project-select screen. This rule wipes
+   that and gives it the same blue/white primary look as the rest of
+   the app — without touching the .oauth-button styles used by the
+   Google / Guest buttons in step 2. */
+#login-screen button.oauth-btn {
+  all: unset;
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 46px;
+  padding: 13px 18px;
+  border-radius: 10px;
+  background: var(--blue);
+  color: #fff;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  transition: background .18s var(--ease), box-shadow .18s var(--ease), transform .12s var(--ease);
+  box-shadow: 0 1px 4px rgba(0,100,164,.22);
+}
+#login-screen button.oauth-btn svg {
+  flex-shrink: 0;
+  margin-left: 2px;
+  /* Arrow chevron sits flush to the right of the label. */
+}
+#login-screen button.oauth-btn:hover {
+  background: #0055a0;
+  box-shadow: 0 4px 12px rgba(0,100,164,.3);
+}
+#login-screen button.oauth-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 3px rgba(0,100,164,.22);
+}
+#login-screen button.oauth-btn:focus-visible {
+  outline: 3px solid rgba(0,100,164,.28);
+  outline-offset: 2px;
+}
+#login-screen button.oauth-btn:disabled {
+  background: #6b8db1;
+  cursor: not-allowed;
+  box-shadow: 0 1px 4px rgba(0,100,164,.18);
+}
+/* The Google / Guest buttons in step 2 carry BOTH .oauth-btn and
+   .oauth-button. The .oauth-button rule above already uses `all: unset`,
+   so this blue-button rule does not bleed into them. This selector just
+   makes that explicit and bumps specificity past any cascade surprise. */
+#login-screen button.oauth-btn.oauth-button {
+  background: #fff;
+  color: #3c4043;
+  border: 1px solid #D7DEE8;
+  box-shadow: 0 1px 4px rgba(15,30,55,.08);
+}
+#login-screen button.oauth-btn.oauth-button:hover {
+  background: #f8f9fa;
+  border-color: #c7cdd6;
+  box-shadow: 0 2px 8px rgba(15,30,55,.12);
+}
+
 #login-screen button.local-login-button {
   min-height: 46px;
   padding: 13px 16px;
