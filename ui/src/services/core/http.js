@@ -1,6 +1,15 @@
-/** Shared HTTP helpers for backend API modules in the browser-native frontend. */
+/** Shared HTTP helpers for backend API modules in the browser-native frontend.
+ *
+ * Backend base URL resolution (no hardcoded production hosts — prod traffic
+ * goes through same-origin /api routes proxied by Caddy):
+ *   1. window.__UCI_NATURE_CONFIG__.backendBase                 (runtime override)
+ *   2. <meta name="uci-nature-backend-base" content="...">      (HTML override)
+ *   3. Hostname-based default:
+ *      - localhost / 127.0.0.1 → DEFAULT_BACKEND_BASE (local FastAPI)
+ *      - anything else         → same origin (/api/* via Caddy on AWS)
+ */
 const DEFAULT_REQUEST_TIMEOUT_MS = 5000;
-const DEFAULT_BACKEND_BASE = "http://18.222.193.87:8000";
+const DEFAULT_BACKEND_BASE = "http://127.0.0.1:8000";
 
 function normalizeBaseUrl(value) {
   return String(value || "").replace(/\/+$/, "");

@@ -1093,11 +1093,21 @@ def execute_pipeline_run(
                         def drive_progress_callback(progress: dict) -> None:
                             discovered_count = int(progress.get("discovered_count") or 0)
                             downloaded_count = int(progress.get("downloaded_count") or 0)
+                            skipped_count = int(
+                                progress.get("already_staged_count")
+                                or progress.get("skipped_count")
+                                or 0
+                            )
+                            failed_count = int(progress.get("failed_count") or 0)
                             current_file = progress.get("current_file")
                             status_message = (
                                 f"Downloaded {downloaded_count} of {discovered_count} "
                                 f"image(s) from Google Drive"
                             )
+                            if skipped_count:
+                                status_message = f"{status_message} · {skipped_count} skipped"
+                            if failed_count:
+                                status_message = f"{status_message} · {failed_count} failed"
                             if current_file:
                                 status_message = f"{status_message}: {current_file}"
 
@@ -1109,6 +1119,11 @@ def execute_pipeline_run(
                                 current_file=current_file,
                                 staging_dir=progress.get("staging_dir"),
                                 message=status_message,
+                                failed_count=failed_count,
+                                skipped_count=skipped_count,
+                                images_per_second=progress.get("images_per_second"),
+                                eta_seconds=progress.get("eta_seconds"),
+                                elapsed_seconds=progress.get("elapsed_seconds"),
                             )
                             sync_percent = 5
                             if discovered_count > 0:

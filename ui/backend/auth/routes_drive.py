@@ -28,6 +28,11 @@ DEFAULT_DRIVE_SYNC_STATE = {
     "folder": None,
     "discovered_count": 0,
     "downloaded_count": 0,
+    "failed_count": 0,
+    "skipped_count": 0,
+    "images_per_second": None,
+    "eta_seconds": None,
+    "elapsed_seconds": None,
     "current_file": None,
     "staging_dir": None,
     "drive_index_path": None,
@@ -148,6 +153,11 @@ def _build_persisted_drive_sync_state(
             "folder": base.get("folder") or state["folder"],
             "discovered_count": int(base.get("discovered_count") or 0),
             "downloaded_count": int(base.get("downloaded_count") or 0),
+            "failed_count": int(base.get("failed_count") or 0),
+            "skipped_count": int(base.get("skipped_count") or 0),
+            "images_per_second": base.get("images_per_second"),
+            "eta_seconds": base.get("eta_seconds"),
+            "elapsed_seconds": base.get("elapsed_seconds"),
             "current_file": base.get("current_file"),
             "staging_dir": base.get("staging_dir"),
             "drive_index_path": base.get("drive_index_path"),
@@ -258,6 +268,7 @@ def update_drive_sync_progress(
     staging_dir: Optional[str],
     message: str,
     failed_count: Optional[int] = None,
+    skipped_count: Optional[int] = None,
     images_per_second: Optional[float] = None,
     eta_seconds: Optional[float] = None,
     elapsed_seconds: Optional[float] = None,
@@ -275,6 +286,8 @@ def update_drive_sync_progress(
     )
     if failed_count is not None:
         updates["failed_count"] = int(failed_count or 0)
+    if skipped_count is not None:
+        updates["skipped_count"] = int(skipped_count or 0)
     if images_per_second is not None:
         updates["images_per_second"] = float(images_per_second or 0.0)
     if eta_seconds is not None:
@@ -844,8 +857,10 @@ def sync_selected_folder(
         downloaded = int(progress.get("downloaded_count") or 0)
         discovered = int(progress.get("discovered_count") or 0)
         failed = int(progress.get("failed_count") or 0)
+        skipped = int(progress.get("already_staged_count") or progress.get("skipped_count") or 0)
         message = (
             f"Downloaded {downloaded} of {discovered} image(s)"
+            + (f" · {skipped} skipped" if skipped else "")
             + (f" · {failed} failed" if failed else "")
         )
         update_drive_sync_progress(
@@ -857,6 +872,7 @@ def sync_selected_folder(
             staging_dir=progress.get("staging_dir"),
             message=message,
             failed_count=failed,
+            skipped_count=skipped,
             images_per_second=progress.get("images_per_second"),
             eta_seconds=progress.get("eta_seconds"),
             elapsed_seconds=progress.get("elapsed_seconds"),

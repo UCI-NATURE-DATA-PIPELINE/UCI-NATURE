@@ -56,3 +56,16 @@ python3.11 scripts/ml/run_inference.py --provider speciesnet
 python3.11 scripts/pipeline/extract_metadata.py --manifest data/outputs/manifest.csv
 python3.11 scripts/pipeline/make_output.py
 python3.11 scripts/pipeline/validate_output.py
+
+
+
+
+
+
+
+frontend and backend set up on windows:
+
+cd $env:USERPROFILE\Desktop\UCI-NATURE
+py -3.11 -m venv .venv311
+.\.venv311\Scripts\Activate.ps1
+

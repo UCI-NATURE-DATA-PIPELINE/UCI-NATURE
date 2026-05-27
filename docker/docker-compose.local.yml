@@ -1,0 +1,70 @@
+# Local development stack.
+#
+#   docker compose -f docker/docker-compose.local.yml up --build
+#
+# Then open http://localhost:5500/.
+#
+# - Backend on http://localhost:8000 (FastAPI / uvicorn with --reload)
+# - Frontend on http://localhost:5500 (nginx static, ui/ bind-mounted)
+# - No Caddy, no HTTPS.
+# - All data folders are bind-mounted so staged images and outputs persist
+#   between container restarts AND are visible on your host filesystem.
+
+name: uci-nature-local
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: uci-nature-backend-local
+    # Loads OAuth client id/secret etc. from ../.env when present. The file is
+    # optional so a fresh checkout can still run locally in guest mode.
+    # Local overrides immediately below ensure redirect URIs hit localhost,
+    # not the AWS domain, even when .env was filled in for prod.
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      UCI_NATURE_APP_ENV: local
+      UCI_NATURE_PUBLIC_FRONTEND_ORIGIN: http://localhost:5500
+      UCI_NATURE_PUBLIC_BACKEND_ORIGIN: http://localhost:8000
+      UCI_NATURE_GOOGLE_OAUTH_REDIRECT_URI: http://localhost:8000/api/auth/google/callback
+      UCI_NATURE_FRONTEND_SUCCESS_REDIRECT: http://localhost:5500/?google_auth=success
+      # Quieter Drive sync logs in dev (set =1 to enable per-file prints).
+      UCI_NATURE_DRIVE_DEBUG: "0"
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persisted pipeline data (staged images, outputs, sessions, logs).
+      - ../data:/app/data
+      - ../ui/backend/data:/app/ui/backend/data
+      - ../secrets:/app/secrets:ro
+      # Live source bind-mounts so backend code changes hot-reload via
+      # uvicorn --reload without rebuilding the image. The image still
+      # ships its own copy as a fallback.
+      - ../scripts:/app/scripts
+      - ../ui/backend:/app/ui/backend
+    # Override the production CMD to enable hot reload locally.
+    command: >
+      uvicorn ui.backend.main:app
+      --host 0.0.0.0 --port 8000
+      --reload
+      --reload-dir /app/ui/backend
+      --reload-dir /app/scripts
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: uci-nature-frontend-local
+    depends_on:
+      - backend
+    ports:
+      - "5500:80"
+    # Bind-mount the UI tree so HTML/CSS/JS edits go live on browser
+    # reload — no rebuild needed for frontend changes during dev.
+    volumes:
+      - ../ui:/usr/share/nginx/html:ro
+    restart: unless-stopped
