@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import tempfile
 import unittest
@@ -33,11 +34,47 @@ class _FakeChanges:
 
 
 class _FakeDriveService:
-    def __init__(self, *, page_token: str = "token-1", changes_payload: dict | None = None):
+    def __init__(
+        self,
+        *,
+        page_token: str = "token-1",
+        changes_payload: dict | None = None,
+        metadata_by_id: dict[str, dict] | None = None,
+        children_by_folder: dict[str, list[dict]] | None = None,
+    ):
         self._changes = _FakeChanges(page_token=page_token, changes_payload=changes_payload)
+        self._files = _FakeFiles(
+            metadata_by_id=metadata_by_id or {},
+            children_by_folder=children_by_folder or {},
+        )
 
     def changes(self):
         return self._changes
+
+    def files(self):
+        return self._files
+
+
+class _FakeFiles:
+    def __init__(
+        self,
+        *,
+        metadata_by_id: dict[str, dict],
+        children_by_folder: dict[str, list[dict]],
+    ):
+        self.metadata_by_id = metadata_by_id
+        self.children_by_folder = children_by_folder
+        self.get_calls: list[str] = []
+        self.list_calls: list[str] = []
+
+    def get(self, *, fileId: str, **_kwargs):
+        self.get_calls.append(fileId)
+        return _FakeExecute(self.metadata_by_id[fileId])
+
+    def list(self, *, q: str, **_kwargs):
+        folder_id = q.split("'", 2)[1]
+        self.list_calls.append(folder_id)
+        return _FakeExecute({"files": self.children_by_folder.get(folder_id, [])})
 
 
 def _file_info(file_id: str, name: str, folder_id: str = "folder-root") -> dict[str, object]:
@@ -53,15 +90,33 @@ def _file_info(file_id: str, name: str, folder_id: str = "folder-root") -> dict[
     }
 
 
+def _resolved_folder(folder_id: str = "folder-root") -> dict[str, object]:
+    return {
+        "selected_id": folder_id,
+        "selected_name": "Camera Folder",
+        "selected_mime_type": service.FOLDER_MIME_TYPE,
+        "shortcut_target_id": None,
+        "resolved_id": folder_id,
+        "resolved_name": "Camera Folder",
+        "resolved_mime_type": service.FOLDER_MIME_TYPE,
+    }
+
+
 class DriveStagingServiceTests(unittest.TestCase):
     def test_download_workers_start_before_recursive_listing_finishes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             download_started = threading.Event()
 
-            def fake_iter(_drive_service, _folder_id, *, seen_folders=None):
+            def fake_iter(_drive_service, _folder_id, *, seen_folders=None, stats=None):
                 if seen_folders is not None:
+                    self.assertNotIn("folder-root", seen_folders)
                     seen_folders.add("folder-root")
+                if stats is not None:
+                    stats["folders_scanned"] = 1
+                    stats["files_scanned"] = 2
+                    stats["images_discovered"] = 2
+                    stats["first_image_names"] = ["one.jpg", "two.jpg"]
                 yield _file_info("file-1", "one.jpg")
                 self.assertTrue(
                     download_started.wait(timeout=2),
@@ -78,6 +133,7 @@ class DriveStagingServiceTests(unittest.TestCase):
                 mock.patch.object(service, "REPO_ROOT", tmp_path),
                 mock.patch.object(service, "_build_drive_service", return_value=_FakeDriveService()),
                 mock.patch.object(service, "_make_drive_service_factory", return_value=lambda: _FakeDriveService()),
+                mock.patch.object(service, "_resolve_selected_drive_folder", return_value=_resolved_folder()),
                 mock.patch.object(service, "_iter_selected_folder_images", side_effect=fake_iter),
                 mock.patch.object(service, "_download_file", side_effect=fake_download),
             ):
@@ -100,9 +156,15 @@ class DriveStagingServiceTests(unittest.TestCase):
             tmp_path = Path(tmp_dir)
             files = [_file_info("file-1", "one.jpg"), _file_info("file-2", "two.jpg")]
 
-            def fake_iter(_drive_service, _folder_id, *, seen_folders=None):
+            def fake_iter(_drive_service, _folder_id, *, seen_folders=None, stats=None):
                 if seen_folders is not None:
+                    self.assertNotIn("folder-root", seen_folders)
                     seen_folders.add("folder-root")
+                if stats is not None:
+                    stats["folders_scanned"] = 1
+                    stats["files_scanned"] = len(files)
+                    stats["images_discovered"] = len(files)
+                    stats["first_image_names"] = [str(item["file_name"]) for item in files]
                 yield from files
 
             def fake_download(_drive_service, _file_id, out_path: Path):
@@ -112,6 +174,7 @@ class DriveStagingServiceTests(unittest.TestCase):
             common_patches = [
                 mock.patch.object(service, "REPO_ROOT", tmp_path),
                 mock.patch.object(service, "_make_drive_service_factory", return_value=lambda: _FakeDriveService()),
+                mock.patch.object(service, "_resolve_selected_drive_folder", return_value=_resolved_folder()),
                 mock.patch.object(service, "_download_file", side_effect=fake_download),
             ]
 
@@ -119,6 +182,7 @@ class DriveStagingServiceTests(unittest.TestCase):
                 common_patches[0],
                 common_patches[1],
                 common_patches[2],
+                common_patches[3],
                 mock.patch.object(service, "_build_drive_service", return_value=_FakeDriveService(page_token="token-1")),
                 mock.patch.object(service, "_iter_selected_folder_images", side_effect=fake_iter) as first_listing,
             ):
@@ -139,6 +203,7 @@ class DriveStagingServiceTests(unittest.TestCase):
                 mock.patch.object(service, "REPO_ROOT", tmp_path),
                 mock.patch.object(service, "_build_drive_service", return_value=_FakeDriveService(page_token="token-2")),
                 mock.patch.object(service, "_make_drive_service_factory", return_value=lambda: _FakeDriveService()),
+                mock.patch.object(service, "_resolve_selected_drive_folder", return_value=_resolved_folder()),
                 mock.patch.object(service, "_download_file", side_effect=AssertionError("download should be skipped")),
                 mock.patch.object(service, "_iter_selected_folder_images", side_effect=AssertionError("listing should be cached")),
             ):
@@ -155,6 +220,140 @@ class DriveStagingServiceTests(unittest.TestCase):
             self.assertEqual(second_result["downloaded_count"], 2)
             self.assertEqual(second_result["newly_downloaded_count"], 0)
             self.assertEqual(second_result["already_staged_count"], 2)
+
+    def test_shortcut_folder_resolves_to_target_folder(self) -> None:
+        drive_service = _FakeDriveService(
+            metadata_by_id={
+                "shortcut-id": {
+                    "id": "shortcut-id",
+                    "name": "Bonita Canyon1",
+                    "mimeType": service.SHORTCUT_MIME_TYPE,
+                    "shortcutDetails": {
+                        "targetId": "target-folder-id",
+                        "targetMimeType": service.FOLDER_MIME_TYPE,
+                    },
+                },
+                "target-folder-id": {
+                    "id": "target-folder-id",
+                    "name": "Bonita Canyon Target",
+                    "mimeType": service.FOLDER_MIME_TYPE,
+                },
+            },
+        )
+
+        resolved = service._resolve_selected_drive_folder(
+            drive_service,
+            "shortcut-id",
+            folder_name="Bonita Canyon1",
+        )
+
+        self.assertEqual(resolved["selected_mime_type"], service.SHORTCUT_MIME_TYPE)
+        self.assertEqual(resolved["shortcut_target_id"], "target-folder-id")
+        self.assertEqual(resolved["resolved_id"], "target-folder-id")
+        self.assertEqual(resolved["resolved_mime_type"], service.FOLDER_MIME_TYPE)
+
+    def test_uppercase_jpg_detection(self) -> None:
+        self.assertTrue(service._is_supported_image("IMG_0001.JPG", "application/octet-stream"))
+        self.assertTrue(service._is_supported_image("camera-without-extension", "image/jpeg"))
+
+    def test_nested_folder_image_discovery(self) -> None:
+        drive_service = _FakeDriveService(
+            children_by_folder={
+                "folder-root": [
+                    {
+                        "id": "nested-folder",
+                        "name": "Nested",
+                        "mimeType": service.FOLDER_MIME_TYPE,
+                    },
+                ],
+                "nested-folder": [
+                    {
+                        "id": "image-1",
+                        "name": "TrailCam.JPG",
+                        "mimeType": "application/octet-stream",
+                        "modifiedTime": "2026-05-27T00:00:00.000Z",
+                        "size": "10",
+                    },
+                ],
+            },
+        )
+        seen_folders: set[str] = set()
+        stats = service._new_drive_listing_stats()
+
+        files = list(
+            service._iter_selected_folder_images(
+                drive_service,
+                "folder-root",
+                seen_folders=seen_folders,
+                stats=stats,
+            )
+        )
+
+        self.assertEqual([item["file_name"] for item in files], ["TrailCam.JPG"])
+        self.assertEqual(files[0]["drive_path"], "Nested/TrailCam.JPG")
+        self.assertEqual(seen_folders, {"folder-root", "nested-folder"})
+        self.assertEqual(stats["folders_scanned"], 2)
+        self.assertEqual(stats["images_discovered"], 1)
+        self.assertEqual(stats["first_image_names"], ["TrailCam.JPG"])
+
+    def test_zero_image_cache_falls_back_to_live_listing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            outputs_dir = tmp_path / "data" / "outputs"
+            outputs_dir.mkdir(parents=True)
+            cache_index_path = outputs_dir / service.DRIVE_INDEX_CACHE_CSV_NAME
+            cache_manifest_path = outputs_dir / service.DRIVE_INDEX_CACHE_MANIFEST_NAME
+            cache_index_path.write_text(",".join(service.DRIVE_INDEX_FIELDS) + "\n", encoding="utf-8")
+            cache_manifest_path.write_text(
+                json.dumps(
+                    {
+                        "version": service.DRIVE_INDEX_CACHE_VERSION,
+                        "folder_id": "folder-root",
+                        "folder_ids": ["folder-root"],
+                        "start_page_token": "token-1",
+                        "file_count": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            live_files = [_file_info("file-live", "live.JPG")]
+
+            def fake_iter(_drive_service, _folder_id, *, seen_folders=None, stats=None):
+                if seen_folders is not None:
+                    self.assertNotIn("folder-root", seen_folders)
+                    seen_folders.add("folder-root")
+                if stats is not None:
+                    stats["folders_scanned"] = 1
+                    stats["files_scanned"] = 1
+                    stats["images_discovered"] = 1
+                    stats["first_image_names"] = ["live.JPG"]
+                yield from live_files
+
+            def fake_download(_drive_service, _file_id, out_path: Path):
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_bytes(b"image")
+
+            with (
+                mock.patch.object(service, "REPO_ROOT", tmp_path),
+                mock.patch.object(service, "_build_drive_service", return_value=_FakeDriveService(page_token="token-1")),
+                mock.patch.object(service, "_make_drive_service_factory", return_value=lambda: _FakeDriveService()),
+                mock.patch.object(service, "_resolve_selected_drive_folder", return_value=_resolved_folder()),
+                mock.patch.object(service, "_iter_selected_folder_images", side_effect=fake_iter) as live_listing,
+                mock.patch.object(service, "_download_file", side_effect=fake_download),
+            ):
+                result = service.stage_selected_drive_folder(
+                    access_token="access-token",
+                    refresh_token=None,
+                    folder_id="folder-root",
+                    folder_name="Camera Folder",
+                    staging_dir="data/staging",
+                    drive_index_path=Path("data/outputs/drive_index.csv"),
+                    max_files=None,
+                )
+
+            self.assertTrue(live_listing.called)
+            self.assertEqual(result["downloaded_count"], 1)
+            self.assertEqual(result["newly_downloaded_count"], 1)
 
 
 if __name__ == "__main__":

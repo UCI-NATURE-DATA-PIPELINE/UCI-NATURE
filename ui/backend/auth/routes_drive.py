@@ -736,7 +736,10 @@ def select_drive_folder(
             access_token=access_token,
             path=folder_id,
             params={
-                "fields": "id, name, mimeType, driveId, webViewLink",
+                "fields": (
+                    "id, name, mimeType, driveId, webViewLink, "
+                    "shortcutDetails(targetId,targetMimeType)"
+                ),
                 "supportsAllDrives": "true",
             },
             action="load the selected Google Drive folder",
@@ -749,7 +752,17 @@ def select_drive_folder(
             ) from exc
         raise
 
-    if folder.get("mimeType") != "application/vnd.google-apps.folder":
+    folder_mime_type = folder.get("mimeType")
+    shortcut_details = folder.get("shortcutDetails") or {}
+    if not isinstance(shortcut_details, dict):
+        shortcut_details = {}
+    is_folder = folder_mime_type == DRIVE_FOLDER_MIME_TYPE
+    is_folder_shortcut = bool(
+        folder_mime_type == DRIVE_SHORTCUT_MIME_TYPE
+        and shortcut_details.get("targetMimeType") == DRIVE_FOLDER_MIME_TYPE
+        and shortcut_details.get("targetId")
+    )
+    if not is_folder and not is_folder_shortcut:
         raise HTTPException(status_code=400, detail="Selected file is not a Google Drive folder")
 
     selected_folder = {
@@ -757,6 +770,8 @@ def select_drive_folder(
         "name": folder["name"],
         "drive_id": folder.get("driveId"),
         "web_view_link": folder.get("webViewLink"),
+        "mime_type": folder_mime_type,
+        "shortcut_target_id": shortcut_details.get("targetId") if is_folder_shortcut else None,
         "camera_location": _normalize_camera_location(payload.camera_location),
         "max_files": _normalize_sync_limit(payload.max_files),
     }
