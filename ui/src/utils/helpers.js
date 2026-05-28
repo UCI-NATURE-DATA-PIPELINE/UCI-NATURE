@@ -45,8 +45,7 @@ export function normalizeDriveSyncStatus(value) {
   // Progress percent rules:
   //   discovery done                → downloaded / discovered
   //   discovery in progress + limit → downloaded / requested_total
-  //   discovery in progress + no limit → 0 (indeterminate; UI shows
-  //                                         "Discovering and downloading...")
+  //   discovery in progress + no limit → 0 (indeterminate UI)
   let computedPercent = 0;
   if (next.requested_total > 0) {
     const progressTarget = next.discovery_complete && next.discovered_count > 0

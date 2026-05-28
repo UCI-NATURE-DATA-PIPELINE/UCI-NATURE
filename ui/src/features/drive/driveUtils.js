@@ -7,9 +7,12 @@ export function createDriveUtils(stateApi) {
     if (!appState.googleAuthActive) return "Connect Google Drive to sync a Drive folder. Manual Upload still works separately.";
     if (!appState.driveConnected) return "Confirm the Google Drive connection to use the Drive-backed flow.";
     if (!appState.selectedDriveFolder?.id) return "Select a Google Drive folder on this page before syncing.";
-    if (appState.driveSyncState.status === "syncing") return `Syncing ${formatNumber(appState.driveSyncState.downloaded_count)} of ${formatNumber(appState.driveSyncState.discovered_count || 0)} image(s) into the backend staging cache...`;
+    if (appState.driveSyncState.status === "syncing") {
+      const target = Number(appState.driveSyncState.requested_total || appState.driveSyncState.discovered_count || 0);
+      return target > 0 ? `Syncing ${formatNumber(target)} files` : "Syncing images...";
+    }
     if (appState.driveSyncState.status === "failed") return appState.driveSyncState.error || "The last Drive sync failed. Run Pipeline will retry backend staging, or you can sync again first.";
-    if (stateApi.isDriveSourceReady()) return `Source ready: ${formatNumber(appState.driveSyncState.downloaded_count || appState.driveSyncState.discovered_count)} staged image(s) from ${appState.selectedDriveFolder.name}. Run Pipeline can reuse this backend cache.`;
+    if (stateApi.isDriveSourceReady()) return `${formatNumber(appState.driveSyncState.downloaded_count || appState.driveSyncState.discovered_count)} files ready for processing`;
     return "Run Pipeline will fetch and stage the selected Drive folder on the backend server. Sync is optional if you want to pre-stage the cache first.";
   }
 
