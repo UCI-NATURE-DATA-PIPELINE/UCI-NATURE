@@ -52,7 +52,7 @@
   </div>
 </div>
 
-<div class="card card-p" style="margin-bottom:6px">
+<div class="card card-p" style="margin-bottom:14px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
     <div class="card-title" style="margin-bottom:0">Processing Pipeline</div>
     <div style="display:flex;align-items:center;gap:16px;font-size:11.5px">
@@ -65,25 +65,25 @@
   <div style="position:relative;padding:0 14px">
     <div class="pipeline-flow-track" id="pipeline-flow-track"><div class="pipeline-flow-fill" id="pipeline-flow-fill"></div></div>
     <div class="pipeline-wrap">
-      <div class="pipeline-step idle" id="dashboard-pipeline-step-upload">
-        <div class="pipeline-status-dot" id="dashboard-pipeline-dot-upload"></div>
-        <div class="pipeline-step-inner"><div class="pipeline-name">Upload<span class="pipeline-pct" id="dashboard-pipeline-percent-upload">—</span></div><div class="prog-track"><div class="prog-fill" id="dashboard-pipeline-fill-upload" style="width:0"></div></div><div class="pipeline-count" id="dashboard-pipeline-count-upload">—</div></div>
+      <div class="pipeline-step done">
+        <div class="pipeline-status-dot" id="pdot-0"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div class="pipeline-step-inner"><div class="pipeline-name">Upload<span class="pipeline-pct">—</span></div><div class="prog-track"><div class="prog-fill" style="width:0" data-width="0%" data-delay="0"></div></div><div class="pipeline-count" id="pipeline-count-upload">— images</div></div>
       </div>
-      <div class="pipeline-step idle" id="dashboard-pipeline-step-classify">
-        <div class="pipeline-status-dot" id="dashboard-pipeline-dot-classify"></div>
-        <div class="pipeline-step-inner"><div class="pipeline-name">Classify<span class="pipeline-pct" id="dashboard-pipeline-percent-classify">—</span></div><div class="prog-track"><div class="prog-fill" id="dashboard-pipeline-fill-classify" style="width:0"></div></div><div class="pipeline-count" id="dashboard-pipeline-count-classify">—</div></div>
+      <div class="pipeline-step active">
+        <div class="pipeline-status-dot" id="pdot-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" id="active-icon"><circle cx="12" cy="12" r="4" fill="#fff"/></svg></div>
+        <div class="pipeline-step-inner"><div class="pipeline-name">Classify<span class="pipeline-pct">—</span></div><div class="prog-track"><div class="prog-fill" style="width:0" data-width="0%" data-delay="160"></div></div><div class="pipeline-count" id="pipeline-count-classify">— / —</div></div>
       </div>
-      <div class="pipeline-step idle" id="dashboard-pipeline-step-review">
-        <div class="pipeline-status-dot" id="dashboard-pipeline-dot-review"></div>
-        <div class="pipeline-step-inner"><div class="pipeline-name">Review<span class="pipeline-pct" id="dashboard-pipeline-percent-review">—</span></div><div class="prog-track"><div class="prog-fill" id="dashboard-pipeline-fill-review" style="width:0"></div></div><div class="pipeline-count" id="dashboard-pipeline-count-review">—</div></div>
+      <div class="pipeline-step idle">
+        <div class="pipeline-status-dot" id="pdot-2"></div>
+        <div class="pipeline-step-inner"><div class="pipeline-name">Review<span class="pipeline-pct">—</span></div><div class="prog-track"><div class="prog-fill" style="width:0" data-width="0%" data-delay="320"></div></div><div class="pipeline-count">—</div></div>
       </div>
-      <div class="pipeline-step idle" id="dashboard-pipeline-step-validate">
-        <div class="pipeline-status-dot" id="dashboard-pipeline-dot-validate"></div>
-        <div class="pipeline-step-inner"><div class="pipeline-name">Validate<span class="pipeline-pct" id="dashboard-pipeline-percent-validate">—</span></div><div class="prog-track"><div class="prog-fill" id="dashboard-pipeline-fill-validate" style="width:0"></div></div><div class="pipeline-count" id="dashboard-pipeline-count-validate">—</div></div>
+      <div class="pipeline-step idle">
+        <div class="pipeline-status-dot" id="pdot-3"></div>
+        <div class="pipeline-step-inner"><div class="pipeline-name">Validate<span class="pipeline-pct">—</span></div><div class="prog-track"><div class="prog-fill" style="width:0" data-width="0%" data-delay="480"></div></div><div class="pipeline-count">—</div></div>
       </div>
-      <div class="pipeline-step idle" id="dashboard-pipeline-step-export">
-        <div class="pipeline-status-dot" id="dashboard-pipeline-dot-export"></div>
-        <div class="pipeline-step-inner"><div class="pipeline-name">Export<span class="pipeline-pct" id="dashboard-pipeline-percent-export">—</span></div><div class="prog-track"><div class="prog-fill" id="dashboard-pipeline-fill-export" style="width:0"></div></div><div class="pipeline-count" id="dashboard-pipeline-count-export">—</div></div>
+      <div class="pipeline-step idle">
+        <div class="pipeline-status-dot" id="pdot-4"></div>
+        <div class="pipeline-step-inner"><div class="pipeline-name">Export<span class="pipeline-pct">—</span></div><div class="prog-track"><div class="prog-fill" style="width:0" data-width="0%" data-delay="640"></div></div><div class="pipeline-count">—</div></div>
       </div>
     </div>
   </div>

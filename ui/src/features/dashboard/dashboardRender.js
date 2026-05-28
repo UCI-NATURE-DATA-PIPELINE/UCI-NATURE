@@ -4,98 +4,17 @@ import { escapeHtml, formatNumber, formatPercent, getPercent } from "../../utils
 import { buildDashboardActivityItems } from "./dashboardActivity.mjs";
 import { buildDashboardPipelineState } from "./dashboardPipeline.mjs";
 
-const PIPELINE_STEP_IDS = {
-  upload: {
-    root: "dashboard-pipeline-step-upload",
-    pct: "dashboard-pipeline-percent-upload",
-    fill: "dashboard-pipeline-fill-upload",
-    count: "dashboard-pipeline-count-upload",
-    dot: "dashboard-pipeline-dot-upload"
-  },
-  classify: {
-    root: "dashboard-pipeline-step-classify",
-    pct: "dashboard-pipeline-percent-classify",
-    fill: "dashboard-pipeline-fill-classify",
-    count: "dashboard-pipeline-count-classify",
-    dot: "dashboard-pipeline-dot-classify"
-  },
-  review: {
-    root: "dashboard-pipeline-step-review",
-    pct: "dashboard-pipeline-percent-review",
-    fill: "dashboard-pipeline-fill-review",
-    count: "dashboard-pipeline-count-review",
-    dot: "dashboard-pipeline-dot-review"
-  },
-  validate: {
-    root: "dashboard-pipeline-step-validate",
-    pct: "dashboard-pipeline-percent-validate",
-    fill: "dashboard-pipeline-fill-validate",
-    count: "dashboard-pipeline-count-validate",
-    dot: "dashboard-pipeline-dot-validate"
-  },
-  export: {
-    root: "dashboard-pipeline-step-export",
-    pct: "dashboard-pipeline-percent-export",
-    fill: "dashboard-pipeline-fill-export",
-    count: "dashboard-pipeline-count-export",
-    dot: "dashboard-pipeline-dot-export"
-  }
-};
-
-function renderPipelineDot(state) {
-  if (state === "done") {
-    return `
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <polyline points="20 6 9 17 4 12"></polyline>
-      </svg>
-    `;
-  }
-
-  if (state === "active") {
-    return `
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="4" fill="#fff"></circle>
-      </svg>
-    `;
-  }
-
-  return "";
-}
-
-function updatePipelineStep(step) {
-  const ids = PIPELINE_STEP_IDS[step.key];
-  if (!ids) return;
-
-  const root = document.getElementById(ids.root);
-  const pct = document.getElementById(ids.pct);
-  const fill = document.getElementById(ids.fill);
-  const count = document.getElementById(ids.count);
-  const dot = document.getElementById(ids.dot);
-
-  if (root) {
-    root.classList.remove("done", "active", "idle");
-    root.classList.add(step.state);
-  }
-  if (pct) pct.textContent = step.percentLabel;
-  if (fill) fill.style.width = step.state === "done" ? "100%" : step.state === "active" ? `${step.percentLabel}` : "0%";
-  if (count) count.textContent = step.countLabel;
-  if (dot) dot.innerHTML = renderPipelineDot(step.state);
-}
-
-function renderDashboardPipelineState(status) {
-  const model = buildDashboardPipelineState(status);
-
-  const flowFill = document.getElementById("pipeline-flow-fill");
-  if (flowFill) {
-    flowFill.style.width = `${model.flowPercent}%`;
-    flowFill.style.setProperty("--fill-pct", `${model.flowPercent}%`);
-  }
-
-  model.steps.forEach(updatePipelineStep);
-}
+const DASHBOARD_PIPELINE_DONE_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+const DASHBOARD_PIPELINE_ACTIVE_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4" fill="#fff"/></svg>';
 
 export function createDashboardRender(app, chartsApi) {
   let speciesToggleBound = false;
+
+  function resolveDashboardPipelineStatus(status) {
+    const state = String(status?.status || "idle").toLowerCase();
+    if (state !== "idle") return status;
+    return app.features.pipeline?.getLatestCompletedRunStatus?.() || null;
+  }
 
   function animateValue(element, start, end, duration, format) {
     const startTime = performance.now();
@@ -190,8 +109,50 @@ export function createDashboardRender(app, chartsApi) {
     `).join("");
   }
 
+  function renderPipelineDot(dotElement, stepState) {
+    if (!dotElement) return;
+    dotElement.innerHTML = stepState === "done"
+      ? DASHBOARD_PIPELINE_DONE_ICON
+      : stepState === "active"
+        ? DASHBOARD_PIPELINE_ACTIVE_ICON
+        : "";
+  }
+
+  function renderDashboardPipelineState(status) {
+    const pipelineState = buildDashboardPipelineState(resolveDashboardPipelineStatus(status));
+    const flowFill = document.getElementById("pipeline-flow-fill");
+    const stepElements = document.querySelectorAll("#page-dashboard .pipeline-step");
+
+    if (flowFill) {
+      flowFill.style.width = `${pipelineState.flowPercent}%`;
+      flowFill.style.setProperty("--fill-pct", `${pipelineState.flowPercent}%`);
+    }
+
+    pipelineState.steps.forEach((step, index) => {
+      const stepElement = stepElements[index];
+      if (!stepElement) return;
+      const dot = stepElement.querySelector(".pipeline-status-dot");
+      const name = stepElement.querySelector(".pipeline-name");
+      const pct = stepElement.querySelector(".pipeline-pct");
+      const fill = stepElement.querySelector(".prog-fill");
+      const count = stepElement.querySelector(".pipeline-count");
+
+      stepElement.classList.remove("done", "active", "idle");
+      stepElement.classList.add(step.state);
+      renderPipelineDot(dot, step.state);
+      if (name) name.innerHTML = `${escapeHtml(step.label)}<span class="pipeline-pct">${escapeHtml(step.percentLabel)}</span>`;
+      if (pct) pct.textContent = step.percentLabel;
+      if (fill) {
+        fill.style.width = step.state === "idle" ? "0%" : step.state === "active" ? `${step.percentLabel}` : "100%";
+        fill.setAttribute("data-width", step.state === "idle" ? "0%" : step.state === "active" ? `${step.percentLabel}` : "100%");
+      }
+      if (count) count.textContent = step.countLabel;
+    });
+  }
+
   function applyDashboardSummary(summary, validation = app.state.validationData, exportSummary = app.state.exportData, pipelineStatus = app.state.pipelineStatus, speciesHistogram = app.state.dashboardSpeciesHistogram) {
     app.state.dashboardSummary = summary;
+    const displayPipelineStatus = resolveDashboardPipelineStatus(pipelineStatus);
     const total = Number(summary?.total_images || 0);
     const processed = Number(summary?.processed_images || 0);
     const animals = Number(summary?.animals_detected || 0);
@@ -237,7 +198,8 @@ export function createDashboardRender(app, chartsApi) {
 
     chartsApi.buildSpeciesDonut([{ value: animalShare, color: "#DD6B20" }, { value: otherShare, color: "#CBD5E0" }]);
     renderDashboardExportChips(exportFiles);
-    renderDashboardActivity(summary, validation, exportSummary, pipelineStatus);
+    renderDashboardActivity(summary, validation, exportSummary, displayPipelineStatus);
+    renderDashboardPipelineState(displayPipelineStatus);
     renderDashboardSpeciesHistogram(app, chartsApi, speciesHistogram);
 
     if (!speciesToggleBound) {
@@ -255,11 +217,17 @@ export function createDashboardRender(app, chartsApi) {
       }
     }
 
-    renderDashboardPipelineState(pipelineStatus);
   }
 
-  function applyDashboardPipelineState(pipelineStatus = app.state.pipelineStatus) {
-    renderDashboardPipelineState(pipelineStatus);
+  function applyDashboardPipelineState(status) {
+    const displayPipelineStatus = resolveDashboardPipelineStatus(status);
+    renderDashboardPipelineState(displayPipelineStatus);
+    renderDashboardActivity(
+      app.state.dashboardSummary,
+      app.state.validationData,
+      app.state.exportData,
+      displayPipelineStatus
+    );
   }
 
   return {

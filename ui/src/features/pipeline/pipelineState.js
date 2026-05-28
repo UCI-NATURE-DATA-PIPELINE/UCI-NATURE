@@ -76,12 +76,16 @@ function saveStoredRuns(runs) {
 
 function snapshotRun(status) {
   // Capture a minimal serializable snapshot of a finished run.
+  const progress = status?.progress || {};
   const metrics = getPipelineMetrics(status);
   return {
     run_id: String(status.run_id || ""),
     status: status?.status || "unknown",
     started_at: status?.started_at || null,
     finished_at: status?.finished_at || null,
+    current_step: progress.step || status?.current_step || null,
+    progress_percent: Number.isFinite(Number(progress.percent)) ? Number(progress.percent) : null,
+    progress_details: progress.details || null,
     elapsed_seconds: status?.result?.elapsed_seconds || null,
     batch_size: status?.payload?.batch_size || null,
     manifest_rows: metrics.manifestRows || 0,
@@ -91,6 +95,40 @@ function snapshotRun(status) {
     failure_count: metrics.failureCount,
     throughput: metrics.throughput || null,
     notes: Array.isArray(status?.result?.notes) ? status.result.notes : []
+  };
+}
+
+function buildStoredRunStatus(run) {
+  if (!run || run.status !== "completed") return null;
+  const totalImages = Number(run.manifest_rows || 0);
+  const processedImages = Number(run.processed_rows || 0);
+  const progressDetails = run.progress_details && typeof run.progress_details === "object" ? run.progress_details : {};
+
+  return {
+    run_id: String(run.run_id || ""),
+    status: "completed",
+    started_at: run.started_at || null,
+    finished_at: run.finished_at || null,
+    current_step: run.current_step || "Export results",
+    progress: {
+      step: run.current_step || "Export results",
+      percent: Number.isFinite(Number(run.progress_percent)) ? Number(run.progress_percent) : 100,
+      details: {
+        total_images: Number.isFinite(Number(progressDetails.total_images)) ? Number(progressDetails.total_images) : totalImages,
+        processed_images: Number.isFinite(Number(progressDetails.processed_images)) ? Number(progressDetails.processed_images) : processedImages
+      }
+    },
+    result: {
+      source: {
+        image_count: totalImages
+      },
+      elapsed_seconds: run.elapsed_seconds || null,
+      notes: Array.isArray(run.notes) ? run.notes : []
+    },
+    payload: {
+      batch_size: run.batch_size || null
+    },
+    error: null
   };
 }
 
@@ -108,6 +146,12 @@ export function createPipelineState(app) {
     runs.unshift(snapshot);
     saveStoredRuns(runs);
     recordedRunIds.add(String(status.run_id));
+  }
+
+  function getLatestCompletedRunStatus() {
+    const storedRuns = loadStoredRuns();
+    const latestCompletedRun = storedRuns.find((run) => run.status === "completed");
+    return buildStoredRunStatus(latestCompletedRun);
   }
 
   function getPipelinePanelSnapshot(status) {
@@ -275,6 +319,7 @@ export function createPipelineState(app) {
   return {
     buildRunHistoryRows,
     getPipelinePanelSnapshot,
+    getLatestCompletedRunStatus,
     getRunSurfaceConfigs,
     applyDateFilter,
     restoreDateFilter
