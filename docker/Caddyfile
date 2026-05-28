@@ -5,6 +5,13 @@
     @api path /api /api/*
     reverse_proxy @api backend:8000
 
+    # Staged image preview: FastAPI mounts data/staging at /images. The
+    # Review page builds same-origin /images/... URLs (see
+    # ui/src/utils/imageUrl.js) so HTTPS pages don't try to load
+    # http://localhost:8000/... and trigger mixed-content errors.
+    @images path /images /images/*
+    reverse_proxy @images backend:8000
+
     # Make sure HTML responses are never cached at the edge so cache-busting
     # ?v=... in index.html actually flushes stale JS/CSS in users' browsers.
     @html {

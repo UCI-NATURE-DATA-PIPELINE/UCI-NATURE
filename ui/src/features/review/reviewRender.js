@@ -1,28 +1,33 @@
 /** Review rendering for queue rows, image viewer, and undo feedback. */
 import { setHTML, setText } from "../../utils/dom.js";
 import { capitalize } from "../../utils/format.js";
+import { resolveImageUrl } from "../../utils/imageUrl.js";
 
+// Build a browser-loadable URL for a staging image referenced by a CSV row.
+// The CSV stores absolute or repo-relative paths like
+//   "data/staging/Test Folder/IMG_0001.JPG"
+//   "data\\staging\\Test Folder\\IMG_0001.JPG"
+// We slice everything after "staging/" and hand it off to resolveImageUrl(),
+// which chooses the correct host:
+//   - local dev (page on localhost:5500) → http://127.0.0.1:8000/images/...
+//   - AWS / production (page on the duckdns host) → /images/... (same origin,
+//     so Caddy proxies it to the backend container).
 function getImageUrlFromPath(csvFilePath) {
   if (!csvFilePath) return "";
-  
+
   // 1. Swap any Windows backslashes (\) to web forward slashes (/)
   const normalizedPath = csvFilePath.replace(/\\/g, '/');
-  
+
   // 2. Cut the string perfectly right after the word "staging"
   // Using regex /staging\//i makes it case-insensitive just in case!
   const splitPath = normalizedPath.split(/staging\//i);
-  
-  if (splitPath.length > 1) {
-      // This grabs "Test Folder/WhiteScreen.jpg"
-      const relativePath = splitPath[1]; 
-      
-      // encodeURI() converts the space into "%20" so the URL doesn't break
-      return `http://localhost:8000/images/${encodeURI(relativePath)}`;
-  } else {
-      // Fallback just in case a path doesn't have "staging" in it
-      const fileName = normalizedPath.split('/').pop();
-      return `http://localhost:8000/images/${encodeURI(fileName)}`;
-  }
+
+  const relativePath = splitPath.length > 1
+    ? splitPath[1]                       // "Test Folder/WhiteScreen.jpg"
+    : normalizedPath.split('/').pop();   // fallback: just the file name
+
+  // encodeURI() converts spaces / unicode without re-encoding "/" segments.
+  return resolveImageUrl(`/images/${encodeURI(relativePath)}`);
 }
 
 function getConfidenceClass(confidence) {
