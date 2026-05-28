@@ -1,0 +1,12 @@
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
+tqdm
+pillow
+exifread
+python-dotenv
+requests
+pandas
+speciesnet
+python-multipart
