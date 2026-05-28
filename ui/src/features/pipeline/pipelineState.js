@@ -100,7 +100,7 @@ export function createPipelineState(app) {
 
   function maybeRecordCompletedRun(status) {
     if (!status?.run_id) return;
-    if (status.status !== "completed" && status.status !== "failed") return;
+    if (status.status !== "completed" && status.status !== "failed" && status.status !== "cancelled") return;
     if (recordedRunIds.has(String(status.run_id))) return;
 
     const snapshot = snapshotRun(status);
@@ -151,7 +151,7 @@ export function createPipelineState(app) {
 
   function renderHistoryRow(run, { isLive = false } = {}) {
     const statusClass = run.status === "completed" ? "pill-green" : run.status === "failed" ? "pill-red" : "pill-yellow";
-    const statusLabel = run.status === "completed" ? "Success" : run.status === "failed" ? "Failed" : run.status === "running" ? "Running" : "Idle";
+    const statusLabel = run.status === "completed" ? "Success" : run.status === "failed" ? "Failed" : run.status === "cancelled" ? "Stopped" : run.status === "running" ? "Running" : "Idle";
     const failureText = run.failure_count === null || run.failure_count === undefined ? "—" : formatNumber(run.failure_count);
     const durationText = run.status === "running" ? "In progress" : (run.elapsed_seconds ? formatDurationLabel(run.elapsed_seconds) : "—");
     const batchLabel = run.batch_size === "all" ? "All" : run.batch_size || "Unknown";
@@ -221,8 +221,8 @@ export function createPipelineState(app) {
 
   function getRunSurfaceConfigs() {
     return [
-      { kind: "main", buttonId: "run-btn", labelId: "run-btn-label", noteId: "run-ready-note", panelId: "run-progress", progressLabelId: "run-progress-label-text", fillId: "run-fill", etaId: "run-eta", statusId: "rs-status", stepId: "rs-step", discoveredId: "rs-discovered", downloadedId: "rs-downloaded", mlProgressId: "run-ml-progress", mlProgressSummaryId: "run-ml-progress-summary", mlProgressFillId: "run-ml-progress-fill", mlProcessedId: "run-ml-processed", mlTotalId: "run-ml-total", currentFileId: "run-current-file", logPathId: "run-log-path", errorId: "run-error-state" },
-      { kind: "drive", buttonId: "drive-run-btn", labelId: "drive-run-btn-label", noteId: "drive-run-note", panelId: "drive-run-progress", progressLabelId: "drive-run-progress-label-text", fillId: "drive-run-fill", etaId: "drive-run-eta", statusId: "drive-rs-status", stepId: "drive-rs-step", discoveredId: "drive-rs-discovered", downloadedId: "drive-rs-downloaded", mlProgressId: "drive-run-ml-progress", mlProgressSummaryId: "drive-run-ml-progress-summary", mlProgressFillId: "drive-run-ml-progress-fill", mlProcessedId: "drive-run-ml-processed", mlTotalId: "drive-run-ml-total", currentFileId: "drive-run-current-file", logPathId: "drive-run-log-path", errorId: "drive-run-error-state" }
+      { kind: "main", buttonId: "run-btn", stopButtonId: "run-stop-btn", labelId: "run-btn-label", noteId: "run-ready-note", panelId: "run-progress", progressLabelId: "run-progress-label-text", fillId: "run-fill", etaId: "run-eta", statusId: "rs-status", stepId: "rs-step", discoveredId: "rs-discovered", downloadedId: "rs-downloaded", mlProgressId: "run-ml-progress", mlProgressSummaryId: "run-ml-progress-summary", mlProgressFillId: "run-ml-progress-fill", mlProcessedId: "run-ml-processed", mlTotalId: "run-ml-total", currentFileId: "run-current-file", logPathId: "run-log-path", errorId: "run-error-state" },
+      { kind: "drive", buttonId: "drive-run-btn", stopButtonId: "drive-run-stop-btn", labelId: "drive-run-btn-label", noteId: "drive-run-note", panelId: "drive-run-progress", progressLabelId: "drive-run-progress-label-text", fillId: "drive-run-fill", etaId: "drive-run-eta", statusId: "drive-rs-status", stepId: "drive-rs-step", discoveredId: "drive-rs-discovered", downloadedId: "drive-rs-downloaded", mlProgressId: "drive-run-ml-progress", mlProgressSummaryId: "drive-run-ml-progress-summary", mlProgressFillId: "drive-run-ml-progress-fill", mlProcessedId: "drive-run-ml-processed", mlTotalId: "drive-run-ml-total", currentFileId: "drive-run-current-file", logPathId: "drive-run-log-path", errorId: "drive-run-error-state" }
     ];
   }
 

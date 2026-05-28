@@ -8,6 +8,7 @@ import queue
 import shutil
 import threading
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, Tuple, Union
@@ -18,6 +19,7 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 
 from scripts.config import GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET
+from ui.backend.cancellation import CancellationToken, OperationCancelled
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -81,8 +83,10 @@ DRIVE_DOWNLOAD_MAX_WORKERS = _env_int("UCI_NATURE_DRIVE_WORKERS", 8, low=1, high
 # Throttle how often progress_callback runs, so we don't write the session
 # JSON 1000 times for a 1000-image sync (that destroys throughput on AWS EBS).
 DRIVE_PROGRESS_MIN_INTERVAL_SECONDS = _env_float(
-    "UCI_NATURE_DRIVE_PROGRESS_INTERVAL", 0.4, low=0.05, high=5.0
+    "UCI_NATURE_DRIVE_PROGRESS_INTERVAL", 2.0, low=0.25, high=5.0
 )
+DRIVE_DOWNLOAD_LOG_MILESTONE = _env_int("UCI_NATURE_DRIVE_DOWNLOAD_LOG_MILESTONE", 1000, low=100, high=10000)
+DRIVE_SPEED_WINDOW_SECONDS = _env_float("UCI_NATURE_DRIVE_SPEED_WINDOW_SECONDS", 60.0, low=5.0, high=300.0)
 # Per-file "Downloaded: ..." prints are off by default; flip this on for
 # debugging a stuck sync.
 DRIVE_DEBUG_LOG = _env_bool("UCI_NATURE_DRIVE_DEBUG", False)
@@ -798,7 +802,14 @@ def stage_selected_drive_folder(
     drive_index_path: Path = DEFAULT_DRIVE_INDEX_PATH,
     max_files: Optional[int] = None,
     progress_callback: Optional[Callable[[Dict[str, object]], None]] = None,
+    cancellation_token: Optional[CancellationToken] = None,
 ) -> dict:
+    cancellation_token = cancellation_token or CancellationToken()
+
+    def raise_if_cancelled() -> None:
+        cancellation_token.raise_if_cancelled()
+
+    raise_if_cancelled()
     if not access_token:
         raise RuntimeError(
             "A Google Drive folder is selected, but no Google OAuth access token is available for download."
@@ -821,6 +832,7 @@ def stage_selected_drive_folder(
         f"index_cache={DRIVE_INDEX_CACHE_ENABLED}"
     )
 
+    raise_if_cancelled()
     selected_folder_id = str(folder_id).strip()
     resolved_folder = _resolve_selected_drive_folder(
         service,
@@ -867,6 +879,7 @@ def stage_selected_drive_folder(
     cache_start_page_token = None if cache_hit else _get_drive_start_page_token(service)
     listing_stats = _new_drive_listing_stats()
     live_listing_completed = False
+    discovery_complete = cache_hit
 
     # Fast skip: a file is considered already-staged if the final path exists
     # AND is non-empty. `.part` leftovers from previous interrupted syncs are
@@ -879,6 +892,7 @@ def stage_selected_drive_folder(
     scheduled_download_count = 0
     downloaded_files: List[str] = []
     failed_files: List[Dict[str, object]] = []
+    download_event_times: "deque[float]" = deque()
 
     started_at_monotonic = time.monotonic()
     started_at_wall = time.time()
@@ -888,6 +902,16 @@ def stage_selected_drive_folder(
     download_queue: "queue.Queue[Optional[Dict[str, object]]]" = queue.Queue(
         maxsize=max(DRIVE_DOWNLOAD_MAX_WORKERS * 4, 1)
     )
+
+    def rolling_images_per_second(now: Optional[float] = None) -> float:
+        now = now if now is not None else time.monotonic()
+        while download_event_times and now - download_event_times[0] > DRIVE_SPEED_WINDOW_SECONDS:
+            download_event_times.popleft()
+        if len(download_event_times) >= 2:
+            window_seconds = max(download_event_times[-1] - download_event_times[0], 1e-6)
+            return (len(download_event_times) - 1) / window_seconds
+        elapsed = max(now - started_at_monotonic, 1e-6)
+        return len(downloaded_files) / elapsed if elapsed > 0 else 0.0
 
     def emit_running_progress(
         *,
@@ -915,10 +939,10 @@ def stage_selected_drive_folder(
             current_skipped_count = already_staged_count
             current_staged_count = current_skipped_count + new_downloads
         elapsed = max(now - started_at_monotonic, 1e-6)
-        ips = new_downloads / elapsed if elapsed > 0 else 0.0
+        ips = rolling_images_per_second(now)
         eta_seconds: Optional[float] = None
         remaining = max(current_target_count - current_staged_count - failed, 0)
-        if ips > 0 and remaining > 0:
+        if discovery_complete and ips > 0 and remaining > 0:
             eta_seconds = remaining / ips
 
         _emit_progress(
@@ -935,6 +959,7 @@ def stage_selected_drive_folder(
                 "available_count": current_available_count,
                 "already_staged_count": current_skipped_count,
                 "skipped_count": current_skipped_count,
+                "discovery_complete": discovery_complete,
                 "staged_count": current_staged_count,
                 "remaining_count": remaining,
                 "images_per_second": round(ips, 2),
@@ -960,7 +985,7 @@ def stage_selected_drive_folder(
             new_downloads = len(downloaded_files)
         with discovered_lock:
             current_available_count = discovered_total
-        if force or new_downloads - last_download_log[0] >= 100:
+        if force or new_downloads - last_download_log[0] >= DRIVE_DOWNLOAD_LOG_MILESTONE:
             last_download_log[0] = new_downloads
             print(f"Downloaded {new_downloads} / discovered {current_available_count}")
 
@@ -986,6 +1011,7 @@ def stage_selected_drive_folder(
     def record_discovered_file(file_info: Dict[str, object]) -> bool:
         nonlocal already_staged_count, discovered_total, scheduled_download_count, target_count
 
+        raise_if_cancelled()
         file_info["relative_local_path"] = _normalize_relative_local_path(file_info)
         files.append(file_info)
         ready = is_already_staged(file_info)
@@ -1009,6 +1035,7 @@ def stage_selected_drive_folder(
     def download_one(file_info: Dict[str, object]) -> Tuple[bool, Dict[str, object], Optional[str]]:
         out_path = staged_path_for(file_info)
         try:
+            raise_if_cancelled()
             _download_file(get_service(), str(file_info["file_id"]), out_path)
             if DRIVE_DEBUG_LOG:
                 print(f"Downloaded: {file_info['drive_path']} -> {out_path}")
@@ -1027,10 +1054,13 @@ def stage_selected_drive_folder(
             try:
                 if file_info is None:
                     return
+                if cancellation_token.is_cancelled():
+                    continue
                 ok, downloaded_info, error = download_one(file_info)
                 with counters_lock:
                     if ok:
                         downloaded_files.append(str(_normalize_relative_local_path(downloaded_info)))
+                        download_event_times.append(time.monotonic())
                     else:
                         failed_files.append({
                             "file_id": downloaded_info.get("file_id"),
@@ -1042,6 +1072,16 @@ def stage_selected_drive_folder(
             finally:
                 download_queue.task_done()
 
+    def enqueue_download(file_info: Dict[str, object]) -> None:
+        while True:
+            raise_if_cancelled()
+            try:
+                download_queue.put(file_info, timeout=0.2)
+                return
+            except queue.Full:
+                continue
+
+    raise_if_cancelled()
     emit_running_progress(current_file=None, force=True)
     print(f"Download workers started: {DRIVE_DOWNLOAD_MAX_WORKERS}")
 
@@ -1061,8 +1101,9 @@ def stage_selected_drive_folder(
                     seen_folder_ids.add(resolved_folder_id)
                 print(f"Discovered {len(cached_files)} images from Drive index cache")
                 for file_info in cached_files:
+                    raise_if_cancelled()
                     if record_discovered_file(file_info):
-                        download_queue.put(file_info)
+                        enqueue_download(file_info)
             else:
                 print("Drive listing started")
                 list_started = time.monotonic()
@@ -1072,11 +1113,14 @@ def stage_selected_drive_folder(
                     seen_folders=seen_folder_ids,
                     stats=listing_stats,
                 ):
+                    raise_if_cancelled()
                     if record_discovered_file(file_info):
-                        download_queue.put(file_info)
+                        enqueue_download(file_info)
                 live_listing_completed = True
+                discovery_complete = True
                 list_elapsed = time.monotonic() - list_started
                 maybe_log_discovery(force=True)
+                emit_running_progress(current_file=None, force=True)
                 print(
                     f"Drive listing complete in {list_elapsed:.2f}s — "
                     f"{len(files)} supported image(s) discovered"

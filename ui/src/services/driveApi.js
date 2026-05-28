@@ -55,6 +55,14 @@ export async function syncSelectedDriveFolder(max_files = null) {
   return handleResponse(res);
 }
 
+export async function cancelDriveSync() {
+  const res = await fetchWithTimeout(`${API_BASE}/drive/sync/cancel`, {
+    method: "POST",
+    headers: getAuthHeaders()
+  });
+  return handleResponse(res);
+}
+
 export async function getDriveSyncStatus() {
   const res = await fetchWithTimeout(`${API_BASE}/drive/sync-status`, {
     method: "GET",

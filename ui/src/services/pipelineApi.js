@@ -18,6 +18,14 @@ export async function getPipelineStatus() {
   return handleResponse(res);
 }
 
+export async function cancelPipeline() {
+  const res = await fetchWithTimeout(`${API_BASE}/pipeline/cancel`, {
+    method: "POST",
+    headers: getAuthHeaders()
+  });
+  return handleResponse(res);
+}
+
 export async function getPipelineResults() {
   const res = await fetchWithTimeout(`${API_BASE}/pipeline/results`, {
     method: "GET",

@@ -22,6 +22,39 @@ def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, object]]) 
 
 
 class PipelineBackendRefactorTests(unittest.TestCase):
+    def test_pipeline_cancel_state_is_cancelled_not_failed(self) -> None:
+        from ui.backend import main as backend_main
+
+        session_key = "pipeline-cancel-test"
+        backend_main.PIPELINE_STATES.clear()
+        backend_main.PIPELINE_CANCEL_TOKENS.clear()
+        state = backend_main._get_pipeline_state(session_key)
+        state.update({
+            "status": "running",
+            "run_id": "run-1",
+            "started_at": "2026-05-27T00:00:00",
+            "progress": {
+                "step": "Run SpeciesNet",
+                "percent": 55,
+                "message": "Running",
+                "details": {},
+            },
+        })
+        token = backend_main._create_pipeline_cancel_token(session_key)
+
+        cancelled = backend_main.mark_pipeline_cancelled(
+            session_key,
+            message="Pipeline stop requested",
+        )
+
+        self.assertTrue(token.is_cancelled())
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertIsNone(cancelled["error"])
+        self.assertTrue(cancelled["cancellation_requested"])
+        self.assertEqual(cancelled["progress"]["step"], "Cancelled")
+        backend_main.PIPELINE_STATES.clear()
+        backend_main.PIPELINE_CANCEL_TOKENS.clear()
+
     def test_merge_metadata_with_ml_outputs_updates_existing_metadata_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

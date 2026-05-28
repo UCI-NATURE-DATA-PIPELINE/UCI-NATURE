@@ -38,10 +38,12 @@ export function bindGlobals(app, showPage) {
   window.closeDriveSiteModal = app.features.drive.closeDriveSiteModal;
   window.selectDriveAutoSite = app.features.drive.selectDriveAutoSite;
   window.triggerSync = app.features.drive.triggerSync;
+  window.cancelDriveSync = app.features.drive.cancelDriveSync;
   window.loadDriveSyncStatus = app.features.drive.loadDriveSyncStatus;
   window.updateSlider = app.features.pipeline.updateSlider;
   window.toggleRunModel = app.features.pipeline.toggleRunModel;
   window.toggleDriveRunModel = app.features.pipeline.toggleDriveRunModel;
+  window.cancelPipelineRun = app.features.pipeline.cancelPipelineRun;
   window.toggleRunDetail = app.features.pipeline.toggleRunDetail;
   window.downloadPipelineResult = app.features.pipeline.downloadPipelineResult;
   window.navigateReview = app.features.review.navigateReview;

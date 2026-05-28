@@ -21,6 +21,7 @@ from scripts.pipeline.extract_metadata import (
 )
 from scripts.pipeline.make_manifest import OUT as MANIFEST_DEFAULT, STAGING, build_manifest
 from scripts.pipeline.make_output import generate_output_csvs
+from ui.backend.cancellation import raise_if_cancelled
 
 DEFAULT_STAGING_DIR = Path(CONFIG_STAGING_DIR or STAGING)
 
@@ -102,10 +103,12 @@ def _emit_progress(
 def run_pipeline_service(
     config: Optional[PipelineRunConfig] = None,
     progress_callback: Optional[Callable[[Dict[str, object]], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> dict:
     ensure_python_311()
     config = config or PipelineRunConfig()
     os.chdir(REPO_ROOT)
+    raise_if_cancelled(cancel_check)
 
     resolved_staging_dir = resolve_pipeline_staging_dir(config.staging_dir)
     if not resolved_staging_dir.exists():
@@ -132,6 +135,7 @@ def run_pipeline_service(
         percent=15,
         message="Building the manifest from staged images",
     )
+    raise_if_cancelled(cancel_check)
     manifest_result = build_manifest(
         staging=resolved_staging_dir,
         out=config.manifest_path,
@@ -170,6 +174,7 @@ def run_pipeline_service(
         percent=28,
         message="Reading EXIF metadata from staged images",
     )
+    raise_if_cancelled(cancel_check)
     metadata_exif_result = extract_metadata_from_manifest(
         manifest_path=manifest_path,
         out_path=config.metadata_path,
@@ -191,6 +196,7 @@ def run_pipeline_service(
     )
 
     def speciesnet_progress_callback(progress: Dict[str, object]) -> None:
+        raise_if_cancelled(cancel_check)
         processed_images = max(0, int(progress.get("processed_images") or 0))
         total_images = max(
             processed_images,
@@ -220,6 +226,7 @@ def run_pipeline_service(
         config.speciesnet_json_path,
         label="SpeciesNet predictions file",
     )
+    raise_if_cancelled(cancel_check)
 
     # Read the (possibly truncated) manifest to get the exact file list for SpeciesNet
     import csv as _csv_for_sn
@@ -234,6 +241,7 @@ def run_pipeline_service(
                 _manifest_filepaths.append(str(_resolved))
 
     print(f"Passing {len(_manifest_filepaths)} explicit filepaths to SpeciesNet")
+    raise_if_cancelled(cancel_check)
 
     speciesnet_result = run_speciesnet_model(
         staging_dir=resolved_staging_dir,
@@ -241,7 +249,9 @@ def run_pipeline_service(
         batch_size=config.speciesnet_batch_size,
         progress_callback=speciesnet_progress_callback,
         filepaths=_manifest_filepaths,
+        cancel_check=cancel_check,
     )
+    raise_if_cancelled(cancel_check)
 
     print("\n" + "=" * 80)
     print("STEP: Postprocess SpeciesNet")
@@ -252,6 +262,7 @@ def run_pipeline_service(
         percent=70,
         message="Postprocessing SpeciesNet output against the manifest",
     )
+    raise_if_cancelled(cancel_check)
     postprocess_result = postprocess_speciesnet_results(
         in_path=config.speciesnet_json_path,
         manifest_csv=manifest_path,
@@ -269,6 +280,7 @@ def run_pipeline_service(
         percent=82,
         message="Converting SpeciesNet output into pipeline CSV results",
     )
+    raise_if_cancelled(cancel_check)
     run_speciesnet(
         manifest_csv=manifest_path,
         speciesnet_json=config.speciesnet_json_path,
@@ -291,6 +303,7 @@ def run_pipeline_service(
         percent=90,
         message="Merging ML output back into metadata.csv",
     )
+    raise_if_cancelled(cancel_check)
     metadata_merged_result = extract_metadata_from_manifest(
         manifest_path=manifest_path,
         out_path=config.metadata_path,
@@ -306,6 +319,7 @@ def run_pipeline_service(
         percent=96,
         message="Generating final export CSVs",
     )
+    raise_if_cancelled(cancel_check)
     output_result = generate_output_csvs(
         manifest=manifest_path,
         metadata=config.metadata_path,

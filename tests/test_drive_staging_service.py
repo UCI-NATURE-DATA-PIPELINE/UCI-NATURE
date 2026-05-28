@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from ui.backend.auth import routes_drive
+from ui.backend.cancellation import CancellationToken, OperationCancelled
 from ui.backend.services import drive_staging_service as service
 
 
@@ -103,6 +105,10 @@ def _resolved_folder(folder_id: str = "folder-root") -> dict[str, object]:
 
 
 class DriveStagingServiceTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        routes_drive.DRIVE_SYNC_STATES.clear()
+        routes_drive.DRIVE_SYNC_CANCEL_TOKENS.clear()
+
     def test_download_workers_start_before_recursive_listing_finishes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -354,6 +360,67 @@ class DriveStagingServiceTests(unittest.TestCase):
             self.assertTrue(live_listing.called)
             self.assertEqual(result["downloaded_count"], 1)
             self.assertEqual(result["newly_downloaded_count"], 1)
+
+    def test_cancelled_drive_sync_raises_without_listing(self) -> None:
+        token = CancellationToken()
+        token.cancel()
+
+        with (
+            tempfile.TemporaryDirectory() as tmp_dir,
+            mock.patch.object(service, "REPO_ROOT", Path(tmp_dir)),
+            mock.patch.object(service, "_build_drive_service", side_effect=AssertionError("service should not be built")),
+        ):
+            with self.assertRaises(OperationCancelled):
+                service.stage_selected_drive_folder(
+                    access_token="access-token",
+                    refresh_token=None,
+                    folder_id="folder-root",
+                    folder_name="Camera Folder",
+                    staging_dir="data/staging",
+                    drive_index_path=Path("data/outputs/drive_index.csv"),
+                    cancellation_token=token,
+                )
+
+    def test_cancel_drive_sync_operation_marks_cancelled_state(self) -> None:
+        session_key = "test-session"
+        session = {
+            "selected_drive_folder": {
+                "id": "folder-root",
+                "name": "Camera Folder",
+            }
+        }
+
+        with (
+            mock.patch.object(routes_drive, "write_session", return_value=None),
+            mock.patch.object(routes_drive, "read_session", return_value=session),
+        ):
+            routes_drive.start_drive_sync_operation(
+                session,
+                session_key,
+                folder=session["selected_drive_folder"],
+                message="Syncing",
+                staging_dir="data/staging",
+            )
+            token = routes_drive.get_drive_sync_cancel_token(session_key)
+            self.assertIsNotNone(token)
+            self.assertFalse(token.is_cancelled())
+
+            state = routes_drive.cancel_drive_sync_operation(
+                session,
+                session_key,
+                folder=session["selected_drive_folder"],
+                message="Drive sync stopped by user",
+            )
+            serialized = routes_drive.serialize_drive_sync_state(
+                session=session,
+                session_key=session_key,
+            )
+
+        self.assertTrue(token.is_cancelled())
+        self.assertEqual(state["status"], "cancelled")
+        self.assertEqual(serialized["status"], "cancelled")
+        self.assertTrue(serialized["cancellation_requested"])
+        self.assertFalse(serialized["source_ready"])
 
 
 if __name__ == "__main__":

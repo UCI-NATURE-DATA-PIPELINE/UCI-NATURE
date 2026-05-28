@@ -16,6 +16,7 @@ export function createPipelineRender(app, stateApi) {
     const throughputValue = document.getElementById("rs-throughput");
     const failuresValue = document.getElementById("rs-failures");
     const button = document.getElementById(surface.buttonId);
+    const stopButton = document.getElementById(surface.stopButtonId);
     const label = document.getElementById(surface.labelId);
     const note = document.getElementById(surface.noteId);
     const panel = document.getElementById(surface.panelId);
@@ -40,18 +41,24 @@ export function createPipelineRender(app, stateApi) {
       button.classList.add(state === "running" ? "running" : "idle");
       button.disabled = state === "running" || (surface.kind === "drive" && !app.features.drive.canRunDrivePipeline());
     }
+    if (stopButton) {
+      stopButton.style.display = state === "running" ? "inline-flex" : "none";
+      stopButton.disabled = Boolean(status?.cancellation_requested);
+      stopButton.textContent = status?.cancellation_requested ? "Stopping..." : "Stop";
+    }
     if (label) label.textContent = state === "running" ? "Pipeline Running" : surface.kind === "drive" ? "Run Pipeline (Drive Source)" : "Run Pipeline";
     if (note) {
       if (state === "running") note.textContent = status?.progress?.step || `Run ${status.run_id} started ${formatTimestampLabel(status.started_at)}.`;
       else if (state === "completed") note.textContent = `Last run ${status.run_id} completed ${formatTimestampLabel(status.finished_at)}.`;
+      else if (state === "cancelled") note.textContent = `Last run ${status.run_id} was stopped.`;
       else if (state === "failed") note.textContent = status.error ? `Last run ${status.run_id} failed: ${status.error}` : `Last run ${status.run_id} failed.`;
       else note.textContent = surface.kind === "drive" || app.state.uploadTab === "drive" ? app.features.drive.getDriveRunIdleNote() : "Click Run to start pipeline.";
     }
   
     if (panel) panel.style.display = (!status || state === "idle") ? "none" : "block";
-    if (progressLabel) progressLabel.textContent = state === "running" ? status?.progress?.step || "Pipeline running in backend" : state === "completed" ? "Latest run completed" : state === "failed" ? "Latest run failed" : "No active pipeline run";
-    if (eta) eta.textContent = state === "running" ? status?.progress?.message || status?.latest_log_line || "Backend log is updating" : state === "completed" ? `Completed ${formatTimestampLabel(status.finished_at)}` : state === "failed" ? status.error || "See backend log for details" : surface.kind === "drive" ? "Run becomes available once a Drive folder is selected" : "No active run";
-    if (fill) fill.style.width = state === "completed" || state === "failed" ? "100%" : state === "running" ? `${app.features.drive.getDriveSyncStepPercent()}%` : "0%";
+    if (progressLabel) progressLabel.textContent = state === "running" ? status?.progress?.step || "Pipeline running in backend" : state === "completed" ? "Latest run completed" : state === "cancelled" ? "Latest run stopped" : state === "failed" ? "Latest run failed" : "No active pipeline run";
+    if (eta) eta.textContent = state === "running" ? status?.progress?.message || status?.latest_log_line || "Backend log is updating" : state === "completed" ? `Completed ${formatTimestampLabel(status.finished_at)}` : state === "cancelled" ? "Stopped by user" : state === "failed" ? status.error || "See backend log for details" : surface.kind === "drive" ? "Run becomes available once a Drive folder is selected" : "No active run";
+    if (fill) fill.style.width = state === "completed" || state === "failed" || state === "cancelled" ? "100%" : state === "running" ? `${app.features.drive.getDriveSyncStepPercent()}%` : "0%";
     if (statusValue) statusValue.textContent = snapshot.overallStatus;
     if (stepValue) setPipelineDetailValue(stepValue, snapshot.currentStep, "Waiting for a run");
     if (discoveredValue) discoveredValue.textContent = snapshot.discovered === null ? "—" : formatNumber(snapshot.discovered);

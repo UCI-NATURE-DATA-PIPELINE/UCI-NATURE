@@ -42,13 +42,16 @@ from scripts.pipeline.simple_outputs import (
 from scripts.pipeline.validate_output import validate_csv, REQUIRED_COLUMNS
 from ui.backend.auth.routes import get_google_auth_state, router as google_auth_router
 from ui.backend.auth.routes_drive import (
+    cancel_drive_sync_operation,
     complete_drive_sync_operation,
     fail_drive_sync_operation,
+    get_drive_sync_cancel_token,
     router as google_drive_router,
     serialize_drive_sync_state,
     start_drive_sync_operation,
     update_drive_sync_progress,
 )
+from ui.backend.cancellation import CancellationToken, OperationCancelled
 from ui.backend.services.drive_staging_service import stage_selected_drive_folder
 from ui.backend.session_store import create_session_token, read_session, write_session
 
@@ -97,8 +100,10 @@ DEFAULT_PIPELINE_STATE = {
     "error": None,
     "integration_mode": None,
     "progress": None,
+    "cancellation_requested": False,
 }
 PIPELINE_STATES: Dict[str, dict] = {}
+PIPELINE_CANCEL_TOKENS: Dict[str, CancellationToken] = {}
 
 
 def _is_json_like_primitive(value: Any) -> bool:
@@ -149,6 +154,7 @@ def _serialize_state_for_copy(state: dict) -> dict:
         "error": state.get("error"),
         "integration_mode": state.get("integration_mode"),
         "progress": _make_safe_copy(state.get("progress")),
+        "cancellation_requested": bool(state.get("cancellation_requested")),
     }
 
 
@@ -167,6 +173,7 @@ def _get_pipeline_state(session_key: str) -> dict:
             "error": None,
             "integration_mode": None,
             "progress": None,
+            "cancellation_requested": False,
         }
         PIPELINE_STATES[session_key] = state
     return state
@@ -350,6 +357,7 @@ def serialize_pipeline_state(session_key: str) -> dict:
     error = state.get("error")
     integration_mode = state.get("integration_mode")
     progress = _make_safe_copy(state.get("progress"))
+    cancellation_requested = bool(state.get("cancellation_requested"))
     log_summary = read_pipeline_log_summary(log_path)
     current_step = (progress or {}).get("step") or log_summary["current_step"]
     latest_log_line = (progress or {}).get("message") or log_summary["latest_log_line"]
@@ -366,9 +374,48 @@ def serialize_pipeline_state(session_key: str) -> dict:
         "error": error,
         "integration_mode": integration_mode,
         "progress": progress,
+        "cancellation_requested": cancellation_requested,
         "current_step": current_step,
         "latest_log_line": latest_log_line,
     }
+
+
+def _create_pipeline_cancel_token(session_key: str) -> CancellationToken:
+    token = CancellationToken()
+    PIPELINE_CANCEL_TOKENS[session_key] = token
+    return token
+
+
+def _get_pipeline_cancel_token(session_key: str) -> Optional[CancellationToken]:
+    return PIPELINE_CANCEL_TOKENS.get(session_key)
+
+
+def _clear_pipeline_cancel_token(session_key: str) -> None:
+    PIPELINE_CANCEL_TOKENS.pop(session_key, None)
+
+
+def mark_pipeline_cancelled(
+    session_key: str,
+    *,
+    message: str = "Pipeline stopped by user",
+) -> dict:
+    with PIPELINE_LOCK:
+        token = _get_pipeline_cancel_token(session_key)
+        if token:
+            token.cancel()
+        state = _get_pipeline_state(session_key)
+        state["status"] = "cancelled"
+        state["finished_at"] = datetime.now().isoformat(timespec="seconds")
+        state["error"] = None
+        state["cancellation_requested"] = True
+        state["progress"] = {
+            "step": "Cancelled",
+            "percent": 100,
+            "message": message,
+            "details": {},
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        return serialize_pipeline_state(session_key)
 
 
 def read_csv_rows(path: Path) -> List[Dict[str, str]]:
@@ -995,6 +1042,7 @@ def execute_pipeline_run(
     payload: dict,
     batch_size: int,
     log_path: Path,
+    cancellation_token: CancellationToken,
 ) -> None:
     result = None
     try:
@@ -1009,6 +1057,7 @@ def execute_pipeline_run(
                     percent=3,
                     message="Preparing the backend pipeline run",
                 )
+                cancellation_token.raise_if_cancelled()
 
                 source_mode = normalize_source_mode(payload.get("source_mode"))
                 session = read_session(session_key)
@@ -1052,6 +1101,7 @@ def execute_pipeline_run(
                 print(f"Source mode: {source_mode}")
                 print(f"Configured staging dir: {configured_staging_dir}")
                 print(f"Resolved staging dir: {resolved_staging_dir}")
+                cancellation_token.raise_if_cancelled()
 
                 if source_mode == "drive" and selected_folder and selected_folder.get("id"):
                     reuse_cache = should_reuse_drive_cache(preflight)
@@ -1089,8 +1139,10 @@ def execute_pipeline_run(
                                 "into backend cache"
                             ),
                         )
+                        drive_cancel_token = get_drive_sync_cancel_token(session_key)
 
                         def drive_progress_callback(progress: dict) -> None:
+                            cancellation_token.raise_if_cancelled()
                             discovered_count = int(progress.get("discovered_count") or 0)
                             downloaded_count = int(progress.get("downloaded_count") or 0)
                             skipped_count = int(
@@ -1100,9 +1152,17 @@ def execute_pipeline_run(
                             )
                             failed_count = int(progress.get("failed_count") or 0)
                             current_file = progress.get("current_file")
+                            discovery_complete = bool(progress.get("discovery_complete"))
                             status_message = (
-                                f"Downloaded {downloaded_count} of {discovered_count} "
-                                f"image(s) from Google Drive"
+                                (
+                                    f"Downloaded {downloaded_count} of total {discovered_count} "
+                                    "image(s) from Google Drive"
+                                )
+                                if discovery_complete
+                                else (
+                                    f"Downloaded {downloaded_count} of {discovered_count} "
+                                    "discovered so far"
+                                )
                             )
                             if skipped_count:
                                 status_message = f"{status_message} · {skipped_count} skipped"
@@ -1121,12 +1181,13 @@ def execute_pipeline_run(
                                 message=status_message,
                                 failed_count=failed_count,
                                 skipped_count=skipped_count,
+                                discovery_complete=discovery_complete,
                                 images_per_second=progress.get("images_per_second"),
                                 eta_seconds=progress.get("eta_seconds"),
                                 elapsed_seconds=progress.get("elapsed_seconds"),
                             )
                             sync_percent = 5
-                            if discovered_count > 0:
+                            if discovery_complete and discovered_count > 0:
                                 sync_percent = min(
                                     14,
                                     5 + round((downloaded_count / discovered_count) * 9),
@@ -1140,6 +1201,7 @@ def execute_pipeline_run(
                                     "discovered_count": discovered_count,
                                     "downloaded_count": downloaded_count,
                                     "current_file": current_file,
+                                    "discovery_complete": discovery_complete,
                                 },
                             )
 
@@ -1153,7 +1215,10 @@ def execute_pipeline_run(
                                 staging_dir=resolved_staging_dir,
                                 max_files=selected_folder.get("max_files"),
                                 progress_callback=drive_progress_callback,
+                                cancellation_token=drive_cancel_token,
                             )
+                            if cancellation_token.is_cancelled():
+                                raise OperationCancelled("Pipeline stopped by user")
                             complete_drive_sync_operation(
                                 session,
                                 session_key,
@@ -1173,6 +1238,14 @@ def execute_pipeline_run(
                                 or sync_result.get("discovered_count")
                                 or 0
                             )
+                        except OperationCancelled:
+                            cancel_drive_sync_operation(
+                                session,
+                                session_key,
+                                folder=selected_folder,
+                                message="Drive staging stopped by user",
+                            )
+                            raise
                         except FileNotFoundError as exc:
                             fail_drive_sync_operation(
                                 session,
@@ -1219,6 +1292,7 @@ def execute_pipeline_run(
                     )
 
                 print("Pipeline start: invoking existing run_pipeline_service")
+                cancellation_token.raise_if_cancelled()
                 print(f"Pipeline start: staging_dir={resolved_staging_dir}")
                 print(f"Pipeline start: manifest_path={config.manifest_path}")
                 print(f"Pipeline start: metadata_path={config.metadata_path}")
@@ -1238,7 +1312,9 @@ def execute_pipeline_run(
                             else {}
                         ),
                     ),
+                    cancel_check=cancellation_token.is_cancelled,
                 )
+                cancellation_token.raise_if_cancelled()
 
                 if isinstance(result, dict):
                     result["source"] = {
@@ -1260,6 +1336,8 @@ def execute_pipeline_run(
 
         with PIPELINE_LOCK:
             state = _get_pipeline_state(session_key)
+            if cancellation_token.is_cancelled():
+                raise OperationCancelled("Pipeline stopped by user")
             state["status"] = "completed"
             state["finished_at"] = datetime.now().isoformat(timespec="seconds")
             state["result"] = result
@@ -1271,7 +1349,29 @@ def execute_pipeline_run(
                 "details": {},
                 "updated_at": datetime.now().isoformat(timespec="seconds"),
             }
+            state["cancellation_requested"] = False
+            _clear_pipeline_cancel_token(session_key)
 
+    except OperationCancelled as exc:
+        with open(log_path, "a", encoding="utf-8", buffering=1) as log_file:
+            with redirect_stdout(log_file), redirect_stderr(log_file):
+                print(f"Pipeline run {run_id} cancelled")
+
+        with PIPELINE_LOCK:
+            state = _get_pipeline_state(session_key)
+            state["status"] = "cancelled"
+            state["finished_at"] = datetime.now().isoformat(timespec="seconds")
+            state["result"] = None
+            state["error"] = None
+            state["cancellation_requested"] = True
+            state["progress"] = {
+                "step": "Cancelled",
+                "percent": 100,
+                "message": str(exc) or "Pipeline stopped by user",
+                "details": {},
+                "updated_at": datetime.now().isoformat(timespec="seconds"),
+            }
+            _clear_pipeline_cancel_token(session_key)
     except Exception as exc:
         with open(log_path, "a", encoding="utf-8", buffering=1) as log_file:
             with redirect_stdout(log_file), redirect_stderr(log_file):
@@ -1280,24 +1380,31 @@ def execute_pipeline_run(
 
         with PIPELINE_LOCK:
             state = _get_pipeline_state(session_key)
-            state["status"] = "failed"
+            if cancellation_token.is_cancelled():
+                state["status"] = "cancelled"
+                state["error"] = None
+                message = "Pipeline stopped by user"
+            else:
+                state["status"] = "failed"
+                state["error"] = str(exc)
+                message = str(exc)
             state["finished_at"] = datetime.now().isoformat(timespec="seconds")
             state["result"] = None
-            state["error"] = str(exc)
             state["progress"] = {
-                "step": "Failed",
+                "step": "Cancelled" if cancellation_token.is_cancelled() else "Failed",
                 "percent": 100,
-                "message": str(exc),
+                "message": message,
                 "details": {},
                 "updated_at": datetime.now().isoformat(timespec="seconds"),
             }
+            state["cancellation_requested"] = cancellation_token.is_cancelled()
+            _clear_pipeline_cancel_token(session_key)
 
 
 def start_pipeline_thread(session_key: str, data: RunPipelineRequest) -> dict:
     with PIPELINE_LOCK:
         if any(
-            state.get("status") == "running"
-            and bool(state.get("thread") and state["thread"].is_alive())
+            bool(state.get("thread") and state["thread"].is_alive())
             for state in PIPELINE_STATES.values()
         ):
             raise HTTPException(
@@ -1319,10 +1426,11 @@ def start_pipeline_thread(session_key: str, data: RunPipelineRequest) -> dict:
         log_path = LOG_DIR / f"pipeline_{run_id}.log"
         payload = data.dict()
         payload["source_mode"] = source_mode
+        cancel_token = _create_pipeline_cancel_token(session_key)
 
         thread = threading.Thread(
             target=execute_pipeline_run,
-            args=(session_key, run_id, payload, batch_size, log_path),
+            args=(session_key, run_id, payload, batch_size, log_path, cancel_token),
             daemon=True,
             name=f"pipeline-{run_id}",
         )
@@ -1337,6 +1445,7 @@ def start_pipeline_thread(session_key: str, data: RunPipelineRequest) -> dict:
         state["payload"] = payload
         state["result"] = None
         state["error"] = None
+        state["cancellation_requested"] = False
         state["integration_mode"] = preflight["mode"]
         state["progress"] = {
             "step": "Queued",
@@ -1844,6 +1953,35 @@ def run_pipeline(
 def pipeline_status(authorization: Optional[str] = Header(default=None)):
     session_key, _ = require_auth_context(authorization)
     return serialize_pipeline_state(session_key)
+
+
+@app.post("/api/pipeline/cancel")
+def cancel_pipeline(authorization: Optional[str] = Header(default=None)):
+    session_key, session = require_auth_context(authorization)
+    state = _get_pipeline_state(session_key)
+    if state.get("status") != "running" and not bool(state.get("thread") and state["thread"].is_alive()):
+        return {
+            "message": "No running pipeline to stop",
+            "status": state.get("status") or "idle",
+            "pipeline": serialize_pipeline_state(session_key),
+        }
+
+    pipeline_state = mark_pipeline_cancelled(
+        session_key,
+        message="Pipeline stop requested",
+    )
+    if serialize_drive_sync_state(session=session, session_key=session_key).get("status") == "syncing":
+        cancel_drive_sync_operation(
+            session,
+            session_key,
+            folder=session.get("selected_drive_folder"),
+            message="Drive staging stopped by pipeline stop request",
+        )
+    return {
+        "message": "Pipeline stop requested",
+        "status": pipeline_state.get("status"),
+        "pipeline": pipeline_state,
+    }
 
 
 @app.get("/api/pipeline/results")

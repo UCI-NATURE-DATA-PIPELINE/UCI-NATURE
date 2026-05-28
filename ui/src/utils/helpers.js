@@ -13,6 +13,8 @@ export function normalizeDriveSyncStatus(value) {
   next.status = String(next.status || "idle").toLowerCase();
   next.discovered_count = Number(next.discovered_count || 0);
   next.downloaded_count = Number(next.downloaded_count || 0);
+  next.discovery_complete = Boolean(next.discovery_complete || next.status === "completed");
+  next.cancellation_requested = Boolean(next.cancellation_requested);
   next.remaining_count = Number(
     next.remaining_count != null
       ? next.remaining_count
@@ -21,7 +23,7 @@ export function normalizeDriveSyncStatus(value) {
   next.progress_percent = Number(
     next.progress_percent != null
       ? next.progress_percent
-      : next.discovered_count
+      : next.discovered_count && (next.discovery_complete || next.status !== "syncing")
         ? Math.round((next.downloaded_count / next.discovered_count) * 100)
         : next.status === "completed"
           ? 100
@@ -146,6 +148,7 @@ export function getPipelineOverallStatusLabel(status) {
   if (state === "running") return "Running";
   if (state === "completed") return "Completed";
   if (state === "failed") return "Failed";
+  if (state === "cancelled" || state === "stopped") return "Stopped";
   return "Idle";
 }
 

@@ -73,7 +73,11 @@ export function createDriveSync(app, api, stateApi, renderApi) {
       renderApi.renderDriveFolderSelection();
       stopDriveSyncPolling();
       const stagedCount = Number(appState.driveSyncState.downloaded_count || appState.driveSyncState.discovered_count || 0);
-      app.showToast(response?.message || `Synced ${stagedCount} image${stagedCount === 1 ? "" : "s"}`, "success");
+      if (appState.driveSyncState.status === "cancelled") {
+        app.showToast("Drive sync stopped", "warn");
+      } else {
+        app.showToast(response?.message || `Synced ${stagedCount} image${stagedCount === 1 ? "" : "s"}`, "success");
+      }
     } catch (error) {
       appState.driveFolderError = error.message || "Unable to sync the selected Drive folder";
       await loadDriveSyncStatus({ silent: true });
@@ -86,7 +90,25 @@ export function createDriveSync(app, api, stateApi, renderApi) {
     }
   }
 
+  async function cancelDriveSync() {
+    if (appState.driveSyncState.status !== "syncing") {
+      app.showToast("No Drive sync is running", "warn");
+      return;
+    }
+    try {
+      const response = await api.cancelDriveSync();
+      stateApi.applyDriveSyncStatus(response?.sync || { ...appState.driveSyncState, status: "cancelled", cancellation_requested: true });
+      renderApi.syncDriveUI();
+      renderApi.renderDriveFolderSelection();
+      stopDriveSyncPolling();
+      app.showToast(response?.message || "Drive sync stop requested", "warn");
+    } catch (error) {
+      app.showToast(error.message || "Unable to stop Drive sync", "warn");
+    }
+  }
+
   return {
+    cancelDriveSync,
     loadDriveSyncStatus,
     startDriveSyncPolling,
     stopDriveSyncPolling,

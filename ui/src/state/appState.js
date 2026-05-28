@@ -36,6 +36,8 @@ export function createEmptyDriveSyncState() {
     // Performance metrics emitted by the backend during a parallel sync.
     failed_count: 0,
     skipped_count: 0,
+    discovery_complete: false,
+    cancellation_requested: false,
     images_per_second: null,
     eta_seconds: null,
     elapsed_seconds: null,

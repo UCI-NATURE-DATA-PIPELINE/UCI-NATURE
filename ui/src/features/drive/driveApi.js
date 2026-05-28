@@ -1,5 +1,6 @@
 /** Drive feature API wrappers around the shared backend client. */
 import {
+  cancelDriveSync,
   getDriveFolders,
   getDriveStatus,
   getDriveSyncStatus,
@@ -14,6 +15,7 @@ export function createDriveApi() {
     getDriveStatus,
     getDriveSyncStatus,
     getSelectedDriveFolder,
+    cancelDriveSync,
     saveSelectedDriveFolder,
     syncSelectedDriveFolder
   };

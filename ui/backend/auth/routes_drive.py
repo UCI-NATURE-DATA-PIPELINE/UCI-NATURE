@@ -9,6 +9,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from ui.backend.auth.routes import get_google_auth_state
+from ui.backend.cancellation import CancellationToken, OperationCancelled
 from ui.backend.services.drive_staging_service import stage_selected_drive_folder
 from ui.backend.services.pipeline_service import resolve_pipeline_staging_dir
 from ui.backend.session_store import read_session, write_session
@@ -30,6 +31,8 @@ DEFAULT_DRIVE_SYNC_STATE = {
     "downloaded_count": 0,
     "failed_count": 0,
     "skipped_count": 0,
+    "discovery_complete": False,
+    "cancellation_requested": False,
     "images_per_second": None,
     "eta_seconds": None,
     "elapsed_seconds": None,
@@ -41,6 +44,7 @@ DEFAULT_DRIVE_SYNC_STATE = {
 }
 DRIVE_SYNC_LOCK = threading.RLock()
 DRIVE_SYNC_STATES: Dict[str, Dict[str, Any]] = {}
+DRIVE_SYNC_CANCEL_TOKENS: Dict[str, CancellationToken] = {}
 
 
 class SelectFolderRequest(BaseModel):
@@ -126,6 +130,23 @@ def _read_active_drive_sync_state(session_key: str) -> Dict[str, Any]:
         return deepcopy(DRIVE_SYNC_STATES.get(session_key) or DEFAULT_DRIVE_SYNC_STATE)
 
 
+def _create_drive_sync_cancel_token(session_key: str) -> CancellationToken:
+    token = CancellationToken()
+    with DRIVE_SYNC_LOCK:
+        DRIVE_SYNC_CANCEL_TOKENS[session_key] = token
+    return token
+
+
+def get_drive_sync_cancel_token(session_key: str) -> Optional[CancellationToken]:
+    with DRIVE_SYNC_LOCK:
+        return DRIVE_SYNC_CANCEL_TOKENS.get(session_key)
+
+
+def _clear_drive_sync_cancel_token(session_key: str) -> None:
+    with DRIVE_SYNC_LOCK:
+        DRIVE_SYNC_CANCEL_TOKENS.pop(session_key, None)
+
+
 def _build_persisted_drive_sync_state(
     *,
     base: Optional[Dict[str, Any]] = None,
@@ -137,6 +158,8 @@ def _build_persisted_drive_sync_state(
     discovered_count: Any = _UNSET,
     downloaded_count: Any = _UNSET,
     current_file: Any = _UNSET,
+    discovery_complete: Any = _UNSET,
+    cancellation_requested: Any = _UNSET,
     staging_dir: Any = _UNSET,
     drive_index_path: Any = _UNSET,
     error: Any = _UNSET,
@@ -155,6 +178,8 @@ def _build_persisted_drive_sync_state(
             "downloaded_count": int(base.get("downloaded_count") or 0),
             "failed_count": int(base.get("failed_count") or 0),
             "skipped_count": int(base.get("skipped_count") or 0),
+            "discovery_complete": bool(base.get("discovery_complete", state["discovery_complete"])),
+            "cancellation_requested": bool(base.get("cancellation_requested", state["cancellation_requested"])),
             "images_per_second": base.get("images_per_second"),
             "eta_seconds": base.get("eta_seconds"),
             "elapsed_seconds": base.get("elapsed_seconds"),
@@ -184,6 +209,10 @@ def _build_persisted_drive_sync_state(
         state["downloaded_count"] = int(downloaded_count)
     if current_file is not _UNSET:
         state["current_file"] = current_file
+    if discovery_complete is not _UNSET:
+        state["discovery_complete"] = bool(discovery_complete)
+    if cancellation_requested is not _UNSET:
+        state["cancellation_requested"] = bool(cancellation_requested)
     if staging_dir is not _UNSET:
         state["staging_dir"] = staging_dir
     if drive_index_path is not _UNSET:
@@ -221,12 +250,15 @@ def reset_drive_sync_state(
         discovered_count=0,
         downloaded_count=0,
         current_file=None,
+        discovery_complete=False,
+        cancellation_requested=False,
         staging_dir=None,
         drive_index_path=None,
         error=None,
         last_sync_message=message,
     )
     _set_active_drive_sync_state(session_key, state)
+    _clear_drive_sync_cancel_token(session_key)
     _persist_drive_sync_state(session, session_key, state)
     return state
 
@@ -248,11 +280,14 @@ def start_drive_sync_operation(
         discovered_count=0,
         downloaded_count=0,
         current_file=None,
+        discovery_complete=False,
+        cancellation_requested=False,
         staging_dir=staging_dir,
         drive_index_path=None,
         error=None,
         last_sync_message=message,
     )
+    _create_drive_sync_cancel_token(session_key)
     _set_active_drive_sync_state(session_key, state)
     _persist_drive_sync_state(session, session_key, state)
     return state
@@ -269,6 +304,7 @@ def update_drive_sync_progress(
     message: str,
     failed_count: Optional[int] = None,
     skipped_count: Optional[int] = None,
+    discovery_complete: Optional[bool] = None,
     images_per_second: Optional[float] = None,
     eta_seconds: Optional[float] = None,
     elapsed_seconds: Optional[float] = None,
@@ -288,6 +324,8 @@ def update_drive_sync_progress(
         updates["failed_count"] = int(failed_count or 0)
     if skipped_count is not None:
         updates["skipped_count"] = int(skipped_count or 0)
+    if discovery_complete is not None:
+        updates["discovery_complete"] = bool(discovery_complete)
     if images_per_second is not None:
         updates["images_per_second"] = float(images_per_second or 0.0)
     if eta_seconds is not None:
@@ -314,6 +352,8 @@ def complete_drive_sync_operation(
         discovered_count=int(sync_result.get("discovered_count") or 0),
         downloaded_count=int(sync_result.get("downloaded_count") or 0),
         current_file=None,
+        discovery_complete=True,
+        cancellation_requested=False,
         staging_dir=sync_result.get("staging_dir"),
         drive_index_path=sync_result.get("drive_index_path"),
         error=None,
@@ -329,6 +369,7 @@ def complete_drive_sync_operation(
         completed_state["elapsed_seconds"] = float(sync_result.get("elapsed_seconds") or 0)
     completed_state["eta_seconds"] = 0.0
     _set_active_drive_sync_state(session_key, completed_state)
+    _clear_drive_sync_cancel_token(session_key)
     _persist_drive_sync_state(session, session_key, completed_state)
     return completed_state
 
@@ -347,12 +388,42 @@ def fail_drive_sync_operation(
         status="failed",
         source_ready=False,
         finished_at=datetime.now().isoformat(timespec="seconds"),
+        cancellation_requested=False,
         error=error,
         last_sync_message=message,
     )
     _set_active_drive_sync_state(session_key, failed_state)
+    _clear_drive_sync_cancel_token(session_key)
     _persist_drive_sync_state(session, session_key, failed_state)
     return failed_state
+
+
+def cancel_drive_sync_operation(
+    session: Dict[str, Any],
+    session_key: str,
+    *,
+    folder: Optional[Dict[str, Any]] = None,
+    message: str = "Drive sync stopped",
+) -> Dict[str, Any]:
+    token = get_drive_sync_cancel_token(session_key)
+    if token:
+        token.cancel()
+
+    selected_folder = folder or session.get("selected_drive_folder") or {}
+    cancelled_state = _build_persisted_drive_sync_state(
+        base=_read_active_drive_sync_state(session_key),
+        folder=selected_folder,
+        status="cancelled",
+        source_ready=False,
+        finished_at=datetime.now().isoformat(timespec="seconds"),
+        current_file=None,
+        cancellation_requested=True,
+        error=None,
+        last_sync_message=message,
+    )
+    _set_active_drive_sync_state(session_key, cancelled_state)
+    _persist_drive_sync_state(session, session_key, cancelled_state)
+    return cancelled_state
 
 
 def serialize_drive_sync_state(
@@ -395,8 +466,9 @@ def serialize_drive_sync_state(
     discovered_count = int(state.get("discovered_count") or 0)
     downloaded_count = int(state.get("downloaded_count") or 0)
     remaining_count = max(discovered_count - downloaded_count, 0)
+    discovery_complete = bool(state.get("discovery_complete") or state.get("status") == "completed")
 
-    if discovered_count > 0:
+    if discovered_count > 0 and (discovery_complete or state.get("status") != "syncing"):
         progress_percent = round((downloaded_count / discovered_count) * 100)
     elif state.get("status") == "completed":
         progress_percent = 100
@@ -421,6 +493,8 @@ def serialize_drive_sync_state(
         "remaining_count": remaining_count,
         "failed_count": failed_count,
         "skipped_count": int(state.get("skipped_count") or 0),
+        "discovery_complete": discovery_complete,
+        "cancellation_requested": bool(state.get("cancellation_requested")),
         "images_per_second": (
             float(images_per_second) if images_per_second is not None else None
         ),
@@ -827,6 +901,26 @@ def get_drive_sync_status(authorization: Optional[str] = Header(default=None)):
     return serialize_drive_sync_state(session=session, session_key=session_key)
 
 
+@router.post("/sync/cancel")
+def cancel_selected_folder_sync(authorization: Optional[str] = Header(default=None)):
+    session_key, session = _require_auth_session(authorization)
+    selected_folder = session.get("selected_drive_folder")
+    state = cancel_drive_sync_operation(
+        session,
+        session_key,
+        folder=selected_folder,
+        message="Drive sync stopped by user",
+    )
+    return {
+        "message": "Drive sync stop requested",
+        "status": state.get("status"),
+        "sync": serialize_drive_sync_state(
+            session=read_session(session_key),
+            session_key=session_key,
+        ),
+    }
+
+
 @router.post("/sync")
 def sync_selected_folder(
     payload: Optional[SyncFolderRequest] = None,
@@ -867,14 +961,20 @@ def sync_selected_folder(
             "into backend staging"
         ),
     )
+    cancel_token = get_drive_sync_cancel_token(session_key)
 
     def progress_callback(progress: Dict[str, Any]) -> None:
         downloaded = int(progress.get("downloaded_count") or 0)
         discovered = int(progress.get("discovered_count") or 0)
         failed = int(progress.get("failed_count") or 0)
         skipped = int(progress.get("already_staged_count") or progress.get("skipped_count") or 0)
+        discovery_complete = bool(progress.get("discovery_complete"))
         message = (
-            f"Downloaded {downloaded} of {discovered} image(s)"
+            (
+                f"Downloaded {downloaded} of total {discovered} image(s)"
+                if discovery_complete
+                else f"Downloaded {downloaded} of {discovered} discovered so far"
+            )
             + (f" · {skipped} skipped" if skipped else "")
             + (f" · {failed} failed" if failed else "")
         )
@@ -888,6 +988,7 @@ def sync_selected_folder(
             message=message,
             failed_count=failed,
             skipped_count=skipped,
+            discovery_complete=discovery_complete,
             images_per_second=progress.get("images_per_second"),
             eta_seconds=progress.get("eta_seconds"),
             elapsed_seconds=progress.get("elapsed_seconds"),
@@ -903,7 +1004,10 @@ def sync_selected_folder(
             staging_dir=resolve_pipeline_staging_dir(),
             max_files=selected_folder.get("max_files"),
             progress_callback=progress_callback,
+            cancellation_token=cancel_token,
         )
+        if cancel_token and cancel_token.is_cancelled():
+            raise OperationCancelled("Drive sync stopped by user")
         complete_drive_sync_operation(
             session,
             session_key,
@@ -914,6 +1018,22 @@ def sync_selected_folder(
                 f"from {selected_folder.get('name') or selected_folder['id']}"
             ),
         )
+    except OperationCancelled:
+        cancel_drive_sync_operation(
+            session,
+            session_key,
+            folder=selected_folder,
+            message="Drive sync stopped by user",
+        )
+        return {
+            "message": "Drive sync stopped",
+            "folder": selected_folder,
+            "sync": serialize_drive_sync_state(
+                session=read_session(session_key),
+                session_key=session_key,
+            ),
+            "result": None,
+        }
     except FileNotFoundError as exc:
         fail_drive_sync_operation(
             session,

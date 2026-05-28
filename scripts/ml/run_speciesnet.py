@@ -16,6 +16,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.ml.speciesnet_parsing import resolve_prediction, safe_float
+from ui.backend.cancellation import raise_if_cancelled
 
 
 STAGING_DIR = Path("data/staging")
@@ -89,6 +90,7 @@ def _track_speciesnet_batch_progress(
     progress_callback: Optional[Callable[[dict], None]],
     total_images: int,
     progress_state: dict[str, int],
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> Iterator[None]:
     if total_images <= 0:
         yield
@@ -104,7 +106,9 @@ def _track_speciesnet_batch_progress(
     progress_lock = threading.Lock()
 
     def wrapped_batch_predict(self, filepaths, imgs):
+        raise_if_cancelled(cancel_check)
         predictions = original_batch_predict(self, filepaths, imgs)
+        raise_if_cancelled(cancel_check)
         with progress_lock:
             progress_state["processed_images"] = min(
                 total_images,
@@ -139,6 +143,7 @@ def run_speciesnet_model(
     geofence: bool = True,
     progress_callback: Optional[Callable[[dict], None]] = None,
     filepaths: Optional[list[str]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> dict:
     staging_dir = Path(staging_dir)
     out_json = Path(out_json)
@@ -146,6 +151,7 @@ def run_speciesnet_model(
     if not staging_dir.exists():
         raise FileNotFoundError(f"Staging directory not found: {staging_dir}")
 
+    raise_if_cancelled(cancel_check)
     if filepaths is not None:
         num_images = len(filepaths)
         print(f"Using explicit filepath list: {num_images} images")
@@ -178,6 +184,7 @@ def run_speciesnet_model(
         out_json.unlink()
         print(f"Removed stale SpeciesNet predictions file: {out_json}")
 
+    raise_if_cancelled(cancel_check)
     try:
         from speciesnet import DEFAULT_MODEL, SpeciesNet
         from speciesnet.utils import prepare_instances_dict
@@ -212,6 +219,8 @@ def run_speciesnet_model(
 
     def emit_heartbeat() -> None:
         while not stop_event.wait(PROGRESS_HEARTBEAT_SECONDS):
+            if cancel_check and cancel_check():
+                return
             current_processed = progress_state["processed_images"]
             _emit_speciesnet_progress(
                 progress_callback,
@@ -229,6 +238,7 @@ def run_speciesnet_model(
         total_images=num_images,
         status_text="Initializing SpeciesNet",
     )
+    raise_if_cancelled(cancel_check)
     heartbeat_thread = threading.Thread(target=emit_heartbeat, daemon=True)
     heartbeat_thread.start()
 
@@ -236,6 +246,7 @@ def run_speciesnet_model(
         progress_callback=progress_callback,
         total_images=num_images,
         progress_state=progress_state,
+        cancel_check=cancel_check,
     ):
         try:
             predictions_dict = model.predict(
@@ -249,6 +260,7 @@ def run_speciesnet_model(
             stop_event.set()
             heartbeat_thread.join(timeout=1)
 
+    raise_if_cancelled(cancel_check)
     _emit_speciesnet_progress(
         progress_callback,
         processed_images=num_images,

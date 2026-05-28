@@ -18,7 +18,7 @@ export function createPipelineActions(app, api, renderApi, loadPipelineStatus, l
     console.log("Running pipeline...");
     const sourceMode = sourceModeOverride || (app.state.uploadTab === "drive" ? "drive" : "local");
     if (app.state.runningModel) {
-      return app.showToast("Pipeline stop is not wired yet. Check the backend status or log file for progress.", "warn");
+      return cancelPipelineRun();
     }
 
     const health = await app.refreshBackendHealth?.({ silent: true });
@@ -58,6 +58,20 @@ export function createPipelineActions(app, api, renderApi, loadPipelineStatus, l
     }
   }
 
+  async function cancelPipelineRun() {
+    if (!app.state.runningModel && app.state.pipelineStatus?.status !== "running") {
+      return app.showToast("No pipeline run is currently active", "warn");
+    }
+    try {
+      const response = await api.cancelPipeline();
+      renderApi.applyPipelineStatus(response?.pipeline || null);
+      app.showToast(response?.message || "Pipeline stop requested", "warn");
+      await loadPipelineStatus({ silent: true });
+    } catch (error) {
+      app.showToast(error.message || "Unable to stop pipeline", "warn");
+    }
+  }
+
   function toggleRunDetail(id) {
     const row = document.getElementById(`rh-detail-${id}`);
     const button = document.getElementById(`rh-btn-${id}`);
@@ -84,6 +98,7 @@ export function createPipelineActions(app, api, renderApi, loadPipelineStatus, l
   }
 
   return {
+    cancelPipelineRun,
     downloadPipelineResult,
     loadPipelineResults,
     toggleDriveRunModel: () => toggleRunModel("drive"),
