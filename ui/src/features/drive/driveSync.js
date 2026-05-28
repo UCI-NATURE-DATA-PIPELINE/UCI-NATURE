@@ -52,10 +52,10 @@ export function createDriveSync(app, api, stateApi, renderApi) {
       return;
     }
 
-    const originalHtml = buttonEl?.innerHTML;
+    const isResume = ["cancelled", "stopped", "paused"].includes(appState.driveSyncState.status);
     if (buttonEl) {
       buttonEl.disabled = true;
-      buttonEl.textContent = "Syncing...";
+      buttonEl.textContent = isResume ? "Resuming..." : "Syncing...";
     }
     appState.driveFolderError = "";
     stateApi.applyDriveSyncStatus({ ...normalizeDriveSyncStatus(null), status: "syncing", source_ready: false, started_at: new Date().toISOString(), folder: { id: appState.selectedDriveFolder.id, name: appState.selectedDriveFolder.name }, selected_folder: appState.selectedDriveFolder, selected_folder_matches: true, staging_dir: appState.driveSyncState.staging_dir || "data/staging", last_sync_message: `Syncing ${appState.selectedDriveFolder.name} into backend staging` });
@@ -73,10 +73,10 @@ export function createDriveSync(app, api, stateApi, renderApi) {
       renderApi.renderDriveFolderSelection();
       stopDriveSyncPolling();
       const stagedCount = Number(appState.driveSyncState.downloaded_count || appState.driveSyncState.discovered_count || 0);
-      if (appState.driveSyncState.status === "cancelled") {
+      if (["cancelled", "stopped", "paused"].includes(appState.driveSyncState.status)) {
         app.showToast("Drive sync stopped", "warn");
       } else {
-        app.showToast(response?.message || `Synced ${stagedCount} image${stagedCount === 1 ? "" : "s"}`, "success");
+        app.showToast(response?.message || `${isResume ? "Resumed sync" : "Synced"} · ${stagedCount} image${stagedCount === 1 ? "" : "s"}`, "success");
       }
     } catch (error) {
       appState.driveFolderError = error.message || "Unable to sync the selected Drive folder";
@@ -85,8 +85,8 @@ export function createDriveSync(app, api, stateApi, renderApi) {
     } finally {
       if (buttonEl) {
         buttonEl.disabled = false;
-        buttonEl.innerHTML = originalHtml || "Sync Now";
       }
+      renderApi.syncDriveSelectionControls?.();
     }
   }
 

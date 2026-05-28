@@ -58,9 +58,10 @@ export function createPipelineActions(app, api, renderApi, loadPipelineStatus, l
     }
   }
 
-  async function cancelPipelineRun() {
+  async function cancelPipelineRun(options = {}) {
     if (!app.state.runningModel && app.state.pipelineStatus?.status !== "running") {
-      return app.showToast("No pipeline run is currently active", "warn");
+      if (!options?.silentNoop) app.showToast("No pipeline run is currently active", "warn");
+      return null;
     }
     try {
       const response = await api.cancelPipeline();

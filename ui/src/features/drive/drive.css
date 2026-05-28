@@ -474,6 +474,7 @@
 
 .drive-input {
   width:100%;
+  min-height:40px;
   border:1.5px solid var(--border);
   border-radius:10px;
   padding:10px 12px;
@@ -600,11 +601,13 @@
 
 .drive-sync-button-wrap {
   display:flex;
-  align-items:flex-end;
+  align-self:start;
+  align-items:center;
   gap:8px;
   flex-wrap:wrap;
   justify-content:flex-end;
   min-width:220px;
+  padding-top:24px;
 }
 
 .drive-sync-quick-btn {
@@ -617,6 +620,13 @@
   padding:0 14px;
   white-space:nowrap;
 }
+
+.drive-sync-quick-btn[hidden],
+.upload-action-bar .upload-action-btns .btn[hidden],
+.upload-action-bar .upload-action-btns .btn-sm[hidden] {
+  display:none !important;
+}
+
 .drive-sync-quick-btn.btn-outline,
 .drive-sync-quick-btn#drive-sync-quick-stop-btn {
   flex:0 0 auto;
@@ -634,7 +644,7 @@
 .upload-action-bar .upload-action-btns .btn,
 .upload-action-bar .upload-action-btns .btn-sm {
   white-space:nowrap;
-  min-height:32px;
+  min-height:36px;
 }
 #drive-sync-stop-btn,
 #drive-sync-clear-btn,
@@ -876,7 +886,12 @@
 }
 
 #upload-drive .drive-main-column > .card:first-child .drive-input {
-  padding:8px 11px;
+  min-height:40px;
+  padding:0 11px;
+}
+
+#upload-drive .drive-main-column > .card:first-child .drive-sync-quick-btn {
+  min-height:40px;
 }
 
 #upload-drive .drive-main-column > .card:first-child .field-label {
@@ -957,6 +972,11 @@
   #upload-drive .drive-main-column > .card:first-child .drive-control-grid,
   #upload-drive .drive-main-column > .card:first-child .drive-top-controls {
     grid-template-columns:1fr;
+  }
+
+  .drive-sync-button-wrap {
+    justify-content:flex-start;
+    padding-top:0;
   }
 
   .upload-queue-item {

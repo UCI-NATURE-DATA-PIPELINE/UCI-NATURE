@@ -9,6 +9,8 @@ import {
 import { normalizeCameraSiteName } from "./cameraSiteName.js";
 
 export function createDriveRender(app, stateApi, utilsApi) {
+  const DRIVE_SYNC_ICON = `<span class="btn-sync-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg></span>`;
+
   function renderDriveManualSelectionFeedback() {
     const feedbackEl = document.getElementById("drive-folder-manual-feedback");
     if (!feedbackEl) return;
@@ -29,8 +31,11 @@ export function createDriveRender(app, stateApi, utilsApi) {
     const detectedEl = document.getElementById("drive-site-detected");
     const autoCardEl = document.getElementById("drive-site-auto-card");
     const helperPathEl = document.getElementById("drive-site-helper-path");
-    const disabled = appState.driveSyncState.status === "syncing" || !appState.googleAuthActive || !appState.driveConnected;
-    const canSync = Boolean(appState.googleAuthActive && appState.driveConnected && appState.selectedDriveFolder?.id && appState.driveSyncState.status !== "syncing");
+    const syncStatus = appState.driveSyncState.status || "idle";
+    const isSyncing = syncStatus === "syncing";
+    const isStopped = ["cancelled", "stopped", "paused"].includes(syncStatus);
+    const disabled = isSyncing || !appState.googleAuthActive || !appState.driveConnected;
+    const canSync = Boolean(appState.googleAuthActive && appState.driveConnected && appState.selectedDriveFolder?.id && !isSyncing);
 
     // Auto-detect default camera site from the selected Drive folder name.
     const detectedFromFolder = normalizeCameraSiteName(appState.selectedDriveFolder?.name || "");
@@ -72,20 +77,30 @@ export function createDriveRender(app, stateApi, utilsApi) {
       appState.driveSyncState.source_ready ||
       appState.driveSyncState.downloaded_count ||
       appState.driveSyncState.discovered_count ||
-      ["completed", "failed", "cancelled"].includes(appState.driveSyncState.status)
+      ["completed", "failed", "cancelled", "stopped", "paused"].includes(syncStatus)
     );
-    if (quickSyncBtn) quickSyncBtn.disabled = !canSync;
-    if (syncBtn) syncBtn.disabled = !canSync;
+    const syncLabel = isStopped ? "Resume" : "Sync now";
+    const setSyncButton = (button) => {
+      if (!button) return;
+      button.hidden = isSyncing;
+      button.disabled = !canSync;
+      if (button.dataset.syncLabel !== syncLabel) {
+        button.innerHTML = `${DRIVE_SYNC_ICON}${syncLabel}`;
+        button.dataset.syncLabel = syncLabel;
+      }
+    };
+    setSyncButton(quickSyncBtn);
+    setSyncButton(syncBtn);
     if (quickStopBtn) {
-      quickStopBtn.hidden = appState.driveSyncState.status !== "syncing";
+      quickStopBtn.hidden = !isSyncing;
       quickStopBtn.disabled = appState.driveSyncState.cancellation_requested;
     }
     if (stopBtn) {
-      stopBtn.hidden = appState.driveSyncState.status !== "syncing";
+      stopBtn.hidden = !isSyncing;
       stopBtn.disabled = appState.driveSyncState.cancellation_requested;
     }
     if (clearBtn) {
-      clearBtn.disabled = appState.driveSyncState.status === "syncing" || !hasStagedDriveState;
+      clearBtn.disabled = isSyncing || !hasStagedDriveState;
     }
     if (refreshStatusBtn) refreshStatusBtn.disabled = !appState.googleAuthActive && !appState.selectedDriveFolder?.id;
     syncDriveCustomSiteState(disabled);
@@ -232,7 +247,7 @@ export function createDriveRender(app, stateApi, utilsApi) {
     }
     else if (stateApi.isDriveSourceReady()) sub.textContent = `${queuePresentation.completeText}${appState.selectedDriveFolder.id ? ` · ID ${appState.selectedDriveFolder.id}` : ""}`;
     else if (appState.driveSyncState.status === "failed") sub.textContent = appState.driveSyncState.error || "The last Drive sync failed. Run Pipeline can retry backend staging, or you can sync again first.";
-    else if (appState.driveSyncState.status === "cancelled") sub.textContent = "Drive sync was stopped. Sync again when you are ready.";
+    else if (["cancelled", "stopped", "paused"].includes(appState.driveSyncState.status)) sub.textContent = "Stopped. Resume when ready.";
     else sub.textContent = `Selected Drive folder${appState.selectedDriveFolder.id ? ` · ID ${appState.selectedDriveFolder.id}` : ""} · Run Pipeline will fetch it on the backend if needed`;
   }
 
@@ -257,7 +272,8 @@ export function createDriveRender(app, stateApi, utilsApi) {
     const readyCount = displayDone || syncedCount || totalCount || 0;
     const limitReached = requestedTotal > 0 && displayTotal > 0 && displayDone >= displayTotal;
     const hasSelectedFolder = Boolean(appState.selectedDriveFolder?.name);
-    const isReady = stateApi.isDriveSourceReady() || syncStatus === "completed" || limitReached;
+    const isStopped = ["cancelled", "stopped", "paused"].includes(syncStatus);
+    const isReady = !isStopped && (stateApi.isDriveSourceReady() || syncStatus === "completed" || limitReached);
     const hasAnyStagedFiles = syncedCount > 0;
     const appliedLimitLabel = formatDriveSyncLimitLabel(appState.selectedDriveFolder?.max_files ?? appState.driveSyncLimit);
     const stagingDir = appState.driveSyncState.staging_dir || "processing cache";
@@ -271,10 +287,13 @@ export function createDriveRender(app, stateApi, utilsApi) {
     if (hasSelectedFolder && !appState.googleAuthActive) queueMeta = "Google Drive source · Connect Google Drive to sync";
     else if (hasSelectedFolder && !appState.driveConnected) queueMeta = "Google Drive source · Confirm Drive connection to sync";
     else if (syncStatus === "syncing") queueMeta = isReady ? completeText : syncingText;
+    else if (isStopped) queueMeta = "Stopped. Resume when ready.";
     else if (hasSelectedFolder) queueMeta = `Google Drive source · ${appliedLimitLabel}`;
 
     const queueCount = syncStatus === "syncing"
       ? isReady ? `${formatNumber(readyCount)} files ready` : syncingText
+      : isStopped
+        ? "Stopped. Resume when ready."
       : isReady || hasAnyStagedFiles
         ? `${formatNumber(readyCount)} files ready`
         : "No sync started yet";
@@ -291,10 +310,8 @@ export function createDriveRender(app, stateApi, utilsApi) {
         ? totalCount
           ? `Sync failed after ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} files`
           : "Sync failed · refresh status or try again"
-        : syncStatus === "cancelled"
-          ? totalCount
-            ? `Sync stopped after ${formatNumber(displayDone)} files`
-            : "Sync stopped"
+        : isStopped
+          ? "Stopped. Resume when ready."
         : isReady
           ? completeText
           : hasAnyStagedFiles
@@ -311,8 +328,8 @@ export function createDriveRender(app, stateApi, utilsApi) {
       ? isReady ? completeText : syncingText
       : syncStatus === "failed"
         ? appState.driveSyncState.error || "Retry sync or confirm the selected folder."
-        : syncStatus === "cancelled"
-          ? "Drive sync was stopped. Sync again to refresh the processing cache."
+        : isStopped
+          ? "Stopped. Resume when ready."
         : isReady
           ? completeText
           : hasSelectedFolder
@@ -323,8 +340,8 @@ export function createDriveRender(app, stateApi, utilsApi) {
       ? `Completed ${formatTimestampLabel(appState.driveSyncState.finished_at)} · ${formatNumber(syncedCount)} files ready`
       : syncStatus === "failed"
         ? appState.driveSyncState.error || "Failed. Refresh status or try again."
-        : syncStatus === "cancelled"
-          ? `Stopped ${appState.driveSyncState.finished_at ? formatTimestampLabel(appState.driveSyncState.finished_at) : ""}`.trim()
+        : isStopped
+          ? "Stopped. Resume when ready."
         : syncStatus === "syncing"
           ? isReady ? completeText : syncingText
           : appState.driveSyncState.last_sync_message || "No completed Drive sync yet. Results will appear here after the first run.";
@@ -351,6 +368,7 @@ export function createDriveRender(app, stateApi, utilsApi) {
       queueTag: appState.driveCameraLocation || "—",
       stagingDir,
       syncStatus,
+      isStopped,
       syncedCount,
       totalCount,
       discoveryComplete,
@@ -429,7 +447,7 @@ export function createDriveRender(app, stateApi, utilsApi) {
       ? queuePresentation.isReady ? "Complete" : "Syncing"
       : queuePresentation.syncStatus === "failed"
         ? "Failed"
-        : queuePresentation.syncStatus === "cancelled"
+        : queuePresentation.isStopped
           ? "Stopped"
         : queuePresentation.isReady
           ? `Ready · ${formatNumber(syncedCount || totalCount || 0)} files`
@@ -496,7 +514,7 @@ export function createDriveRender(app, stateApi, utilsApi) {
     if (statusSub) statusSub.textContent = queuePresentation.hiddenStatusSub;
     if (statusPill) {
       statusPill.className = `status-pill ${usePlaceholderQueue || queuePresentation.isReady ? "pill-green" : syncStatus === "syncing" ? "pill-yellow" : syncStatus === "failed" ? "pill-red" : "pill-slate"}`;
-      statusPill.textContent = usePlaceholderQueue || queuePresentation.isReady ? "✓ Complete" : syncStatus === "syncing" ? "Syncing..." : syncStatus === "failed" ? "Failed" : syncStatus === "cancelled" ? "Stopped" : "Idle";
+      statusPill.textContent = usePlaceholderQueue || queuePresentation.isReady ? "✓ Complete" : syncStatus === "syncing" ? "Syncing..." : syncStatus === "failed" ? "Failed" : queuePresentation.isStopped ? "Stopped" : "Idle";
     }
     if (progressFill) {
       progressFill.className = `queue-prog-fill drive-queue-prog-fill${usePlaceholderQueue ? " done" : queuePresentation.progressTone ? ` ${queuePresentation.progressTone}` : ""}`;
@@ -504,7 +522,7 @@ export function createDriveRender(app, stateApi, utilsApi) {
     }
     if (progressPct) progressPct.textContent = `${usePlaceholderQueue ? 100 : syncPercent}%`;
     if (syncLimitSummary) syncLimitSummary.textContent = appliedLimitLabel;
-    if (stagingSummary) stagingSummary.textContent = `${queuePresentation.stagingDir} · ${queuePresentation.isReady ? "ready" : syncStatus === "syncing" ? "syncing" : syncStatus === "failed" ? "needs attention" : "not ready"}`;
+    if (stagingSummary) stagingSummary.textContent = `${queuePresentation.stagingDir} · ${queuePresentation.isReady ? "ready" : syncStatus === "syncing" ? "syncing" : syncStatus === "failed" ? "needs attention" : queuePresentation.isStopped ? "stopped" : "not ready"}`;
     if (currentFile) currentFile.textContent = appState.driveSyncState.current_file || "—";
     const lastSyncTitle = document.getElementById("drive-last-sync-title");
     const lastSyncMeta = document.getElementById("drive-last-sync-meta");
@@ -558,7 +576,7 @@ export function createDriveRender(app, stateApi, utilsApi) {
         ? "SYNCING"
         : syncStatus === "failed"
           ? "FAILED"
-          : syncStatus === "cancelled"
+          : queuePresentation.isStopped
             ? "STOPPED"
             : "IDLE";
     const statusTone = queuePresentation.isReady

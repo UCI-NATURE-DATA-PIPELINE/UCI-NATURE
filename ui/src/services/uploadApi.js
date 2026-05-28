@@ -15,13 +15,26 @@ function getStoredAuthToken() {
   }
 }
 
-function sendFormData(url, formData, onProgress) {
+function sendFormData(url, formData, onProgress, signal) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener?.("abort", abortUpload);
+      fn(value);
+    };
+    const abortUpload = () => xhr.abort();
+    if (signal?.aborted) {
+      reject(new Error("Upload cancelled."));
+      return;
+    }
     xhr.open("POST", url);
     xhr.timeout = UPLOAD_TIMEOUT_MS;
     const token = getStoredAuthToken();
     if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    signal?.addEventListener?.("abort", abortUpload, { once: true });
 
     xhr.upload.addEventListener("progress", (event) => {
       if (typeof onProgress !== "function") return;
@@ -38,16 +51,16 @@ function sendFormData(url, formData, onProgress) {
         payload = null;
       }
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(payload || {});
+        finish(resolve, payload || {});
         return;
       }
       const message = (payload && (payload.detail || payload.message))
         || `Upload failed with status ${xhr.status}`;
-      reject(new Error(message));
+      finish(reject, new Error(message));
     });
-    xhr.addEventListener("error", () => reject(new Error("Network error during upload. Is the backend running?")));
-    xhr.addEventListener("timeout", () => reject(new Error("Upload timed out. Try a smaller batch or check the backend.")));
-    xhr.addEventListener("abort", () => reject(new Error("Upload cancelled.")));
+    xhr.addEventListener("error", () => finish(reject, new Error("Network error during upload. Is the backend running?")));
+    xhr.addEventListener("timeout", () => finish(reject, new Error("Upload timed out. Try a smaller batch or check the backend.")));
+    xhr.addEventListener("abort", () => finish(reject, new Error("Upload cancelled.")));
 
     xhr.send(formData);
   });
@@ -62,7 +75,7 @@ function sendFormData(url, formData, onProgress) {
  * @param {(progress: { loaded:number, total:number, percent:number }) => void} [options.onProgress]
  * @returns {Promise<object>} - Backend JSON payload describing saved/skipped files.
  */
-export function uploadStagedImages(files, { cameraLocation = "", onProgress } = {}) {
+export function uploadStagedImages(files, { cameraLocation = "", onProgress, signal } = {}) {
   const fileArray = Array.from(files || []);
   if (!fileArray.length) {
     return Promise.reject(new Error("No files were selected for upload."));
@@ -73,7 +86,7 @@ export function uploadStagedImages(files, { cameraLocation = "", onProgress } = 
   if (normalizedCameraLocation) formData.append("camera_location", normalizedCameraLocation);
   // NOTE: Do not set Content-Type manually for FormData -- the browser must
   // generate the multipart boundary for FastAPI to parse the request.
-  return sendFormData(`${API_BASE}/upload/images`, formData, onProgress);
+  return sendFormData(`${API_BASE}/upload/images`, formData, onProgress, signal);
 }
 
 /**
@@ -86,11 +99,11 @@ export function uploadStagedImages(files, { cameraLocation = "", onProgress } = 
  * @param {(progress: { loaded:number, total:number, percent:number }) => void} [options.onProgress]
  * @returns {Promise<object>} - Backend JSON payload describing saved/skipped files.
  */
-export function uploadStagedZip(zipFile, { cameraLocation = "", onProgress } = {}) {
+export function uploadStagedZip(zipFile, { cameraLocation = "", onProgress, signal } = {}) {
   if (!zipFile) return Promise.reject(new Error("No ZIP file was selected."));
   const formData = new FormData();
   formData.append("archive", zipFile, zipFile.name);
   const normalizedCameraLocation = normalizeCameraSiteName(cameraLocation);
   if (normalizedCameraLocation) formData.append("camera_location", normalizedCameraLocation);
-  return sendFormData(`${API_BASE}/upload/zip`, formData, onProgress);
+  return sendFormData(`${API_BASE}/upload/zip`, formData, onProgress, signal);
 }

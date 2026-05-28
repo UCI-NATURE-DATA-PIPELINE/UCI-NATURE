@@ -22,6 +22,7 @@ import { normalizeCameraSiteName } from "./cameraSiteName.js";
 
 const ACCEPTED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".tif", ".tiff"];
 const COLLAPSE_THRESHOLD = 10;
+const QUEUE_BUTTON_ICON = `<span class="btn-icon btn-icon-upload" style="margin-right:5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></span>`;
 let nextBatchId = 1;
 
 function lower(name) {
@@ -302,10 +303,13 @@ export function createManualUploadFlow(app) {
     batches: [],           // Upload batch objects; each has its own camera site.
     selectedBatchId: "",
     isUploading: false,
+    cancelRequested: false,
+    stopped: false,
     progress: 0,           // 0..100, combined
     error: "",
     lastResult: null,      // merged backend payload
-    listExpanded: false
+    listExpanded: false,
+    _uploadAbortController: null
   };
 
   let bound = false;
@@ -412,6 +416,7 @@ export function createManualUploadFlow(app) {
 
   function statusLabel() {
     if (state.isUploading) return "Uploading";
+    if (state.stopped) return "Stopped";
     if (state.error) return "Error";
     if (state.lastResult) return "Uploaded";
     return "Ready";
@@ -446,6 +451,8 @@ export function createManualUploadFlow(app) {
       if (totalKnownImages()) parts.push(`${totalImageLabel()} image(s)`);
       if (state.isUploading) {
         els.meta.textContent = `Uploading… ${state.progress}%`;
+      } else if (state.stopped) {
+        els.meta.textContent = "Stopped. Resume when ready.";
       } else if (state.lastResult && !totalQueueCount()) {
         const c = state.lastResult.uploaded_count ?? 0;
         els.meta.textContent = `${c} file(s) saved · ${formatBytes(state.lastResult.total_bytes || 0)}`;
@@ -458,6 +465,8 @@ export function createManualUploadFlow(app) {
     if (els.barInfo) {
       if (state.isUploading) {
         els.barInfo.innerHTML = `Queueing <strong>${totalQueueCount()} upload${totalQueueCount() === 1 ? "" : "s"}</strong> for processing… ${state.progress}%`;
+      } else if (state.stopped) {
+        els.barInfo.textContent = "Stopped. Resume when ready.";
       } else if (state.lastResult && !totalQueueCount()) {
         const c = state.lastResult.uploaded_count ?? 0;
         const skipped = state.lastResult.skipped_count || 0;
@@ -670,6 +679,8 @@ export function createManualUploadFlow(app) {
       ? state.error
       : state.isUploading
         ? `Uploading ${state.progress}%`
+        : state.stopped
+          ? "Stopped. Resume when ready."
         : state.lastResult
           ? `${state.lastResult.uploaded_count || 0} image(s) staged`
           : fileCount
@@ -699,6 +710,10 @@ export function createManualUploadFlow(app) {
       ? (state.lastResult.uploaded_count || 0)
       : state.isUploading
         ? Math.round((state.progress / 100) * totalImages)
+        : state.stopped
+          ? state.batches
+              .filter((batch) => batch.status === "uploaded")
+              .reduce((sum, batch) => sum + (Number(batch.imageCount) || 0), 0)
         : 0;
     const percent = Math.max(0, Math.min(100, Math.round(state.progress || (state.lastResult ? 100 : 0))));
     const fill = document.getElementById("upload-progress-fill");
@@ -742,7 +757,9 @@ export function createManualUploadFlow(app) {
     set("upload-progress-type", uploadTypeLabel());
     const remaining = state.isUploading
       ? Math.max(0, totalImages - done)
-      : (totalImages && !state.lastResult ? totalImages : 0);
+      : state.stopped
+        ? Math.max(0, totalImages - done)
+        : (totalImages && !state.lastResult ? totalImages : 0);
     set("upload-progress-remaining", remaining ? String(remaining) : (state.lastResult ? "0" : "—"));
     set("upload-progress-updated",
       state.lastResult ? "Just now" : state.isUploading ? "Live" : (fileCount ? "Just now" : "—")
@@ -759,14 +776,20 @@ export function createManualUploadFlow(app) {
     const missingSite = state.batches.some((batch) => !normalizeBatchSite(batch));
     const hasPending = state.batches.some((batch) => batch.status !== "uploaded");
     if (els.startBtn) {
+      const startLabel = state.stopped ? "Resume" : "Queue for Processing";
+      els.startBtn.hidden = state.isUploading;
       els.startBtn.disabled = state.isUploading || !totalQueueCount() || backendDown || missingSite || !hasPending;
+      if (els.startBtn.dataset.uploadLabel !== startLabel) {
+        els.startBtn.innerHTML = `${QUEUE_BUTTON_ICON}${startLabel}`;
+        els.startBtn.dataset.uploadLabel = startLabel;
+      }
       els.startBtn.title = missingSite && totalQueueCount()
         ? "Every upload needs a camera site name before queueing."
         : "";
     }
     if (els.clearBtn) {
       els.clearBtn.disabled = state.isUploading
-        || (!totalQueueCount() && !state.lastResult && !state.error);
+        || (!totalQueueCount() && !state.lastResult && !state.error && !state.stopped);
     }
     // Stop button mirrors the Drive sync Stop: visible only while an upload
     // is in flight, hidden once idle / done / error. The click handler
@@ -790,6 +813,14 @@ export function createManualUploadFlow(app) {
           ? "Fix the issue above and try the upload again."
           : "Backend is not connected. Please start the backend and try again.";
       }
+      return;
+    }
+    if (state.stopped) {
+      els.result.hidden = false;
+      els.result.classList.remove("upload-result-success");
+      els.result.classList.remove("upload-result-error");
+      if (els.resultMessage) els.resultMessage.textContent = "Stopped. Resume when ready.";
+      if (els.resultDetails) els.resultDetails.textContent = "Queued files stay in place until you resume or clear them.";
       return;
     }
     if (state.lastResult) {
@@ -854,6 +885,8 @@ export function createManualUploadFlow(app) {
 
     state.error = "";
     state.lastResult = null;
+    state.stopped = false;
+    state.cancelRequested = false;
     state.progress = 0;
     if (startingNewBatch) state.batches = [];
     state.batches = state.batches.concat(uniqueBatches);
@@ -881,6 +914,10 @@ export function createManualUploadFlow(app) {
     state.selectedBatchId = "";
     state.error = "";
     state.lastResult = null;
+    state.stopped = false;
+    state.cancelRequested = false;
+    state._uploadAbortController?.abort?.();
+    state._uploadAbortController = null;
     state.progress = 0;
     state.listExpanded = false;
     render();
@@ -922,11 +959,15 @@ export function createManualUploadFlow(app) {
       return;
     }
     state.isUploading = true;
+    state.cancelRequested = false;
+    state.stopped = false;
     state.progress = 0;
     state.error = "";
     state.lastResult = null;
     state._uploadStartedAt = Date.now();
     state._uploadEndedAt = null;
+    const uploadAbortController = new AbortController();
+    state._uploadAbortController = uploadAbortController;
     render();
 
     // Each batch gets an equal slice of overall progress so unrelated
@@ -935,6 +976,7 @@ export function createManualUploadFlow(app) {
     let stepIndex = 0;
 
     function reportStepProgress(batch, percent) {
+      if (state.cancelRequested) return;
       const safe = Math.max(0, Math.min(100, Number(percent) || 0));
       const stepShare = totalSteps > 0 ? 100 / totalSteps : 100;
       const overall = Math.round(stepIndex * stepShare + (safe / 100) * stepShare);
@@ -947,6 +989,7 @@ export function createManualUploadFlow(app) {
     const partials = [];
     try {
       for (const batch of pendingBatches) {
+        if (state.cancelRequested) break;
         batch.status = "uploading";
         batch.progress = 0;
         batch.error = "";
@@ -954,17 +997,33 @@ export function createManualUploadFlow(app) {
         const result = batch.type === "zip"
           ? await uploadStagedZip(batch.files[0], {
             cameraLocation: batch.cameraLocation,
-            onProgress: ({ percent }) => reportStepProgress(batch, percent)
+            onProgress: ({ percent }) => reportStepProgress(batch, percent),
+            signal: uploadAbortController.signal
           })
           : await uploadStagedImages(batch.files, {
             cameraLocation: batch.cameraLocation,
-            onProgress: ({ percent }) => reportStepProgress(batch, percent)
+            onProgress: ({ percent }) => reportStepProgress(batch, percent),
+            signal: uploadAbortController.signal
           });
+        if (state.cancelRequested) {
+          batch.status = "pending";
+          batch.progress = 0;
+          batch.error = "";
+          state.stopped = true;
+          break;
+        }
         batch.status = "uploaded";
         batch.progress = 100;
         batch.result = result;
         partials.push(result);
         stepIndex += 1;
+      }
+
+      if (state.cancelRequested) {
+        state.stopped = true;
+        state.error = "";
+        state.lastResult = null;
+        return;
       }
 
       const merged = mergeResults(...partials);
@@ -973,16 +1032,31 @@ export function createManualUploadFlow(app) {
       app.showToast(`Queue complete · ${merged.uploaded_count} image(s) staged`, "success");
     } catch (error) {
       const message = error?.message || "Upload failed";
-      state.error = message;
-      const uploading = state.batches.find((batch) => batch.status === "uploading");
-      if (uploading) {
-        uploading.status = "error";
-        uploading.error = message;
+      if (state.cancelRequested || message === "Upload cancelled.") {
+        state.stopped = true;
+        state.error = "";
+        state.lastResult = null;
+        const uploading = state.batches.find((batch) => batch.status === "uploading");
+        if (uploading) {
+          uploading.status = "pending";
+          uploading.progress = 0;
+          uploading.error = "";
+        }
+      } else {
+        state.error = message;
+        const uploading = state.batches.find((batch) => batch.status === "uploading");
+        if (uploading) {
+          uploading.status = "error";
+          uploading.error = message;
+        }
+        app.showToast(message, "warn");
       }
-      app.showToast(message, "warn");
     } finally {
       state.isUploading = false;
       state._uploadEndedAt = Date.now();
+      if (state._uploadAbortController === uploadAbortController) {
+        state._uploadAbortController = null;
+      }
       render();
     }
   }
@@ -1177,6 +1251,10 @@ export function createManualUploadFlow(app) {
     if (state.selectedBatchId === batchId) state.selectedBatchId = state.batches[0]?.id || "";
     state.error = "";
     state.lastResult = null;
+    if (!state.batches.length) {
+      state.stopped = false;
+      state.cancelRequested = false;
+    }
     render();
   }
 
@@ -1261,23 +1339,28 @@ export function createManualUploadFlow(app) {
   // queue/UI returns to a clean idle state.
   async function cancelManualUpload() {
     if (!state.isUploading) return;
+    state.cancelRequested = true;
+    state.stopped = true;
+    state.error = "";
+    state._uploadAbortController?.abort?.();
+    state.batches.forEach((batch) => {
+      if (batch.status === "uploading") {
+        batch.status = "pending";
+        batch.progress = 0;
+        batch.error = "";
+      }
+    });
+    state.isUploading = false;
+    render();
     try {
       if (typeof app.features?.pipeline?.cancelPipelineRun === "function") {
-        await app.features.pipeline.cancelPipelineRun();
+        await app.features.pipeline.cancelPipelineRun({ silentNoop: true });
       }
     } catch (error) {
       console.warn("Manual upload cancel failed:", error);
     }
-    state.isUploading = false;
-    state.error = state.error || "Upload stopped by user.";
-    state.batches.forEach((batch) => {
-      if (batch.status === "uploading") {
-        batch.status = "error";
-        batch.error = "Stopped by user";
-      }
-    });
     render();
-    app.showToast?.("Upload stopped.", "warn");
+    app.showToast?.("Upload stopped. Resume when ready.", "warn");
   }
 
   return { initialize, refresh, startUpload, clearFiles, cancelManualUpload };
