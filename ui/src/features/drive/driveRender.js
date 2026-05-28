@@ -234,6 +234,14 @@ export function createDriveRender(app, stateApi, utilsApi) {
     const syncedCount = syncStatus === "completed" && !downloadedCount ? discoveredCount : downloadedCount;
     const totalCount = discoveredCount || syncedCount || 0;
     const discoveryComplete = Boolean(appState.driveSyncState.discovery_complete || syncStatus === "completed");
+    const requestedTotal = Number(appState.driveSyncState.requested_total || 0);
+    // Denominator the *card* should display:
+    //   - listing in progress + limit set → the requested target
+    //   - listing in progress + no limit  → discovered-so-far (will read as "discovering…")
+    //   - listing done                    → the real discovered total
+    const denominatorForDisplay = !discoveryComplete && requestedTotal > 0
+      ? requestedTotal
+      : totalCount;
     const hasSelectedFolder = Boolean(appState.selectedDriveFolder?.name);
     const isReady = stateApi.isDriveSourceReady() || syncStatus === "completed";
     const hasAnyStagedFiles = syncedCount > 0;
@@ -261,8 +269,10 @@ export function createDriveRender(app, stateApi, utilsApi) {
 
     const actionText = syncStatus === "syncing"
       ? discoveryComplete
-        ? `Downloaded ${formatNumber(syncedCount)} of total ${formatNumber(totalCount)}`
-        : `Downloaded ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} discovered so far`
+        ? `Downloaded ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} total`
+        : requestedTotal > 0
+          ? `Downloaded ${formatNumber(syncedCount)} of ${formatNumber(requestedTotal)} requested · ${formatNumber(totalCount)} discovered so far`
+          : `Discovering and downloading… ${formatNumber(syncedCount)} downloaded, ${formatNumber(totalCount)} discovered so far`
       : syncStatus === "failed"
         ? totalCount
           ? `Sync failed after ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} files`
@@ -285,8 +295,10 @@ export function createDriveRender(app, stateApi, utilsApi) {
 
     const hiddenStatusSub = syncStatus === "syncing"
       ? discoveryComplete
-        ? `Downloaded ${formatNumber(syncedCount)} of total ${formatNumber(totalCount)} image(s) into the ${stagingDir}`
-        : `Discovering and downloading... Downloaded ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} discovered so far`
+        ? `Downloaded ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} total image(s) into the ${stagingDir}`
+        : requestedTotal > 0
+          ? `Downloaded ${formatNumber(syncedCount)} of ${formatNumber(requestedTotal)} requested · ${formatNumber(totalCount)} discovered so far`
+          : `Discovering and downloading… ${formatNumber(syncedCount)} downloaded, ${formatNumber(totalCount)} discovered so far`
       : syncStatus === "failed"
         ? appState.driveSyncState.error || "Retry sync or confirm the selected folder."
         : syncStatus === "cancelled"
@@ -330,7 +342,9 @@ export function createDriveRender(app, stateApi, utilsApi) {
       syncStatus,
       syncedCount,
       totalCount,
-      discoveryComplete
+      discoveryComplete,
+      requestedTotal,
+      denominatorForDisplay
     };
   }
 
@@ -583,14 +597,21 @@ export function createDriveRender(app, stateApi, utilsApi) {
     }
     set("drive-progress-pct", `${percent}%`);
     set("drive-progress-synced", formatNumber(synced));
-    set("drive-progress-total", formatNumber(total));
+    // While listing is still running and a sync limit was set, the progress
+    // bar's denominator is the requested target; otherwise it's the real
+    // discovered total. This matches the percent the user sees.
+    const denominator = queuePresentation.denominatorForDisplay || total;
+    set("drive-progress-total", formatNumber(denominator));
 
-    // Stats grid
+    // Stats grid — make it explicit what each number means.
+    const requestedTotal = Number(queuePresentation.requestedTotal || 0);
     set(
       "drive-progress-downloaded-total",
       syncStatus === "syncing" && !discoveryComplete
-        ? `${formatNumber(synced)} / ${formatNumber(total)} discovered so far`
-        : `${formatNumber(synced)} / ${formatNumber(total)}`
+        ? requestedTotal > 0
+          ? `${formatNumber(synced)} of ${formatNumber(requestedTotal)} requested · ${formatNumber(total)} discovered so far`
+          : `${formatNumber(synced)} downloaded · ${formatNumber(total)} discovered so far`
+        : `${formatNumber(synced)} of ${formatNumber(total)} total`
     );
     set(
       "drive-progress-ips",

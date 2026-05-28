@@ -945,6 +945,17 @@ def stage_selected_drive_folder(
         if discovery_complete and ips > 0 and remaining > 0:
             eta_seconds = remaining / ips
 
+        # `requested_total` is the user's sync_limit (0 = "all files"). The UI
+        # uses this as the progress denominator while listing is still in
+        # progress, so a 5,000-file sync doesn't briefly look 98% done just
+        # because the first 2,294 files have been discovered.
+        requested_total_int = 0
+        if max_files is not None:
+            try:
+                requested_total_int = max(0, int(max_files))
+            except (TypeError, ValueError):
+                requested_total_int = 0
+
         _emit_progress(
             progress_callback,
             {
@@ -960,6 +971,7 @@ def stage_selected_drive_folder(
                 "already_staged_count": current_skipped_count,
                 "skipped_count": current_skipped_count,
                 "discovery_complete": discovery_complete,
+                "requested_total": requested_total_int,
                 "staged_count": current_staged_count,
                 "remaining_count": remaining,
                 "images_per_second": round(ips, 2),

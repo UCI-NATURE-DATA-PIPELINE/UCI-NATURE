@@ -601,12 +601,49 @@
 .drive-sync-button-wrap {
   display:flex;
   align-items:flex-end;
+  gap:8px;
+  flex-wrap:nowrap;
+  min-width:0;
 }
 
+/* Primary Sync now sits on the left and grows; Stop is fixed-width on the
+   right. min-width:0 lets them shrink without forcing a wrap. */
 .drive-sync-quick-btn {
-  width:100%;
+  flex:1 1 auto;
+  min-width:0;
+  width:auto;
   justify-content:center;
+  align-items:center;
   min-height:40px;
+  padding:0 14px;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+  overflow:hidden;
+}
+/* Stop is secondary — fixed reasonable width so the primary keeps full text. */
+.drive-sync-quick-btn.btn-outline,
+.drive-sync-quick-btn#drive-sync-quick-stop-btn {
+  flex:0 0 auto;
+  min-width:84px;
+  padding:0 14px;
+}
+
+/* Bottom action bar matches the new top row — same gap, no wrap before
+   needed, equal min-heights. Existing .upload-action-btns already exists. */
+.upload-action-bar .upload-action-btns {
+  gap:8px;
+  flex-wrap:nowrap;
+}
+.upload-action-bar .upload-action-btns .btn,
+.upload-action-bar .upload-action-btns .btn-sm {
+  white-space:nowrap;
+  min-height:32px;
+}
+#drive-sync-stop-btn,
+#upload-stop-btn {
+  /* Keep Stop visually like a secondary action even when its sibling is the
+     primary blue Sync/Queue button. */
+  min-width:72px;
 }
 
 .drive-site-create-row {

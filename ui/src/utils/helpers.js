@@ -15,19 +15,33 @@ export function normalizeDriveSyncStatus(value) {
   next.downloaded_count = Number(next.downloaded_count || 0);
   next.discovery_complete = Boolean(next.discovery_complete || next.status === "completed");
   next.cancellation_requested = Boolean(next.cancellation_requested);
+  next.requested_total = Math.max(0, Number(next.requested_total || 0));
+  // Remaining: prefer the requested target during discovery, the real
+  // discovered total after listing completes.
   next.remaining_count = Number(
     next.remaining_count != null
       ? next.remaining_count
-      : Math.max(next.discovered_count - next.downloaded_count, 0)
+      : next.discovery_complete
+        ? Math.max(next.discovered_count - next.downloaded_count, 0)
+        : next.requested_total > 0
+          ? Math.max(next.requested_total - next.downloaded_count, 0)
+          : Math.max(next.discovered_count - next.downloaded_count, 0)
   );
+  // Progress percent rules:
+  //   discovery done                → downloaded / discovered
+  //   discovery in progress + limit → downloaded / requested_total
+  //   discovery in progress + no limit → 0 (indeterminate; UI shows
+  //                                         "Discovering and downloading...")
+  let computedPercent = 0;
+  if (next.status === "completed") {
+    computedPercent = 100;
+  } else if (next.discovery_complete && next.discovered_count > 0) {
+    computedPercent = Math.round((next.downloaded_count / next.discovered_count) * 100);
+  } else if (!next.discovery_complete && next.requested_total > 0) {
+    computedPercent = Math.round((next.downloaded_count / next.requested_total) * 100);
+  }
   next.progress_percent = Number(
-    next.progress_percent != null
-      ? next.progress_percent
-      : next.discovered_count && (next.discovery_complete || next.status !== "syncing")
-        ? Math.round((next.downloaded_count / next.discovered_count) * 100)
-        : next.status === "completed"
-          ? 100
-          : 0
+    next.progress_percent != null ? next.progress_percent : computedPercent
   );
   next.selected_folder_matches = Boolean(
     next.selected_folder_matches != null

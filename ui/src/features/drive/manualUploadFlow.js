@@ -329,6 +329,7 @@ export function createManualUploadFlow(app) {
       barInfo: getById("upload-action-bar-info"),
       startBtn: getById("upload-start-btn"),
       clearBtn: getById("upload-clear-btn"),
+      stopBtn: getById("upload-stop-btn"),
       result: getById("upload-result-card"),
       resultMessage: getById("upload-result-message"),
       resultDetails: getById("upload-result-details"),
@@ -766,6 +767,13 @@ export function createManualUploadFlow(app) {
     if (els.clearBtn) {
       els.clearBtn.disabled = state.isUploading
         || (!totalQueueCount() && !state.lastResult && !state.error);
+    }
+    // Stop button mirrors the Drive sync Stop: visible only while an upload
+    // is in flight, hidden once idle / done / error. The click handler
+    // (cancelManualUpload) reuses the existing pipeline cancel route.
+    if (els.stopBtn) {
+      els.stopBtn.hidden = !state.isUploading;
+      els.stopBtn.disabled = !state.isUploading;
     }
   }
 
@@ -1248,5 +1256,29 @@ export function createManualUploadFlow(app) {
     render();
   }
 
-  return { initialize, refresh, startUpload, clearFiles };
+  // Stop a running manual upload. Cancels any in-flight pipeline run via
+  // the existing /api/pipeline/cancel route, then flips local state so the
+  // queue/UI returns to a clean idle state.
+  async function cancelManualUpload() {
+    if (!state.isUploading) return;
+    try {
+      if (typeof app.features?.pipeline?.cancelPipelineRun === "function") {
+        await app.features.pipeline.cancelPipelineRun();
+      }
+    } catch (error) {
+      console.warn("Manual upload cancel failed:", error);
+    }
+    state.isUploading = false;
+    state.error = state.error || "Upload stopped by user.";
+    state.batches.forEach((batch) => {
+      if (batch.status === "uploading") {
+        batch.status = "error";
+        batch.error = "Stopped by user";
+      }
+    });
+    render();
+    app.showToast?.("Upload stopped.", "warn");
+  }
+
+  return { initialize, refresh, startUpload, clearFiles, cancelManualUpload };
 }

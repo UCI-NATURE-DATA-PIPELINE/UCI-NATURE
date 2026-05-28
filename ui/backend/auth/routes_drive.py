@@ -33,6 +33,7 @@ DEFAULT_DRIVE_SYNC_STATE = {
     "skipped_count": 0,
     "discovery_complete": False,
     "cancellation_requested": False,
+    "requested_total": 0,
     "images_per_second": None,
     "eta_seconds": None,
     "elapsed_seconds": None,
@@ -180,6 +181,7 @@ def _build_persisted_drive_sync_state(
             "skipped_count": int(base.get("skipped_count") or 0),
             "discovery_complete": bool(base.get("discovery_complete", state["discovery_complete"])),
             "cancellation_requested": bool(base.get("cancellation_requested", state["cancellation_requested"])),
+            "requested_total": int(base.get("requested_total") or 0),
             "images_per_second": base.get("images_per_second"),
             "eta_seconds": base.get("eta_seconds"),
             "elapsed_seconds": base.get("elapsed_seconds"),
@@ -270,6 +272,7 @@ def start_drive_sync_operation(
     folder: Dict[str, Any],
     message: str,
     staging_dir: Optional[str] = None,
+    requested_total: int = 0,
 ) -> Dict[str, Any]:
     state = _build_persisted_drive_sync_state(
         folder=folder,
@@ -287,6 +290,7 @@ def start_drive_sync_operation(
         error=None,
         last_sync_message=message,
     )
+    state["requested_total"] = max(0, int(requested_total or 0))
     _create_drive_sync_cancel_token(session_key)
     _set_active_drive_sync_state(session_key, state)
     _persist_drive_sync_state(session, session_key, state)
@@ -305,6 +309,7 @@ def update_drive_sync_progress(
     failed_count: Optional[int] = None,
     skipped_count: Optional[int] = None,
     discovery_complete: Optional[bool] = None,
+    requested_total: Optional[int] = None,
     images_per_second: Optional[float] = None,
     eta_seconds: Optional[float] = None,
     elapsed_seconds: Optional[float] = None,
@@ -326,6 +331,8 @@ def update_drive_sync_progress(
         updates["skipped_count"] = int(skipped_count or 0)
     if discovery_complete is not None:
         updates["discovery_complete"] = bool(discovery_complete)
+    if requested_total is not None:
+        updates["requested_total"] = max(0, int(requested_total or 0))
     if images_per_second is not None:
         updates["images_per_second"] = float(images_per_second or 0.0)
     if eta_seconds is not None:
@@ -465,15 +472,35 @@ def serialize_drive_sync_state(
     )
     discovered_count = int(state.get("discovered_count") or 0)
     downloaded_count = int(state.get("downloaded_count") or 0)
-    remaining_count = max(discovered_count - downloaded_count, 0)
     discovery_complete = bool(state.get("discovery_complete") or state.get("status") == "completed")
+    requested_total = int(state.get("requested_total") or 0)
 
-    if discovered_count > 0 and (discovery_complete or state.get("status") != "syncing"):
+    # Progress denominator rules:
+    #   1. Discovery done            → downloaded / discovered  (real ratio)
+    #   2. Discovery in progress
+    #         AND requested_total>0  → downloaded / requested_total
+    #                                   (so a 5,000-cap sync doesn't jump to
+    #                                    98% just because we've only listed
+    #                                    2,294 images so far)
+    #   3. Discovery in progress
+    #         AND no limit           → 0  (indeterminate; the UI shows
+    #                                      "Discovering and downloading...")
+    if discovery_complete and discovered_count > 0:
         progress_percent = round((downloaded_count / discovered_count) * 100)
     elif state.get("status") == "completed":
         progress_percent = 100
+    elif not discovery_complete and requested_total > 0:
+        progress_percent = round((downloaded_count / requested_total) * 100)
     else:
         progress_percent = 0
+
+    # Remaining: prefer requested target during discovery, real total after.
+    if discovery_complete:
+        remaining_count = max(discovered_count - downloaded_count, 0)
+    elif requested_total > 0:
+        remaining_count = max(requested_total - downloaded_count, 0)
+    else:
+        remaining_count = max(discovered_count - downloaded_count, 0)
 
     failed_count = int(state.get("failed_count") or 0)
     images_per_second = state.get("images_per_second")
@@ -495,6 +522,7 @@ def serialize_drive_sync_state(
         "skipped_count": int(state.get("skipped_count") or 0),
         "discovery_complete": discovery_complete,
         "cancellation_requested": bool(state.get("cancellation_requested")),
+        "requested_total": requested_total,
         "images_per_second": (
             float(images_per_second) if images_per_second is not None else None
         ),
@@ -951,11 +979,17 @@ def sync_selected_folder(
     session["selected_drive_folder"] = selected_folder
     write_session(session, session_key)
 
+    requested_total_for_start = 0
+    try:
+        requested_total_for_start = max(0, int(selected_folder.get("max_files") or 0))
+    except (TypeError, ValueError):
+        requested_total_for_start = 0
     start_drive_sync_operation(
         session,
         session_key,
         folder=selected_folder,
         staging_dir=str(resolve_pipeline_staging_dir()),
+        requested_total=requested_total_for_start,
         message=(
             f"Syncing {selected_folder.get('name') or selected_folder['id']} "
             "into backend staging"
@@ -969,15 +1003,27 @@ def sync_selected_folder(
         failed = int(progress.get("failed_count") or 0)
         skipped = int(progress.get("already_staged_count") or progress.get("skipped_count") or 0)
         discovery_complete = bool(progress.get("discovery_complete"))
-        message = (
-            (
-                f"Downloaded {downloaded} of total {discovered} image(s)"
-                if discovery_complete
-                else f"Downloaded {downloaded} of {discovered} discovered so far"
+        requested_total = int(progress.get("requested_total") or 0)
+        # Pick a sensible message: while listing is still in progress we
+        # talk about the *requested* target if the user set one, else just
+        # say "discovering and downloading". After listing completes we
+        # know the real total.
+        if discovery_complete:
+            message = f"Downloaded {downloaded} of total {discovered} image(s)"
+        elif requested_total > 0:
+            message = (
+                f"Downloaded {downloaded} of {requested_total} requested"
+                f" · {discovered} discovered so far"
             )
-            + (f" · {skipped} skipped" if skipped else "")
-            + (f" · {failed} failed" if failed else "")
-        )
+        else:
+            message = (
+                f"Discovering and downloading… {downloaded} downloaded,"
+                f" {discovered} discovered so far"
+            )
+        if skipped:
+            message += f" · {skipped} skipped"
+        if failed:
+            message += f" · {failed} failed"
         update_drive_sync_progress(
             session_key,
             folder=selected_folder,
@@ -989,6 +1035,7 @@ def sync_selected_folder(
             failed_count=failed,
             skipped_count=skipped,
             discovery_complete=discovery_complete,
+            requested_total=requested_total,
             images_per_second=progress.get("images_per_second"),
             eta_seconds=progress.get("eta_seconds"),
             elapsed_seconds=progress.get("elapsed_seconds"),

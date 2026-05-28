@@ -38,6 +38,10 @@ export function createEmptyDriveSyncState() {
     skipped_count: 0,
     discovery_complete: false,
     cancellation_requested: false,
+    // The user's selected sync limit ("All files" → 0). Used as the
+    // progress denominator while discovery is still in progress so the
+    // percent reflects progress toward the requested target.
+    requested_total: 0,
     images_per_second: null,
     eta_seconds: null,
     elapsed_seconds: null,
