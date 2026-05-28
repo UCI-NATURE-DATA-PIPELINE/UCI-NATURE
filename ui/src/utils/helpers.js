@@ -11,7 +11,11 @@ export function normalizeDriveSyncStatus(value) {
   next.folder = next.folder || null;
   next.selected_folder = next.selected_folder || null;
   next.status = String(next.status || "idle").toLowerCase();
+  next.available_count = Number(next.available_count || 0);
   next.discovered_count = Number(next.discovered_count || 0);
+  if (!next.available_count && next.discovered_count) {
+    next.available_count = next.discovered_count;
+  }
   next.downloaded_count = Number(next.downloaded_count || 0);
   next.discovery_complete = Boolean(next.discovery_complete || next.status === "completed");
   next.cancellation_requested = Boolean(next.cancellation_requested);
@@ -21,11 +25,22 @@ export function normalizeDriveSyncStatus(value) {
   next.remaining_count = Number(
     next.remaining_count != null
       ? next.remaining_count
-      : next.discovery_complete
+      : next.requested_total > 0
+        ? Math.max(
+            (next.discovery_complete && next.discovered_count > 0
+              ? Math.min(next.requested_total, next.discovered_count)
+              : next.requested_total) -
+              Math.min(
+                next.downloaded_count,
+                next.discovery_complete && next.discovered_count > 0
+                  ? Math.min(next.requested_total, next.discovered_count)
+                  : next.requested_total
+              ),
+            0
+          )
+        : next.discovery_complete
         ? Math.max(next.discovered_count - next.downloaded_count, 0)
-        : next.requested_total > 0
-          ? Math.max(next.requested_total - next.downloaded_count, 0)
-          : Math.max(next.discovered_count - next.downloaded_count, 0)
+        : Math.max(next.discovered_count - next.downloaded_count, 0)
   );
   // Progress percent rules:
   //   discovery done                → downloaded / discovered
@@ -33,16 +48,22 @@ export function normalizeDriveSyncStatus(value) {
   //   discovery in progress + no limit → 0 (indeterminate; UI shows
   //                                         "Discovering and downloading...")
   let computedPercent = 0;
-  if (next.status === "completed") {
+  if (next.requested_total > 0) {
+    const progressTarget = next.discovery_complete && next.discovered_count > 0
+      ? Math.min(next.requested_total, next.discovered_count)
+      : next.requested_total;
+    computedPercent = progressTarget > 0
+      ? Math.round((Math.min(next.downloaded_count, progressTarget) / progressTarget) * 100)
+      : 0;
+  } else if (next.status === "completed") {
     computedPercent = 100;
   } else if (next.discovery_complete && next.discovered_count > 0) {
     computedPercent = Math.round((next.downloaded_count / next.discovered_count) * 100);
-  } else if (!next.discovery_complete && next.requested_total > 0) {
-    computedPercent = Math.round((next.downloaded_count / next.requested_total) * 100);
   }
   next.progress_percent = Number(
     next.progress_percent != null ? next.progress_percent : computedPercent
   );
+  next.progress_percent = Math.max(0, Math.min(100, next.progress_percent));
   next.selected_folder_matches = Boolean(
     next.selected_folder_matches != null
       ? next.selected_folder_matches

@@ -107,8 +107,26 @@ export function createDriveSync(app, api, stateApi, renderApi) {
     }
   }
 
+  async function clearDriveSync() {
+    if (appState.driveSyncState.status === "syncing") {
+      app.showToast("Stop the current Drive sync before clearing staged files", "warn");
+      return;
+    }
+    try {
+      const response = await api.clearDriveSync();
+      stateApi.applyDriveSyncStatus(response?.sync || null);
+      renderApi.syncDriveUI();
+      renderApi.renderDriveFolderSelection();
+      stopDriveSyncPolling();
+      app.showToast(response?.message || "Drive staged files cleared", "success");
+    } catch (error) {
+      app.showToast(error.message || "Unable to clear Drive staged files", "warn");
+    }
+  }
+
   return {
     cancelDriveSync,
+    clearDriveSync,
     loadDriveSyncStatus,
     startDriveSyncPolling,
     stopDriveSyncPolling,

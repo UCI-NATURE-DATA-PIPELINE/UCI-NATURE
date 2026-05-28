@@ -66,7 +66,14 @@ export function createDriveRender(app, stateApi, utilsApi) {
     const quickStopBtn = document.getElementById("drive-sync-quick-stop-btn");
     const syncBtn = document.getElementById("drive-sync-btn");
     const stopBtn = document.getElementById("drive-sync-stop-btn");
+    const clearBtn = document.getElementById("drive-sync-clear-btn");
     const refreshStatusBtn = document.getElementById("drive-check-source-btn");
+    const hasStagedDriveState = Boolean(
+      appState.driveSyncState.source_ready ||
+      appState.driveSyncState.downloaded_count ||
+      appState.driveSyncState.discovered_count ||
+      ["completed", "failed", "cancelled"].includes(appState.driveSyncState.status)
+    );
     if (quickSyncBtn) quickSyncBtn.disabled = !canSync;
     if (syncBtn) syncBtn.disabled = !canSync;
     if (quickStopBtn) {
@@ -76,6 +83,9 @@ export function createDriveRender(app, stateApi, utilsApi) {
     if (stopBtn) {
       stopBtn.hidden = appState.driveSyncState.status !== "syncing";
       stopBtn.disabled = appState.driveSyncState.cancellation_requested;
+    }
+    if (clearBtn) {
+      clearBtn.disabled = appState.driveSyncState.status === "syncing" || !hasStagedDriveState;
     }
     if (refreshStatusBtn) refreshStatusBtn.disabled = !appState.googleAuthActive && !appState.selectedDriveFolder?.id;
     syncDriveCustomSiteState(disabled);
@@ -216,12 +226,11 @@ export function createDriveRender(app, stateApi, utilsApi) {
     }
 
     title.textContent = `Google Drive: ${appState.selectedDriveFolder.name}`;
+    const queuePresentation = getDriveQueuePresentation();
     if (appState.driveSyncState.status === "syncing") {
-      sub.textContent = appState.driveSyncState.discovery_complete
-        ? `Downloaded ${formatNumber(appState.driveSyncState.downloaded_count)} of total ${formatNumber(appState.driveSyncState.discovered_count || 0)} image(s) into the processing cache`
-        : `Discovering and downloading... Downloaded ${formatNumber(appState.driveSyncState.downloaded_count)} of ${formatNumber(appState.driveSyncState.discovered_count || 0)} discovered so far`;
+      sub.textContent = queuePresentation.actionText;
     }
-    else if (stateApi.isDriveSourceReady()) sub.textContent = `Source ready · ${formatNumber(appState.driveSyncState.downloaded_count || appState.driveSyncState.discovered_count)} image(s) ready for processing${appState.selectedDriveFolder.id ? ` · ID ${appState.selectedDriveFolder.id}` : ""}`;
+    else if (stateApi.isDriveSourceReady()) sub.textContent = `Source ready · Ready for processing: ${formatNumber(queuePresentation.syncedCount || queuePresentation.totalCount)} files${appState.selectedDriveFolder.id ? ` · ID ${appState.selectedDriveFolder.id}` : ""}`;
     else if (appState.driveSyncState.status === "failed") sub.textContent = appState.driveSyncState.error || "The last Drive sync failed. Run Pipeline can retry backend staging, or you can sync again first.";
     else if (appState.driveSyncState.status === "cancelled") sub.textContent = "Drive sync was stopped. Sync again when you are ready.";
     else sub.textContent = `Selected Drive folder${appState.selectedDriveFolder.id ? ` · ID ${appState.selectedDriveFolder.id}` : ""} · Run Pipeline will fetch it on the backend if needed`;
@@ -231,16 +240,25 @@ export function createDriveRender(app, stateApi, utilsApi) {
     const syncStatus = appState.driveSyncState.status || "idle";
     const downloadedCount = Number(appState.driveSyncState.downloaded_count || 0);
     const discoveredCount = Number(appState.driveSyncState.discovered_count || 0);
+    const availableCount = Number(appState.driveSyncState.available_count || discoveredCount || 0);
     const syncedCount = syncStatus === "completed" && !downloadedCount ? discoveredCount : downloadedCount;
     const totalCount = discoveredCount || syncedCount || 0;
     const discoveryComplete = Boolean(appState.driveSyncState.discovery_complete || syncStatus === "completed");
     const requestedTotal = Number(appState.driveSyncState.requested_total || 0);
+    const requestedTargetForDisplay = requestedTotal > 0
+      ? discoveryComplete && totalCount > 0
+        ? Math.min(requestedTotal, totalCount)
+        : requestedTotal
+      : totalCount;
+    const syncedForRequestedDisplay = requestedTotal > 0
+      ? Math.min(syncedCount, requestedTargetForDisplay || requestedTotal)
+      : syncedCount;
+    const readyForProcessingText = `Ready for processing: ${formatNumber(syncedCount)} files`;
     // Denominator the *card* should display:
-    //   - listing in progress + limit set → the requested target
-    //   - listing in progress + no limit  → discovered-so-far (will read as "discovering…")
-    //   - listing done                    → the real discovered total
-    const denominatorForDisplay = !discoveryComplete && requestedTotal > 0
-      ? requestedTotal
+    //   - limit set      → the requested target, capped if the folder has fewer
+    //   - no limit       → discovered/target count
+    const denominatorForDisplay = requestedTotal > 0
+      ? requestedTargetForDisplay
       : totalCount;
     const hasSelectedFolder = Boolean(appState.selectedDriveFolder?.name);
     const isReady = stateApi.isDriveSourceReady() || syncStatus === "completed";
@@ -269,9 +287,11 @@ export function createDriveRender(app, stateApi, utilsApi) {
 
     const actionText = syncStatus === "syncing"
       ? discoveryComplete
-        ? `Downloaded ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} total`
+        ? requestedTotal > 0
+          ? `Downloaded ${formatNumber(syncedForRequestedDisplay)} of ${formatNumber(requestedTargetForDisplay)} requested · ${readyForProcessingText}`
+          : `Downloaded ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} total`
         : requestedTotal > 0
-          ? `Downloaded ${formatNumber(syncedCount)} of ${formatNumber(requestedTotal)} requested · ${formatNumber(totalCount)} discovered so far`
+          ? `Downloaded ${formatNumber(syncedForRequestedDisplay)} of ${formatNumber(requestedTotal)} requested · ${formatNumber(availableCount)} discovered so far · ${readyForProcessingText}`
           : `Discovering and downloading… ${formatNumber(syncedCount)} downloaded, ${formatNumber(totalCount)} discovered so far`
       : syncStatus === "failed"
         ? totalCount
@@ -282,7 +302,7 @@ export function createDriveRender(app, stateApi, utilsApi) {
             ? `Sync stopped after ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} discovered files`
             : "Sync stopped"
         : isReady
-          ? `${formatNumber(syncedCount)} files ready for processing`
+          ? readyForProcessingText
           : hasAnyStagedFiles
             ? `${formatNumber(syncedCount)} files ready · refresh status`
             : !hasSelectedFolder
@@ -295,16 +315,18 @@ export function createDriveRender(app, stateApi, utilsApi) {
 
     const hiddenStatusSub = syncStatus === "syncing"
       ? discoveryComplete
-        ? `Downloaded ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} total image(s) into the ${stagingDir}`
+        ? requestedTotal > 0
+          ? `Downloaded ${formatNumber(syncedForRequestedDisplay)} of ${formatNumber(requestedTargetForDisplay)} requested into the ${stagingDir}. ${readyForProcessingText}.`
+          : `Downloaded ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} total image(s) into the ${stagingDir}`
         : requestedTotal > 0
-          ? `Downloaded ${formatNumber(syncedCount)} of ${formatNumber(requestedTotal)} requested · ${formatNumber(totalCount)} discovered so far`
+          ? `Downloaded ${formatNumber(syncedForRequestedDisplay)} of ${formatNumber(requestedTotal)} requested · ${formatNumber(availableCount)} discovered so far · ${readyForProcessingText}`
           : `Discovering and downloading… ${formatNumber(syncedCount)} downloaded, ${formatNumber(totalCount)} discovered so far`
       : syncStatus === "failed"
         ? appState.driveSyncState.error || "Retry sync or confirm the selected folder."
         : syncStatus === "cancelled"
           ? "Drive sync was stopped. Sync again to refresh the processing cache."
         : isReady
-          ? `${formatNumber(syncedCount)} image(s) ready in the ${stagingDir}`
+          ? `${readyForProcessingText} in the ${stagingDir}`
           : hasSelectedFolder
             ? `Selected folder saved with ${appliedLimitLabel}`
             : "Choose a folder, set a camera site if needed, then sync it into the processing cache.";
@@ -317,8 +339,12 @@ export function createDriveRender(app, stateApi, utilsApi) {
           ? `Stopped ${appState.driveSyncState.finished_at ? formatTimestampLabel(appState.driveSyncState.finished_at) : ""}`.trim()
         : syncStatus === "syncing"
           ? discoveryComplete
-            ? `Sync in progress · downloaded ${formatNumber(syncedCount)} of total ${formatNumber(totalCount)} files`
-            : `Discovering and downloading... Downloaded ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} discovered so far`
+            ? requestedTotal > 0
+              ? `Sync in progress · downloaded ${formatNumber(syncedForRequestedDisplay)} of ${formatNumber(requestedTargetForDisplay)} requested`
+              : `Sync in progress · downloaded ${formatNumber(syncedCount)} of total ${formatNumber(totalCount)} files`
+            : requestedTotal > 0
+              ? `Discovering and downloading... Downloaded ${formatNumber(syncedForRequestedDisplay)} of ${formatNumber(requestedTotal)} requested · ${formatNumber(availableCount)} discovered so far`
+              : `Discovering and downloading... Downloaded ${formatNumber(syncedCount)} of ${formatNumber(totalCount)} discovered so far`
           : appState.driveSyncState.last_sync_message || "No completed Drive sync yet. Results will appear here after the first run.";
 
     const rawPercent = Number(appState.driveSyncState.progress_percent || 0);
@@ -342,9 +368,13 @@ export function createDriveRender(app, stateApi, utilsApi) {
       syncStatus,
       syncedCount,
       totalCount,
+      availableCount,
       discoveryComplete,
       requestedTotal,
-      denominatorForDisplay
+      denominatorForDisplay,
+      readyForProcessingText,
+      requestedTargetForDisplay,
+      syncedForRequestedDisplay
     };
   }
 
@@ -364,15 +394,13 @@ export function createDriveRender(app, stateApi, utilsApi) {
       if (!appState.googleAuthActive || !appState.driveConnected) {
         helperText = "Connect Google Drive to use Drive import.";
       } else if (appState.driveSyncState.status === "syncing") {
-        helperText = appState.driveSyncState.discovery_complete
-          ? `Downloaded ${formatNumber(appState.driveSyncState.downloaded_count)} of total ${formatNumber(appState.driveSyncState.discovered_count || 0)} image(s) from ${appState.selectedDriveFolder?.name || "the selected folder"}...`
-          : `Discovering and downloading... Downloaded ${formatNumber(appState.driveSyncState.downloaded_count)} of ${formatNumber(appState.driveSyncState.discovered_count || 0)} discovered so far`;
+        helperText = queuePresentation.actionText;
       } else if (appState.driveFoldersLoading) {
         helperText = "Loading folders from Google Drive…";
       } else if (appState.driveFolderError) {
         helperText = appState.driveFolderError;
       } else if (stateApi.isDriveSourceReady()) {
-        helperText = `Source ready. ${formatNumber(appState.driveSyncState.downloaded_count || appState.driveSyncState.discovered_count)} image(s) are ready for processing.`;
+        helperText = `Source ready. ${queuePresentation.readyForProcessingText}.`;
       } else if (appState.selectedDriveFolder?.name) {
         helperText = "This folder is saved. Sync it here to prepare the remote source before processing.";
       }
@@ -416,14 +444,16 @@ export function createDriveRender(app, stateApi, utilsApi) {
     const connectionStatus = appState.driveConnected ? "Connected" : appState.googleAuthActive ? "Confirm Drive" : "Connect Google Drive";
     const lastSyncStatus = queuePresentation.syncStatus === "syncing"
       ? queuePresentation.discoveryComplete
-        ? `Downloaded ${formatNumber(syncedCount)} / ${formatNumber(totalCount || syncedCount || 0)}`
+        ? queuePresentation.requestedTotal > 0
+          ? `Downloaded ${formatNumber(queuePresentation.syncedForRequestedDisplay)} / ${formatNumber(queuePresentation.requestedTargetForDisplay)} requested`
+          : `Downloaded ${formatNumber(syncedCount)} / ${formatNumber(totalCount || syncedCount || 0)}`
         : `${formatNumber(syncedCount)} / ${formatNumber(totalCount || syncedCount || 0)} discovered`
       : queuePresentation.syncStatus === "failed"
         ? "Failed"
         : queuePresentation.syncStatus === "cancelled"
           ? "Stopped"
         : queuePresentation.isReady
-          ? "Ready"
+          ? `Ready · ${formatNumber(syncedCount || totalCount || 0)} files`
           : "Idle";
     if (syncSummaryFolder) syncSummaryFolder.textContent = appState.selectedDriveFolder?.name || "None";
     if (syncSummarySite) syncSummarySite.textContent = appState.driveCameraLocation || "—";
@@ -480,8 +510,12 @@ export function createDriveRender(app, stateApi, utilsApi) {
           ? `<strong>${formatNumber(queuePresentation.syncedCount || queuePresentation.totalCount || 0)} files</strong> ready for processing`
           : syncStatus === "syncing"
             ? queuePresentation.discoveryComplete
-              ? `Downloaded <strong>${formatNumber(queuePresentation.syncedCount)}</strong> of total <strong>${formatNumber(queuePresentation.totalCount)}</strong>`
-              : `Discovering and downloading... Downloaded <strong>${formatNumber(queuePresentation.syncedCount)}</strong> of <strong>${formatNumber(queuePresentation.totalCount)}</strong> discovered so far`
+              ? queuePresentation.requestedTotal > 0
+                ? `Downloaded <strong>${formatNumber(queuePresentation.syncedForRequestedDisplay)}</strong> of <strong>${formatNumber(queuePresentation.requestedTargetForDisplay)}</strong> requested · ${queuePresentation.readyForProcessingText}`
+                : `Downloaded <strong>${formatNumber(queuePresentation.syncedCount)}</strong> of total <strong>${formatNumber(queuePresentation.totalCount)}</strong>`
+              : queuePresentation.requestedTotal > 0
+                ? `Discovering and downloading... Downloaded <strong>${formatNumber(queuePresentation.syncedForRequestedDisplay)}</strong> of <strong>${formatNumber(queuePresentation.requestedTotal)}</strong> requested · <strong>${formatNumber(queuePresentation.availableCount)}</strong> discovered so far`
+                : `Discovering and downloading... Downloaded <strong>${formatNumber(queuePresentation.syncedCount)}</strong> of <strong>${formatNumber(queuePresentation.totalCount)}</strong> discovered so far`
             : queuePresentation.actionText;
     }
     if (statusSub) statusSub.textContent = queuePresentation.hiddenStatusSub;
@@ -514,6 +548,7 @@ export function createDriveRender(app, stateApi, utilsApi) {
     const syncStatus = queuePresentation.syncStatus;
     const synced = queuePresentation.syncedCount || 0;
     const total = queuePresentation.totalCount || 0;
+    const available = queuePresentation.availableCount || total;
     const remaining = Math.max(0, total - synced);
     const percent = queuePresentation.progressPercent;
     const discoveryComplete = Boolean(queuePresentation.discoveryComplete);
@@ -609,8 +644,10 @@ export function createDriveRender(app, stateApi, utilsApi) {
       "drive-progress-downloaded-total",
       syncStatus === "syncing" && !discoveryComplete
         ? requestedTotal > 0
-          ? `${formatNumber(synced)} of ${formatNumber(requestedTotal)} requested · ${formatNumber(total)} discovered so far`
-          : `${formatNumber(synced)} downloaded · ${formatNumber(total)} discovered so far`
+          ? `${formatNumber(queuePresentation.syncedForRequestedDisplay)} of ${formatNumber(requestedTotal)} requested · ${formatNumber(available)} discovered so far`
+          : `${formatNumber(synced)} downloaded · ${formatNumber(available)} discovered so far`
+        : requestedTotal > 0
+          ? `${formatNumber(queuePresentation.syncedForRequestedDisplay)} of ${formatNumber(queuePresentation.requestedTargetForDisplay)} requested · ${queuePresentation.readyForProcessingText}`
         : `${formatNumber(synced)} of ${formatNumber(total)} total`
     );
     set(

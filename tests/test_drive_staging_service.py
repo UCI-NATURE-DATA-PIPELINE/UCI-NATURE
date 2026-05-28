@@ -227,6 +227,75 @@ class DriveStagingServiceTests(unittest.TestCase):
             self.assertEqual(second_result["newly_downloaded_count"], 0)
             self.assertEqual(second_result["already_staged_count"], 2)
 
+    def test_sync_limit_prunes_existing_staged_files_beyond_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files = [
+                _file_info("file-1", "one.jpg"),
+                _file_info("file-2", "two.jpg"),
+                _file_info("file-3", "three.jpg"),
+            ]
+
+            def fake_iter(_drive_service, _folder_id, *, seen_folders=None, stats=None):
+                if seen_folders is not None:
+                    seen_folders.add("folder-root")
+                if stats is not None:
+                    stats["folders_scanned"] = 1
+                    stats["files_scanned"] = len(files)
+                    stats["images_discovered"] = len(files)
+                    stats["first_image_names"] = [str(item["file_name"]) for item in files]
+                yield from files
+
+            def fake_download(_drive_service, _file_id, out_path: Path):
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_bytes(b"image")
+
+            with (
+                mock.patch.object(service, "REPO_ROOT", tmp_path),
+                mock.patch.object(service, "_build_drive_service", return_value=_FakeDriveService(page_token="token-1")),
+                mock.patch.object(service, "_make_drive_service_factory", return_value=lambda: _FakeDriveService()),
+                mock.patch.object(service, "_resolve_selected_drive_folder", return_value=_resolved_folder()),
+                mock.patch.object(service, "_iter_selected_folder_images", side_effect=fake_iter),
+                mock.patch.object(service, "_download_file", side_effect=fake_download),
+            ):
+                first_result = service.stage_selected_drive_folder(
+                    access_token="access-token",
+                    refresh_token=None,
+                    folder_id="folder-root",
+                    folder_name="Camera Folder",
+                    staging_dir="data/staging",
+                    drive_index_path=Path("data/outputs/drive_index.csv"),
+                    max_files=None,
+                )
+
+            self.assertEqual(first_result["downloaded_count"], 3)
+            self.assertTrue((tmp_path / "data" / "staging" / "file-3__three.jpg").exists())
+
+            with (
+                mock.patch.object(service, "REPO_ROOT", tmp_path),
+                mock.patch.object(service, "_build_drive_service", return_value=_FakeDriveService(page_token="token-2")),
+                mock.patch.object(service, "_make_drive_service_factory", return_value=lambda: _FakeDriveService()),
+                mock.patch.object(service, "_resolve_selected_drive_folder", return_value=_resolved_folder()),
+                mock.patch.object(service, "_download_file", side_effect=AssertionError("download should be skipped")),
+                mock.patch.object(service, "_iter_selected_folder_images", side_effect=AssertionError("listing should be cached")),
+            ):
+                limited_result = service.stage_selected_drive_folder(
+                    access_token="access-token",
+                    refresh_token=None,
+                    folder_id="folder-root",
+                    folder_name="Camera Folder",
+                    staging_dir="data/staging",
+                    drive_index_path=Path("data/outputs/drive_index.csv"),
+                    max_files=2,
+                )
+
+            self.assertEqual(limited_result["available_count"], 3)
+            self.assertEqual(limited_result["downloaded_count"], 2)
+            self.assertEqual(limited_result["already_staged_count"], 2)
+            self.assertFalse((tmp_path / "data" / "staging" / "file-3__three.jpg").exists())
+            index_rows = service._read_drive_index(tmp_path / "data" / "outputs" / "drive_index.csv")
+            self.assertEqual([row["file_name"] for row in index_rows], ["one.jpg", "two.jpg"])
+
     def test_shortcut_folder_resolves_to_target_folder(self) -> None:
         drive_service = _FakeDriveService(
             metadata_by_id={
@@ -421,6 +490,76 @@ class DriveStagingServiceTests(unittest.TestCase):
         self.assertEqual(serialized["status"], "cancelled")
         self.assertTrue(serialized["cancellation_requested"])
         self.assertFalse(serialized["source_ready"])
+
+    def test_clear_drive_sync_endpoint_clears_artifacts_and_resets_state(self) -> None:
+        session_key = "test-session-token"
+        session = {
+            "token": session_key,
+            "selected_drive_folder": {
+                "id": "folder-root",
+                "name": "Camera Folder",
+            },
+            "drive_sync": {
+                "status": "completed",
+                "source_ready": True,
+                "folder": {
+                    "id": "folder-root",
+                    "name": "Camera Folder",
+                },
+                "discovered_count": 123,
+                "downloaded_count": 123,
+            },
+        }
+
+        with (
+            mock.patch.object(routes_drive, "read_session", return_value=session),
+            mock.patch.object(routes_drive, "write_session", return_value=None),
+            mock.patch.object(routes_drive, "resolve_pipeline_staging_dir", return_value=Path("data/staging")),
+            mock.patch.object(
+                routes_drive,
+                "clear_drive_staging_artifacts",
+                return_value={"removed_count": 3, "staging_dir": "data/staging"},
+            ) as clear_artifacts,
+        ):
+            response = routes_drive.clear_selected_folder_sync(
+                authorization=f"Bearer {session_key}",
+            )
+
+        clear_artifacts.assert_called_once()
+        self.assertEqual(response["message"], "Drive staged files cleared")
+        self.assertEqual(response["sync"]["status"], "idle")
+        self.assertEqual(response["sync"]["downloaded_count"], 0)
+        self.assertEqual(response["sync"]["discovered_count"], 0)
+        self.assertFalse(response["sync"]["source_ready"])
+
+    def test_clear_drive_staging_artifacts_removes_staging_and_drive_indexes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            staging_dir = tmp_path / "data" / "staging"
+            outputs_dir = tmp_path / "data" / "outputs"
+            staging_dir.mkdir(parents=True)
+            outputs_dir.mkdir(parents=True)
+            (staging_dir / "file-1.jpg").write_bytes(b"image")
+            (staging_dir / service.STAGING_MANIFEST_NAME).write_text("{}", encoding="utf-8")
+            drive_index = outputs_dir / "drive_index.csv"
+            cache_index = outputs_dir / service.DRIVE_INDEX_CACHE_CSV_NAME
+            cache_manifest = outputs_dir / service.DRIVE_INDEX_CACHE_MANIFEST_NAME
+            drive_index.write_text("file_name\none.jpg\n", encoding="utf-8")
+            cache_index.write_text("file_name\none.jpg\n", encoding="utf-8")
+            cache_manifest.write_text("{}", encoding="utf-8")
+
+            with mock.patch.object(service, "REPO_ROOT", tmp_path):
+                result = service.clear_drive_staging_artifacts(
+                    staging_dir="data/staging",
+                    drive_index_path=Path("data/outputs/drive_index.csv"),
+                )
+
+            self.assertEqual(result["staging_dir"], str(staging_dir.resolve()))
+            self.assertTrue(staging_dir.exists())
+            self.assertFalse(any(staging_dir.iterdir()))
+            self.assertFalse(drive_index.exists())
+            self.assertFalse(cache_index.exists())
+            self.assertFalse(cache_manifest.exists())
 
 
 if __name__ == "__main__":

@@ -10,7 +10,10 @@ from pydantic import BaseModel
 
 from ui.backend.auth.routes import get_google_auth_state
 from ui.backend.cancellation import CancellationToken, OperationCancelled
-from ui.backend.services.drive_staging_service import stage_selected_drive_folder
+from ui.backend.services.drive_staging_service import (
+    clear_drive_staging_artifacts,
+    stage_selected_drive_folder,
+)
 from ui.backend.services.pipeline_service import resolve_pipeline_staging_dir
 from ui.backend.session_store import read_session, write_session
 
@@ -27,6 +30,7 @@ DEFAULT_DRIVE_SYNC_STATE = {
     "started_at": None,
     "finished_at": None,
     "folder": None,
+    "available_count": 0,
     "discovered_count": 0,
     "downloaded_count": 0,
     "failed_count": 0,
@@ -157,6 +161,7 @@ def _build_persisted_drive_sync_state(
     started_at: Any = _UNSET,
     finished_at: Any = _UNSET,
     discovered_count: Any = _UNSET,
+    available_count: Any = _UNSET,
     downloaded_count: Any = _UNSET,
     current_file: Any = _UNSET,
     discovery_complete: Any = _UNSET,
@@ -175,6 +180,7 @@ def _build_persisted_drive_sync_state(
             "started_at": base.get("started_at"),
             "finished_at": base.get("finished_at"),
             "folder": base.get("folder") or state["folder"],
+            "available_count": int(base.get("available_count") or 0),
             "discovered_count": int(base.get("discovered_count") or 0),
             "downloaded_count": int(base.get("downloaded_count") or 0),
             "failed_count": int(base.get("failed_count") or 0),
@@ -207,6 +213,8 @@ def _build_persisted_drive_sync_state(
         state["finished_at"] = finished_at
     if discovered_count is not _UNSET:
         state["discovered_count"] = int(discovered_count)
+    if available_count is not _UNSET:
+        state["available_count"] = int(available_count)
     if downloaded_count is not _UNSET:
         state["downloaded_count"] = int(downloaded_count)
     if current_file is not _UNSET:
@@ -250,6 +258,7 @@ def reset_drive_sync_state(
         started_at=None,
         finished_at=None,
         discovered_count=0,
+        available_count=0,
         downloaded_count=0,
         current_file=None,
         discovery_complete=False,
@@ -281,6 +290,7 @@ def start_drive_sync_operation(
         started_at=datetime.now().isoformat(timespec="seconds"),
         finished_at=None,
         discovered_count=0,
+        available_count=0,
         downloaded_count=0,
         current_file=None,
         discovery_complete=False,
@@ -306,6 +316,7 @@ def update_drive_sync_progress(
     current_file: Optional[str],
     staging_dir: Optional[str],
     message: str,
+    available_count: Optional[int] = None,
     failed_count: Optional[int] = None,
     skipped_count: Optional[int] = None,
     discovery_complete: Optional[bool] = None,
@@ -320,6 +331,7 @@ def update_drive_sync_progress(
             "name": folder.get("name"),
         },
         discovered_count=int(discovered_count or 0),
+        available_count=int(available_count if available_count is not None else discovered_count or 0),
         downloaded_count=int(downloaded_count or 0),
         current_file=current_file,
         staging_dir=staging_dir,
@@ -357,6 +369,7 @@ def complete_drive_sync_operation(
         source_ready=True,
         finished_at=datetime.now().isoformat(timespec="seconds"),
         discovered_count=int(sync_result.get("discovered_count") or 0),
+        available_count=int(sync_result.get("available_count") or sync_result.get("discovered_count") or 0),
         downloaded_count=int(sync_result.get("downloaded_count") or 0),
         current_file=None,
         discovery_complete=True,
@@ -471,6 +484,7 @@ def serialize_drive_sync_state(
         folder and selected_folder and folder.get("id") == selected_folder.get("id")
     )
     discovered_count = int(state.get("discovered_count") or 0)
+    available_count = int(state.get("available_count") or discovered_count)
     downloaded_count = int(state.get("downloaded_count") or 0)
     discovery_complete = bool(state.get("discovery_complete") or state.get("status") == "completed")
     requested_total = int(state.get("requested_total") or 0)
@@ -485,20 +499,32 @@ def serialize_drive_sync_state(
     #   3. Discovery in progress
     #         AND no limit           → 0  (indeterminate; the UI shows
     #                                      "Discovering and downloading...")
-    if discovery_complete and discovered_count > 0:
+    if requested_total > 0:
+        progress_target = (
+            min(requested_total, discovered_count)
+            if discovery_complete and discovered_count > 0
+            else requested_total
+        )
+        progress_done = min(downloaded_count, progress_target)
+        progress_percent = round((progress_done / progress_target) * 100) if progress_target > 0 else 0
+    elif discovery_complete and discovered_count > 0:
         progress_percent = round((downloaded_count / discovered_count) * 100)
     elif state.get("status") == "completed":
         progress_percent = 100
-    elif not discovery_complete and requested_total > 0:
-        progress_percent = round((downloaded_count / requested_total) * 100)
     else:
         progress_percent = 0
+    progress_percent = max(0, min(100, progress_percent))
 
     # Remaining: prefer requested target during discovery, real total after.
-    if discovery_complete:
+    if requested_total > 0:
+        remaining_target = (
+            min(requested_total, discovered_count)
+            if discovery_complete and discovered_count > 0
+            else requested_total
+        )
+        remaining_count = max(remaining_target - min(downloaded_count, remaining_target), 0)
+    elif discovery_complete:
         remaining_count = max(discovered_count - downloaded_count, 0)
-    elif requested_total > 0:
-        remaining_count = max(requested_total - downloaded_count, 0)
     else:
         remaining_count = max(discovered_count - downloaded_count, 0)
 
@@ -516,6 +542,7 @@ def serialize_drive_sync_state(
         "selected_folder": selected_folder,
         "selected_folder_matches": selected_folder_matches,
         "discovered_count": discovered_count,
+        "available_count": available_count,
         "downloaded_count": downloaded_count,
         "remaining_count": remaining_count,
         "failed_count": failed_count,
@@ -949,6 +976,37 @@ def cancel_selected_folder_sync(authorization: Optional[str] = Header(default=No
     }
 
 
+@router.post("/sync/clear")
+def clear_selected_folder_sync(authorization: Optional[str] = Header(default=None)):
+    session_key, session = _require_auth_session(authorization)
+    current_sync = serialize_drive_sync_state(session=session, session_key=session_key)
+    if current_sync.get("status") == "syncing":
+        raise HTTPException(
+            status_code=409,
+            detail="Stop the current Drive sync before clearing staged files.",
+        )
+
+    artifacts = clear_drive_staging_artifacts(
+        staging_dir=resolve_pipeline_staging_dir(),
+    )
+    selected_folder = session.get("selected_drive_folder")
+    reset_drive_sync_state(
+        session,
+        session_key,
+        folder=selected_folder,
+        message="Drive staged files cleared. Sync this folder again before processing.",
+    )
+
+    return {
+        "message": "Drive staged files cleared",
+        "cleared": artifacts,
+        "sync": serialize_drive_sync_state(
+            session=read_session(session_key),
+            session_key=session_key,
+        ),
+    }
+
+
 @router.post("/sync")
 def sync_selected_folder(
     payload: Optional[SyncFolderRequest] = None,
@@ -1000,6 +1058,7 @@ def sync_selected_folder(
     def progress_callback(progress: Dict[str, Any]) -> None:
         downloaded = int(progress.get("downloaded_count") or 0)
         discovered = int(progress.get("discovered_count") or 0)
+        available = int(progress.get("available_count") or discovered)
         failed = int(progress.get("failed_count") or 0)
         skipped = int(progress.get("already_staged_count") or progress.get("skipped_count") or 0)
         discovery_complete = bool(progress.get("discovery_complete"))
@@ -1013,7 +1072,7 @@ def sync_selected_folder(
         elif requested_total > 0:
             message = (
                 f"Downloaded {downloaded} of {requested_total} requested"
-                f" · {discovered} discovered so far"
+                f" · {available} discovered so far"
             )
         else:
             message = (
@@ -1028,6 +1087,7 @@ def sync_selected_folder(
             session_key,
             folder=selected_folder,
             discovered_count=discovered,
+            available_count=available,
             downloaded_count=downloaded,
             current_file=progress.get("current_file"),
             staging_dir=progress.get("staging_dir"),

@@ -63,6 +63,14 @@ export async function cancelDriveSync() {
   return handleResponse(res);
 }
 
+export async function clearDriveSync() {
+  const res = await fetchWithTimeout(`${API_BASE}/drive/sync/clear`, {
+    method: "POST",
+    headers: getAuthHeaders()
+  });
+  return handleResponse(res);
+}
+
 export async function getDriveSyncStatus() {
   const res = await fetchWithTimeout(`${API_BASE}/drive/sync-status`, {
     method: "GET",

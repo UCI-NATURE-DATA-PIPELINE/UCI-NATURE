@@ -716,6 +716,44 @@ def _clear_directory_contents(path: Path) -> None:
             child.unlink()
 
 
+def clear_drive_staging_artifacts(
+    *,
+    staging_dir: Union[Path, str],
+    drive_index_path: Path = DEFAULT_DRIVE_INDEX_PATH,
+) -> Dict[str, object]:
+    """Clear Drive-staged images and Drive-specific index/cache artifacts."""
+    resolved_staging_dir = _resolve_safe_staging_dir(staging_dir)
+    resolved_drive_index_path = _repo_path(drive_index_path).resolve()
+    cache_index_path, cache_manifest_path = _drive_index_cache_paths(resolved_drive_index_path)
+    removed_files: List[str] = []
+
+    if resolved_staging_dir.exists():
+        for child in resolved_staging_dir.rglob("*"):
+            if child.is_file():
+                removed_files.append(str(child))
+    _clear_directory_contents(resolved_staging_dir)
+
+    for path in (
+        resolved_drive_index_path,
+        cache_index_path,
+        cache_manifest_path,
+    ):
+        try:
+            if path.exists():
+                path.unlink()
+                removed_files.append(str(path))
+        except OSError:
+            pass
+
+    return {
+        "staging_dir": str(resolved_staging_dir),
+        "drive_index_path": str(resolved_drive_index_path),
+        "drive_index_cache_path": str(cache_index_path),
+        "drive_index_cache_manifest_path": str(cache_manifest_path),
+        "removed_count": len(removed_files),
+    }
+
+
 def _prune_unexpected_staging_files(
     staging_dir: Path,
     expected_relative_paths: Set[Path],
@@ -875,6 +913,7 @@ def stage_selected_drive_folder(
     )
     cache_hit = cached_files is not None
     files: List[Dict[str, object]] = []
+    target_files: List[Dict[str, object]] = []
     seen_folder_ids: Set[str] = set(cached_manifest.get("folder_ids") or []) if cached_manifest else set()
     cache_start_page_token = None if cache_hit else _get_drive_start_page_token(service)
     listing_stats = _new_drive_listing_stats()
@@ -889,10 +928,16 @@ def stage_selected_drive_folder(
     discovered_total = 0
     target_count = 0
     already_staged_count = 0
-    scheduled_download_count = 0
     downloaded_files: List[str] = []
     failed_files: List[Dict[str, object]] = []
     download_event_times: "deque[float]" = deque()
+    max_target_files: Optional[int] = None
+    if max_files is not None:
+        try:
+            parsed_max_files = int(max_files)
+            max_target_files = parsed_max_files if parsed_max_files > 0 else None
+        except (TypeError, ValueError):
+            max_target_files = None
 
     started_at_monotonic = time.monotonic()
     started_at_wall = time.time()
@@ -950,11 +995,8 @@ def stage_selected_drive_folder(
         # progress, so a 5,000-file sync doesn't briefly look 98% done just
         # because the first 2,294 files have been discovered.
         requested_total_int = 0
-        if max_files is not None:
-            try:
-                requested_total_int = max(0, int(max_files))
-            except (TypeError, ValueError):
-                requested_total_int = 0
+        if max_target_files is not None:
+            requested_total_int = max_target_files
 
         _emit_progress(
             progress_callback,
@@ -1021,7 +1063,7 @@ def stage_selected_drive_folder(
                 pass
 
     def record_discovered_file(file_info: Dict[str, object]) -> bool:
-        nonlocal already_staged_count, discovered_total, scheduled_download_count, target_count
+        nonlocal already_staged_count, discovered_total, target_count
 
         raise_if_cancelled()
         file_info["relative_local_path"] = _normalize_relative_local_path(file_info)
@@ -1030,14 +1072,14 @@ def stage_selected_drive_folder(
         schedule = False
         with discovered_lock:
             discovered_total += 1
-            if ready:
-                already_staged_count += 1
+            include_in_target = max_target_files is None or target_count < max_target_files
+            if include_in_target:
                 target_count += 1
-            else:
-                clean_partial_download(file_info)
-                if max_files is None or scheduled_download_count < max(0, int(max_files)):
-                    scheduled_download_count += 1
-                    target_count += 1
+                target_files.append(file_info)
+                if ready:
+                    already_staged_count += 1
+                else:
+                    clean_partial_download(file_info)
                     schedule = True
 
         maybe_log_discovery()
@@ -1192,14 +1234,14 @@ def stage_selected_drive_folder(
 
     removed_unexpected = _prune_unexpected_staging_files(
         resolved_staging_dir,
-        {_normalize_relative_local_path(file_info) for file_info in files},
+        {_normalize_relative_local_path(file_info) for file_info in target_files},
     )
     if removed_unexpected:
         print(f"Removed {removed_unexpected} unexpected staging file(s) not present in the Drive index")
 
     staged_files = [
         file_info
-        for file_info in files
+        for file_info in target_files
         if is_already_staged(file_info)
     ]
     staged_count = len(staged_files)

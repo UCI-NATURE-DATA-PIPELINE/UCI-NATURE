@@ -451,7 +451,7 @@
 
 .drive-top-controls {
   display:grid;
-  grid-template-columns:minmax(0,1.25fr) minmax(220px,.72fr) 136px;
+  grid-template-columns:minmax(280px,1fr) minmax(170px,220px) minmax(220px,max-content);
   gap:16px;
   align-items:start;
 }
@@ -602,25 +602,21 @@
   display:flex;
   align-items:flex-end;
   gap:8px;
-  flex-wrap:nowrap;
-  min-width:0;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  min-width:220px;
 }
 
-/* Primary Sync now sits on the left and grows; Stop is fixed-width on the
-   right. min-width:0 lets them shrink without forcing a wrap. */
 .drive-sync-quick-btn {
-  flex:1 1 auto;
-  min-width:0;
+  flex:0 0 auto;
+  min-width:118px;
   width:auto;
   justify-content:center;
   align-items:center;
   min-height:40px;
   padding:0 14px;
   white-space:nowrap;
-  text-overflow:ellipsis;
-  overflow:hidden;
 }
-/* Stop is secondary — fixed reasonable width so the primary keeps full text. */
 .drive-sync-quick-btn.btn-outline,
 .drive-sync-quick-btn#drive-sync-quick-stop-btn {
   flex:0 0 auto;
@@ -632,7 +628,8 @@
    needed, equal min-heights. Existing .upload-action-btns already exists. */
 .upload-action-bar .upload-action-btns {
   gap:8px;
-  flex-wrap:nowrap;
+  flex-wrap:wrap;
+  justify-content:flex-end;
 }
 .upload-action-bar .upload-action-btns .btn,
 .upload-action-bar .upload-action-btns .btn-sm {
@@ -640,6 +637,7 @@
   min-height:32px;
 }
 #drive-sync-stop-btn,
+#drive-sync-clear-btn,
 #upload-stop-btn {
   /* Keep Stop visually like a secondary action even when its sibling is the
      primary blue Sync/Queue button. */
@@ -869,7 +867,7 @@
 }
 
 #upload-drive .drive-main-column > .card:first-child .drive-top-controls {
-  grid-template-columns:minmax(0,1fr) minmax(220px,.7fr) 132px;
+  grid-template-columns:minmax(280px,1fr) minmax(170px,220px) minmax(220px,max-content);
   gap:14px;
 }
 

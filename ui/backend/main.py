@@ -1144,7 +1144,9 @@ def execute_pipeline_run(
                         def drive_progress_callback(progress: dict) -> None:
                             cancellation_token.raise_if_cancelled()
                             discovered_count = int(progress.get("discovered_count") or 0)
+                            available_count = int(progress.get("available_count") or discovered_count)
                             downloaded_count = int(progress.get("downloaded_count") or 0)
+                            requested_total = int(progress.get("requested_total") or 0)
                             skipped_count = int(
                                 progress.get("already_staged_count")
                                 or progress.get("skipped_count")
@@ -1155,10 +1157,20 @@ def execute_pipeline_run(
                             discovery_complete = bool(progress.get("discovery_complete"))
                             status_message = (
                                 (
+                                    f"Downloaded {min(downloaded_count, requested_total)} of {requested_total} "
+                                    f"requested · Ready for processing: {downloaded_count} files"
+                                )
+                                if discovery_complete and requested_total > 0
+                                else (
                                     f"Downloaded {downloaded_count} of total {discovered_count} "
                                     "image(s) from Google Drive"
                                 )
                                 if discovery_complete
+                                else (
+                                    f"Downloaded {min(downloaded_count, requested_total)} of {requested_total} "
+                                    f"requested · {available_count} discovered so far"
+                                )
+                                if requested_total > 0
                                 else (
                                     f"Downloaded {downloaded_count} of {discovered_count} "
                                     "discovered so far"
@@ -1175,6 +1187,7 @@ def execute_pipeline_run(
                                 session_key,
                                 folder=selected_folder,
                                 discovered_count=discovered_count,
+                                available_count=available_count,
                                 downloaded_count=downloaded_count,
                                 current_file=current_file,
                                 staging_dir=progress.get("staging_dir"),
@@ -1182,12 +1195,24 @@ def execute_pipeline_run(
                                 failed_count=failed_count,
                                 skipped_count=skipped_count,
                                 discovery_complete=discovery_complete,
+                                requested_total=requested_total,
                                 images_per_second=progress.get("images_per_second"),
                                 eta_seconds=progress.get("eta_seconds"),
                                 elapsed_seconds=progress.get("elapsed_seconds"),
                             )
                             sync_percent = 5
-                            if discovery_complete and discovered_count > 0:
+                            if requested_total > 0:
+                                progress_target = (
+                                    min(requested_total, discovered_count)
+                                    if discovery_complete and discovered_count > 0
+                                    else requested_total
+                                )
+                                progress_done = min(downloaded_count, progress_target)
+                                sync_percent = min(
+                                    14,
+                                    5 + round((progress_done / max(progress_target, 1)) * 9),
+                                )
+                            elif discovery_complete and discovered_count > 0:
                                 sync_percent = min(
                                     14,
                                     5 + round((downloaded_count / discovered_count) * 9),
@@ -1199,7 +1224,9 @@ def execute_pipeline_run(
                                 message=status_message,
                                 details={
                                     "discovered_count": discovered_count,
+                                    "available_count": available_count,
                                     "downloaded_count": downloaded_count,
+                                    "requested_total": requested_total,
                                     "current_file": current_file,
                                     "discovery_complete": discovery_complete,
                                 },

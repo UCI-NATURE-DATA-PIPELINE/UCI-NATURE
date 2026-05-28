@@ -29,6 +29,7 @@ export function createEmptyDriveSyncState() {
     folder: null,
     selected_folder: null,
     selected_folder_matches: false,
+    available_count: 0,
     discovered_count: 0,
     downloaded_count: 0,
     remaining_count: 0,

@@ -39,6 +39,7 @@ export function bindGlobals(app, showPage) {
   window.selectDriveAutoSite = app.features.drive.selectDriveAutoSite;
   window.triggerSync = app.features.drive.triggerSync;
   window.cancelDriveSync = app.features.drive.cancelDriveSync;
+  window.clearDriveSync = app.features.drive.clearDriveSync;
   window.cancelManualUpload = app.features.drive.cancelManualUpload;
   window.loadDriveSyncStatus = app.features.drive.loadDriveSyncStatus;
   window.updateSlider = app.features.pipeline.updateSlider;
