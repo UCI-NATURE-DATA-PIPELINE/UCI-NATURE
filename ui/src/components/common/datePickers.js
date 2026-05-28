@@ -97,7 +97,7 @@ function renderDP(id) {
 }
 
 export function buildDatePickers() {
-  ["start", "end", "export-start", "export-end"].forEach((id) => {
+  ["start", "end"].forEach((id) => {
     if (!document.getElementById(`dp-popup-${id}`)) return;
     renderDP(id);
   });
