@@ -54,7 +54,7 @@ export function createPipelineRender(app, stateApi) {
       else if (state === "failed") note.textContent = status.error ? `Last run ${status.run_id} failed: ${status.error}` : `Last run ${status.run_id} failed.`;
       else note.textContent = surface.kind === "drive" || app.state.uploadTab === "drive" ? app.features.drive.getDriveRunIdleNote() : "Click Run to start pipeline.";
     }
-  
+
     if (panel) panel.style.display = (!status || state === "idle") ? "none" : "block";
     if (progressLabel) progressLabel.textContent = state === "running" ? status?.progress?.step || "Pipeline running in backend" : state === "completed" ? "Latest run completed" : state === "cancelled" ? "Latest run stopped" : state === "failed" ? "Latest run failed" : "No active pipeline run";
     if (eta) eta.textContent = state === "running" ? status?.progress?.message || status?.latest_log_line || "Backend log is updating" : state === "completed" ? `Completed ${formatTimestampLabel(status.finished_at)}` : state === "cancelled" ? "Stopped by user" : state === "failed" ? status.error || "See backend log for details" : surface.kind === "drive" ? "Run becomes available once a Drive folder is selected" : "No active run";
@@ -73,8 +73,8 @@ export function createPipelineRender(app, stateApi) {
     setPipelineDetailValue(errorValue, snapshot.error);
 
     const metrics = getPipelineMetrics(status);
-      if (throughputValue) {
-        throughputValue.textContent = metrics.throughput ? formatDecimal(metrics.throughput) : "—";
+    if (throughputValue) {
+      throughputValue.textContent = metrics.throughput ? formatDecimal(metrics.throughput) : "—";
     }
     if (failuresValue) {
       failuresValue.textContent = metrics.failureCount === null ? "—" : formatNumber(metrics.failureCount);
@@ -105,7 +105,9 @@ export function createPipelineRender(app, stateApi) {
       } else {
         historyNote.textContent = "";
       }
-    }    app.features.drive.syncDriveUI();
+    }
+    app.features.drive.syncDriveUI();
+    app.features.dashboard?.applyDashboardPipelineState?.(status);
   }
 
   function buildPipelineResultRows(files = []) {
@@ -115,11 +117,7 @@ export function createPipelineRender(app, stateApi) {
 
     return files.map((file) => {
       const fileName = file.name || "";
-      // Friendly label from the backend ("Final results", "Needs review",
-      // "Summary by camera"). Falls back to filename if missing.
       const baseLabel = file.label || fileName.replace(/\.csv$/i, "") || "Unknown";
-      // Mark the main export so non-technical users know which file to
-      // grab first.
       const isPrimary = fileName === "final_results.csv";
       const tag = isPrimary
         ? `<span style="margin-left:8px;font-size:11px;font-weight:600;color:#2B6CB0;background:#EBF8FF;border:1px solid #BEE3F8;padding:2px 7px;border-radius:6px">Main file</span>`
@@ -150,7 +148,6 @@ export function createPipelineRender(app, stateApi) {
           : "Run the pipeline to generate results.";
     }
     if (summary) {
-      // Keep this short and non-technical — no file paths, no jargon.
       summary.textContent = results?.status === "ready"
         ? `${formatNumber(results.file_count || 0)} file(s) · ${formatNumber(results.total_rows || 0)} records`
         : results?.message || "No results are available yet.";

@@ -8,5 +8,6 @@ exifread
 python-dotenv
 requests
 pandas
+setuptools<81
 speciesnet
 python-multipart

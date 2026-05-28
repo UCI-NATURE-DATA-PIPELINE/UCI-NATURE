@@ -87,6 +87,29 @@ ALL_RESULTS_FILENAME = "all_results.csv"
 ANIMAL_UNCLASSIFIED_FILENAME = "animal_unclassified.csv"
 EXCLUDED_NON_ANIMAL_FILENAME = "excluded_non_animal.csv"
 
+DASHBOARD_SPECIES_PARKS = (
+    {
+        "key": "marshal_trail",
+        "label": "Marshal Trail",
+        "aliases": ("marshal trail", "marsh trail", "marshtrail", "marsh_trail"),
+    },
+    {
+        "key": "research_park",
+        "label": "Research Park",
+        "aliases": ("research park", "research_park", "respark", "res park"),
+    },
+    {
+        "key": "bonita_canyon_1",
+        "label": "Bonita Canyon 1",
+        "aliases": ("bonita canyon 1", "bonita canyon1", "bonita_canyon1", "bonita_canyon_1"),
+    },
+    {
+        "key": "bonita_canyon_2",
+        "label": "Bonita Canyon 2",
+        "aliases": ("bonita canyon 2", "bonita canyon2", "bonita_canyon2", "bonita_canyon_2"),
+    },
+)
+
 PIPELINE_LOCK = threading.Lock()
 DEFAULT_PIPELINE_STATE = {
     "thread": None,
@@ -484,6 +507,105 @@ def get_location_csv_paths() -> List[Path]:
         for path in BY_LOCATION_DIR.glob("*_results.csv")
         if path.name != ALL_RESULTS_FILENAME
     )
+
+
+def _normalize_dashboard_token(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+
+
+def _resolve_dashboard_park(csv_path: Path, rows: List[Dict[str, str]]) -> Optional[dict]:
+    candidates = [csv_path.stem, csv_path.stem.replace("_results", "")] + [
+        rows[0].get(field, "")
+        for field in ("CameraName", "camera_location", "DeploymentFolder")
+        if rows
+    ]
+    normalized_candidates = [
+        _normalize_dashboard_token(candidate)
+        for candidate in candidates
+        if str(candidate or "").strip()
+    ]
+
+    for park in DASHBOARD_SPECIES_PARKS:
+        tokens = {_normalize_dashboard_token(park["key"]), _normalize_dashboard_token(park["label"])}
+        tokens.update(_normalize_dashboard_token(alias) for alias in park["aliases"])
+        if any(
+            candidate == token or candidate in token or token in candidate
+            for candidate in normalized_candidates
+            for token in tokens
+            if candidate and token
+        ):
+            return park
+
+    return None
+
+
+def _normalize_dashboard_species_label(row: Dict[str, str]) -> Optional[str]:
+    has_animal = (row.get("has_animal") or row.get("HasAnimal") or "").strip() == "1"
+    if not has_animal:
+        return None
+
+    normalized = normalize_species((row.get("Species") or row.get("species") or "").strip())
+    if normalized in {"human", "vehicle"}:
+        return None
+    if normalized in {"", "blank", "unknown"}:
+        return "animal_unclassified"
+    if normalized == "animal_unclassified":
+        return normalized
+    return normalized
+
+
+def build_dashboard_species_histogram_data() -> dict:
+    parks: Dict[str, dict] = {
+        park["key"]: {
+            "key": park["key"],
+            "label": park["label"],
+            "total_detections": 0,
+            "species_counts": {},
+            "species_labels": [],
+            "species_values": [],
+        }
+        for park in DASHBOARD_SPECIES_PARKS
+    }
+
+    if BY_LOCATION_DIR.exists():
+        for csv_path in get_location_csv_paths():
+            rows = read_csv_rows(csv_path)
+            park = _resolve_dashboard_park(csv_path, rows)
+            if not park:
+                continue
+
+            bucket = parks[park["key"]]
+            counts = bucket["species_counts"]
+
+            for row in rows:
+                species_label = _normalize_dashboard_species_label(row)
+                if not species_label:
+                    continue
+                counts[species_label] = counts.get(species_label, 0) + 1
+                bucket["total_detections"] += 1
+
+    default_park_key = DASHBOARD_SPECIES_PARKS[0]["key"]
+    best_total = -1
+    for park in DASHBOARD_SPECIES_PARKS:
+        bucket = parks[park["key"]]
+        sorted_counts = sorted(
+            bucket["species_counts"].items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+        bucket["species_labels"] = [label for label, _count in sorted_counts]
+        bucket["species_values"] = [count for _label, count in sorted_counts]
+        if bucket["total_detections"] > best_total:
+            best_total = bucket["total_detections"]
+            default_park_key = park["key"]
+
+        bucket.pop("species_counts", None)
+
+    return {
+        "default_park_key": default_park_key,
+        "parks": list(parks.values()),
+        "has_data": best_total > 0,
+        "total_detections": sum(bucket["total_detections"] for bucket in parks.values()),
+    }
 
 
 def get_export_artifact_paths() -> List[Path]:
@@ -1594,6 +1716,12 @@ def drive_status(authorization: Optional[str] = Header(default=None)):
 def dashboard_summary(authorization: Optional[str] = Header(default=None)):
     session = require_auth(authorization)
     return build_dashboard_summary_data(session["user"]["project"])
+
+
+@app.get("/api/dashboard/species-histogram")
+def dashboard_species_histogram(authorization: Optional[str] = Header(default=None)):
+    require_auth(authorization)
+    return build_dashboard_species_histogram_data()
 
 
 # Allowed wildlife camera image extensions for the manual Upload page.

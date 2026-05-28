@@ -556,7 +556,14 @@ Fix:
 
 ```bash
 source .venv311/bin/activate
+pip install 'setuptools<81'
 pip install speciesnet --use-pep517
+```
+
+If `speciesnet` still fails to import, re-run the same commands inside `.venv311` and confirm `pkg_resources` is available:
+
+```bash
+python -c "import pkg_resources; import speciesnet; print('speciesnet ok')"
 ```
 
 ### "drive_index.csv not found"

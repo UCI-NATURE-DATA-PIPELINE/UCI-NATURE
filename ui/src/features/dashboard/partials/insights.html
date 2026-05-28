@@ -1,6 +1,6 @@
 <!-- Dashboard insight cards for run summaries, detection mix, and activity. -->
-<div class="charts-row" style="margin-bottom:14px">
-  <div class="card card-p">
+<div class="dashboard-insights-grid dashboard-insights-grid--top">
+  <div class="card card-p dashboard-insight-card dashboard-insight-card--summary">
     <div class="card-title">Last Run Summary</div>
     <div class="donut-wrap">
       <div class="donut-svg-wrap">
@@ -17,12 +17,12 @@
       </div>
     </div>
     <div style="border-top:1px solid var(--border);padding-top:11px;margin-top:10px">
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px">Sites Processed</div>
-      <div id="dashboard-camera-chip-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px">Export Files</div>
+      <div id="dashboard-export-chip-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
     </div>
   </div>
 
-  <div class="card card-p">
+  <div class="card card-p dashboard-insight-card dashboard-insight-card--summary">
     <div class="card-title">Detection Breakdown</div>
     <div class="donut-wrap">
       <div class="donut-svg-wrap">
@@ -34,18 +34,11 @@
   </div>
 </div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-  <div class="card card-p">
-    <div class="card-title">Camera Sites</div>
-    <div id="dashboard-camera-status-list" style="display:flex;flex-direction:column;gap:8px">
-      <div class="empty-state" style="color:var(--muted);font-size:13px;padding:16px 0">Loading camera sites…</div>
-    </div>
-  </div>
-
-  <div class="card card-p">
-    <div class="card-title">Recent Activity</div>
+<div class="dashboard-insights-grid dashboard-insights-grid--activity">
+  <div class="card card-p dashboard-insight-card dashboard-insight-card--activity">
+    <div class="card-title">Activity</div>
     <div class="activity-list" id="dashboard-activity-list">
-      <div class="empty-state" style="color:var(--muted);font-size:13px;padding:16px 0">Loading recent activity…</div>
+      <div class="empty-state" style="color:var(--muted);font-size:13px;padding:16px 0">Loading activity…</div>
     </div>
   </div>
 </div>

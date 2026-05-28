@@ -10,15 +10,23 @@ export function createDashboardFeature(app) {
 
   async function loadDashboardData() {
     try {
-      const [summary, exportSummary] = await Promise.all([
+      const [summary, exportSummary, validationData, pipelineStatus, speciesHistogram] = await Promise.all([
         api.getDashboardSummary(),
-        api.startExportRequest().catch(() => null)
+        api.startExportRequest().catch(() => null),
+        app.features.validate.loadValidationData({ showToastOnError: false }).catch(() => null),
+        app.features.pipeline.loadPipelineStatus({ silent: true }),
+        api.getDashboardSpeciesHistogram().catch(() => null)
       ]);
       if (exportSummary) app.state.exportData = exportSummary;
-      renderApi.applyDashboardSummary(summary, app.state.validationData, app.state.exportData);
+      if (validationData) app.state.validationData = validationData;
+      app.state.dashboardSpeciesHistogram = speciesHistogram || null;
+      app.state.dashboardSpeciesHistogramSelected = speciesHistogram?.default_park_key || "";
+      renderApi.applyDashboardSummary(summary, app.state.validationData, app.state.exportData, pipelineStatus, app.state.dashboardSpeciesHistogram);
       app.state.pageLoadState.dashboard = true;
     } catch (error) {
-      renderApi.applyDashboardSummary(null, app.state.validationData, app.state.exportData);
+      app.state.dashboardSpeciesHistogram = null;
+      app.state.dashboardSpeciesHistogramSelected = "";
+      renderApi.applyDashboardSummary(null, app.state.validationData, app.state.exportData, app.state.pipelineStatus, null);
       app.showToast(error.message || "Unable to load dashboard summary", "warn");
     }
   }

@@ -14,10 +14,11 @@ pip install -r requirements/requirements.txt
 pip install fastapi uvicorn
 
 SpeciesNet note (if needed):
+pip install 'setuptools<81'
 pip install speciesnet --use-pep517
 
 Quick sanity check:
-python -c "import speciesnet; print('speciesnet ok')"
+python -c "import pkg_resources; import speciesnet; print('speciesnet ok')"
 
 Supported workflow A: legacy terminal full pipeline
 python3.11 scripts/pipeline/run_pipeline.py

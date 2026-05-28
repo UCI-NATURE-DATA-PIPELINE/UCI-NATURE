@@ -8,3 +8,11 @@ export async function getDashboardSummary() {
   });
   return handleResponse(res);
 }
+
+export async function getDashboardSpeciesHistogram() {
+  const res = await fetchWithTimeout(`${API_BASE}/dashboard/species-histogram`, {
+    method: "GET",
+    headers: getAuthHeaders()
+  });
+  return handleResponse(res);
+}

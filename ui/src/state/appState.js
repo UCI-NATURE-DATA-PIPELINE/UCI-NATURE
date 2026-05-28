@@ -100,6 +100,8 @@ export const appState = {
   dashboardSummary: null,
   validationData: null,
   exportData: null,
+  dashboardSpeciesHistogram: null,
+  dashboardSpeciesHistogramSelected: "",
   pageLoadState: {
     dashboard: false,
     review: false,
@@ -109,6 +111,7 @@ export const appState = {
   lastUndoAction: null,
   charts: {
     species: null,
-    timeline: null
+    timeline: null,
+    dashboardSpeciesHistogram: null
   }
 };

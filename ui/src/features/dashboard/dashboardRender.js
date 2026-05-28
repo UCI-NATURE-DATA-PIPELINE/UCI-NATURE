@@ -1,8 +1,102 @@
 /** Dashboard rendering for summary cards, export chips, and activity lists. */
 import { setText } from "../../utils/dom.js";
 import { escapeHtml, formatNumber, formatPercent, getPercent } from "../../utils/format.js";
+import { buildDashboardActivityItems } from "./dashboardActivity.mjs";
+import { buildDashboardPipelineState } from "./dashboardPipeline.mjs";
+
+const PIPELINE_STEP_IDS = {
+  upload: {
+    root: "dashboard-pipeline-step-upload",
+    pct: "dashboard-pipeline-percent-upload",
+    fill: "dashboard-pipeline-fill-upload",
+    count: "dashboard-pipeline-count-upload",
+    dot: "dashboard-pipeline-dot-upload"
+  },
+  classify: {
+    root: "dashboard-pipeline-step-classify",
+    pct: "dashboard-pipeline-percent-classify",
+    fill: "dashboard-pipeline-fill-classify",
+    count: "dashboard-pipeline-count-classify",
+    dot: "dashboard-pipeline-dot-classify"
+  },
+  review: {
+    root: "dashboard-pipeline-step-review",
+    pct: "dashboard-pipeline-percent-review",
+    fill: "dashboard-pipeline-fill-review",
+    count: "dashboard-pipeline-count-review",
+    dot: "dashboard-pipeline-dot-review"
+  },
+  validate: {
+    root: "dashboard-pipeline-step-validate",
+    pct: "dashboard-pipeline-percent-validate",
+    fill: "dashboard-pipeline-fill-validate",
+    count: "dashboard-pipeline-count-validate",
+    dot: "dashboard-pipeline-dot-validate"
+  },
+  export: {
+    root: "dashboard-pipeline-step-export",
+    pct: "dashboard-pipeline-percent-export",
+    fill: "dashboard-pipeline-fill-export",
+    count: "dashboard-pipeline-count-export",
+    dot: "dashboard-pipeline-dot-export"
+  }
+};
+
+function renderPipelineDot(state) {
+  if (state === "done") {
+    return `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+    `;
+  }
+
+  if (state === "active") {
+    return `
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4" fill="#fff"></circle>
+      </svg>
+    `;
+  }
+
+  return "";
+}
+
+function updatePipelineStep(step) {
+  const ids = PIPELINE_STEP_IDS[step.key];
+  if (!ids) return;
+
+  const root = document.getElementById(ids.root);
+  const pct = document.getElementById(ids.pct);
+  const fill = document.getElementById(ids.fill);
+  const count = document.getElementById(ids.count);
+  const dot = document.getElementById(ids.dot);
+
+  if (root) {
+    root.classList.remove("done", "active", "idle");
+    root.classList.add(step.state);
+  }
+  if (pct) pct.textContent = step.percentLabel;
+  if (fill) fill.style.width = step.state === "done" ? "100%" : step.state === "active" ? `${step.percentLabel}` : "0%";
+  if (count) count.textContent = step.countLabel;
+  if (dot) dot.innerHTML = renderPipelineDot(step.state);
+}
+
+function renderDashboardPipelineState(status) {
+  const model = buildDashboardPipelineState(status);
+
+  const flowFill = document.getElementById("pipeline-flow-fill");
+  if (flowFill) {
+    flowFill.style.width = `${model.flowPercent}%`;
+    flowFill.style.setProperty("--fill-pct", `${model.flowPercent}%`);
+  }
+
+  model.steps.forEach(updatePipelineStep);
+}
 
 export function createDashboardRender(app, chartsApi) {
+  let speciesToggleBound = false;
+
   function animateValue(element, start, end, duration, format) {
     const startTime = performance.now();
     function update(now) {
@@ -21,46 +115,71 @@ export function createDashboardRender(app, chartsApi) {
     animateValue(element, Number.isFinite(previousValue) ? previousValue : 0, Number(nextValue || 0), 500, format);
   }
 
-  function renderDashboardCameraChips(files = []) {
-    const container = document.getElementById("dashboard-camera-chip-list");
+  function renderDashboardExportChips(files = []) {
+    const container = document.getElementById("dashboard-export-chip-list");
     if (!container) return;
     container.innerHTML = files.length
       ? files.map((file) => `
           <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;background:#F0FFF4;border:1.5px solid #9AE6B4;border-radius:20px;font-size:11.5px;font-weight:600;color:#276749">
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            ${escapeHtml((file.name || "Unknown").replace(/\.csv$/i, ""))}
+            ${escapeHtml((file.label || file.name || "Unknown").replace(/\.csv$/i, ""))}
           </span>
         `).join("")
       : `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;background:#F7FAFC;border:1.5px solid var(--border);border-radius:20px;font-size:11.5px;font-weight:500;color:var(--muted)">No export artifacts yet</span>`;
   }
 
-  function renderDashboardCameraStatus(files = []) {
-    const container = document.getElementById("dashboard-camera-status-list");
-    if (!container) return;
-    container.innerHTML = files.length
-      ? files.map((file) => `
-          <div class="camera-card" style="border-left:3px solid #48BB78">
-            <div class="camera-name" style="display:flex;align-items:center;gap:6px">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#48BB78" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-              ${escapeHtml((file.name || "Unknown").replace(/\.csv$/i, ""))}
-            </div>
-            <div class="camera-stat"><span class="camera-stat-label">Rows</span><span class="camera-stat-val">${formatNumber(file.rows)}</span></div>
-            <div class="camera-stat"><span class="camera-stat-label">Source</span><span class="camera-stat-val">${escapeHtml(file.path || file.name)}</span></div>
-            <span class="camera-sync sync-ok">✓ Ready</span>
-          </div>
-        `).join("")
-      : `<div class="camera-card" style="border-left:3px solid #CBD5E0"><div class="camera-name">No output files generated yet</div><div class="camera-stat"><span class="camera-stat-label">Images</span><span class="camera-stat-val">0</span></div><div class="camera-stat"><span class="camera-stat-label">Status</span><span class="camera-stat-val">Waiting for pipeline output</span></div></div>`;
+  function renderDashboardSpeciesHistogram(app, chartsApi, speciesHistogram) {
+    const toggleContainer = document.getElementById("dashboard-park-toggle");
+    const canvas = document.getElementById("dashboard-species-chart");
+    const emptyState = document.getElementById("dashboard-species-empty");
+    if (!toggleContainer || !canvas || !emptyState) return;
+
+    const parks = Array.isArray(speciesHistogram?.parks) ? speciesHistogram.parks : [];
+    if (!parks.length) {
+      toggleContainer.innerHTML = "";
+      canvas.hidden = true;
+      emptyState.hidden = false;
+      chartsApi.buildSpeciesHistogram(app, canvas, null);
+      return;
+    }
+
+    const selectedKey = parks.some((park) => park.key === app.state.dashboardSpeciesHistogramSelected)
+      ? app.state.dashboardSpeciesHistogramSelected
+      : speciesHistogram?.default_park_key || parks[0].key;
+    const selectedPark = parks.find((park) => park.key === selectedKey) || parks[0];
+    app.state.dashboardSpeciesHistogramSelected = selectedPark.key;
+    app.state.dashboardSpeciesHistogram = speciesHistogram;
+
+    toggleContainer.innerHTML = parks.map((park) => `
+      <button type="button" class="dashboard-park-toggle-btn${park.key === selectedPark.key ? " active" : ""}" data-park-key="${escapeHtml(park.key)}">
+        ${escapeHtml(park.label)}
+      </button>
+    `).join("");
+
+    canvas.hidden = !selectedPark.total_detections || !selectedPark.species_labels.length;
+    emptyState.hidden = selectedPark.total_detections > 0 && selectedPark.species_labels.length > 0;
+
+    if (canvas.hidden) {
+      chartsApi.buildSpeciesHistogram(app, canvas, null);
+      return;
+    }
+
+    chartsApi.buildSpeciesHistogram(app, canvas, {
+      label: selectedPark.label,
+      labels: selectedPark.species_labels,
+      values: selectedPark.species_values
+    });
   }
 
-  function renderDashboardActivity(summary, validation, exportSummary) {
+  function renderDashboardActivity(summary, validation, exportSummary, pipelineStatus) {
     const container = document.getElementById("dashboard-activity-list");
     if (!container) return;
-    const items = [
-      { badge: "Pipeline complete", badgeClass: "badge-blue", text: `${formatNumber(summary?.processed_images || 0)} images processed`, time: summary?.last_run?.date || "Unknown date" },
-      { badge: "Review queue", badgeClass: "badge-yellow", text: `${formatNumber(summary?.pending_review || 0)} items need manual review`, time: "Current artifacts" },
-      { badge: "Validation", badgeClass: "badge-yellow", text: `${formatNumber(validation?.outside_range || 0)} outside range, ${formatNumber(validation?.unprocessed || 0)} unprocessed`, time: "Current artifacts" },
-      { badge: "Export files", badgeClass: "badge-green", text: exportSummary?.file_count ? `${formatNumber(exportSummary.file_count)} export file(s) ready` : "No export artifacts generated", time: exportSummary?.output_dir || "data/outputs/by_site" }
-    ];
+    const items = buildDashboardActivityItems({
+      summary,
+      validation,
+      exportSummary,
+      pipelineStatus
+    });
 
     container.innerHTML = items.map((item) => `
       <div class="activity-item">
@@ -71,7 +190,7 @@ export function createDashboardRender(app, chartsApi) {
     `).join("");
   }
 
-  function applyDashboardSummary(summary, validation = app.state.validationData, exportSummary = app.state.exportData) {
+  function applyDashboardSummary(summary, validation = app.state.validationData, exportSummary = app.state.exportData, pipelineStatus = app.state.pipelineStatus, speciesHistogram = app.state.dashboardSpeciesHistogram) {
     app.state.dashboardSummary = summary;
     const total = Number(summary?.total_images || 0);
     const processed = Number(summary?.processed_images || 0);
@@ -88,6 +207,18 @@ export function createDashboardRender(app, chartsApi) {
     setDashboardStat("stat-animals-detected", animals);
     setDashboardStat("stat-pending-review", pendingReview);
     setDashboardStat("stat-warnings", warnings);
+    setText(
+      "stat-total-images-sub",
+      summary?.last_run?.batch
+        ? `Latest batch ${summary.last_run.batch}`
+        : summary?.last_run?.date
+          ? `Updated ${summary.last_run.date}`
+          : "Manifest total"
+    );
+    setText("stat-processed-images-sub", total ? `${formatPercent(getPercent(processed, total))} complete` : "Awaiting run data");
+    setText("stat-animals-detected-sub", summary ? `${formatNumber(animals)} detections` : "Resolved outputs");
+    setText("stat-pending-review-sub", `${formatNumber(pendingReview)} open in queue`);
+    setText("stat-warnings-sub", validation ? `${formatNumber(warnings)} validation issue${warnings === 1 ? "" : "s"}` : "Latest validation");
     setText("run-pct", formatPercent(runSuccess));
     document.getElementById("run-circle")?.setAttribute("stroke-dasharray", `${(Math.max(0, Math.min(100, runSuccess)) / 100) * 327} 327`);
     setText("run-success-count", formatNumber(processed));
@@ -105,12 +236,34 @@ export function createDashboardRender(app, chartsApi) {
     }
 
     chartsApi.buildSpeciesDonut([{ value: animalShare, color: "#DD6B20" }, { value: otherShare, color: "#CBD5E0" }]);
-    renderDashboardCameraChips(exportFiles);
-    renderDashboardCameraStatus(exportFiles);
-    renderDashboardActivity(summary, validation, exportSummary);
+    renderDashboardExportChips(exportFiles);
+    renderDashboardActivity(summary, validation, exportSummary, pipelineStatus);
+    renderDashboardSpeciesHistogram(app, chartsApi, speciesHistogram);
+
+    if (!speciesToggleBound) {
+      const toggleContainer = document.getElementById("dashboard-park-toggle");
+      if (toggleContainer) {
+        toggleContainer.addEventListener("click", (event) => {
+          const button = event.target.closest(".dashboard-park-toggle-btn");
+          if (!button) return;
+          const parkKey = button.dataset.parkKey;
+          if (!parkKey || parkKey === app.state.dashboardSpeciesHistogramSelected) return;
+          app.state.dashboardSpeciesHistogramSelected = parkKey;
+          renderDashboardSpeciesHistogram(app, chartsApi, app.state.dashboardSpeciesHistogram);
+        });
+        speciesToggleBound = true;
+      }
+    }
+
+    renderDashboardPipelineState(pipelineStatus);
+  }
+
+  function applyDashboardPipelineState(pipelineStatus = app.state.pipelineStatus) {
+    renderDashboardPipelineState(pipelineStatus);
   }
 
   return {
-    applyDashboardSummary
+    applyDashboardSummary,
+    applyDashboardPipelineState
   };
 }

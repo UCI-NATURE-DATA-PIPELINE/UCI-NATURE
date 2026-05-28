@@ -96,7 +96,8 @@ async function initializeApp() {
   app.features.validate.renderUnprocessedImages(null);
   app.features.export.syncExportFilenamePreview();
   buildDatePickers();
-  app.features.dashboard.applyDashboardSummary(null);
+  app.features.dashboard.applyDashboardSummary?.(null);
+  app.features.dashboard.applyDashboardPipelineState?.(null);
   app.features.validate.applyValidationData(null);
   app.features.export.applyExportData(null, null);
   app.features.pipeline.applyPipelineStatus(null);
