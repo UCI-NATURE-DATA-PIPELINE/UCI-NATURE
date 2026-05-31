@@ -158,19 +158,15 @@ export function createPipelineRender(app, stateApi) {
   // }
 
   function applyPipelineResults(results) {
-    // --- THE FIX: Unwrap the data from the backend's "exports" bucket ---
     if (results && results.exports) {
       results = results.exports;
     }
-    // --------------------------------------------------------------------
-
     app.state.pipelineResults = results;
     
     const emptyState = document.getElementById('insights-empty-state');
     const dashboard = document.getElementById('insights-dashboard');
     const downloadBtn = document.getElementById('download-latest-csv');
 
-    // FOOLPROOF CHECK: If the backend says "ready" OR if it gives us files, show the dashboard!
     const hasFiles = results && Array.isArray(results.files) && results.files.length > 0;
     const isReady = results && (results.status === "ready" || hasFiles);
 
@@ -187,18 +183,14 @@ export function createPipelineRender(app, stateApi) {
       return;
     }
 
-    // --- DASHBOARD IS READY TO SHOW ---
     if (emptyState) emptyState.style.display = 'none';
     if (dashboard) dashboard.style.display = 'block';
     
-    // 1. Setup the Download Button
     if (downloadBtn) {
       downloadBtn.style.display = 'inline-flex';
-      // Look for final_results.csv, or just grab the first file available
       const mainFile = (results.files || []).find(f => f.name === 'final_results.csv' || f.name === 'results.csv') || results.files?.[0];
       
       if (mainFile) {
-        // Safe click handler that calls your window-bound download function
         downloadBtn.onclick = () => {
           if (typeof window.downloadPipelineResult === 'function') {
             window.downloadPipelineResult(mainFile.name);
@@ -209,18 +201,15 @@ export function createPipelineRender(app, stateApi) {
       }
     }
 
-    // 2. Populate Image Stats (Total Animals Only)
     const imagesWithAnimals = results.images_with_animals;
     const totalEl = document.getElementById('insight-total-animals');
     
     if (imagesWithAnimals === undefined) {
-       // Backend didn't send animal counts yet
        if (totalEl) totalEl.textContent = "N/A";
     } else {
        if (totalEl) totalEl.textContent = formatNumber(imagesWithAnimals);
     }
 
-    // 3. Species List
     const speciesListElement = document.getElementById('insight-species-list');
     if (speciesListElement) {
       speciesListElement.innerHTML = ''; 

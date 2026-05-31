@@ -988,14 +988,7 @@ def build_review_items_data() -> List[dict]:
 
 
 # def build_export_artifact_summary() -> dict:
-#     """Summary used by the frontend export page.
-
-#     Only the four simplified CSVs are surfaced to users
-#     (final_results.csv, animal_results.csv, review_needed.csv,
-#     summary_by_camera.csv).
-#     Backend/debug CSVs stay on disk for validation but are filtered out
-#     here so the export page stays clean.
-#     """
+#  
 #     user_facing_paths = get_export_artifact_paths()
 #     export_files = []
 
@@ -1010,8 +1003,6 @@ def build_review_items_data() -> List[dict]:
 #             "path": str(path.relative_to(PROJECT_ROOT)),
 #         })
 
-#     # Stats below come from the backend/debug CSVs and feed the existing
-#     # "human detections excluded" / "burst duplicates removed" badges.
 #     human_count = 0
 #     burst_count = 0
 #     for p in get_location_csv_paths():
@@ -1081,7 +1072,6 @@ def build_export_artifact_summary() -> dict:
                 
             if has_animal:
                 images_with_animals += 1
-                # Ignore blank/unknown/human so they don't clog up your top species list
                 if sp and sp not in {"unknown", "blank", "human"}:
                     species_counter[sp] += 1
     # ------------------------------------------------------------------
