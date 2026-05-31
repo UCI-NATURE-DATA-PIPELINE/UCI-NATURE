@@ -1,14 +1,14 @@
 /** Export actions for loading artifacts, refreshing progress, and starting exports. */
 
-/** Read the current state of the three export option checkboxes from the DOM. */
+/** Read the export option checkboxes from the DOM.
+ *  Only `excludeHumans` is backed by the backend right now — it triggers a
+ *  CSV regeneration via POST /api/export/start. Burst-duplicate and
+ *  split-by-site options were removed from the UI because they had no
+ *  backend support; re-add them here once the backend wires them up. */
 function readExportOptions() {
   return {
-    removeBurstDuplicates: document.getElementById("opt-duplicates")
-      ?.querySelector(".export-option-cb")?.checked ?? true,
     excludeHumans: document.getElementById("opt-humans")
-      ?.querySelector(".export-option-cb")?.checked ?? true,
-    splitBySite: document.getElementById("opt-split")
-      ?.querySelector(".export-option-cb")?.checked ?? false
+      ?.querySelector(".export-option-cb")?.checked ?? true
   };
 }
 
@@ -108,11 +108,11 @@ export function createExportActions(app, api, renderApi) {
 
     closeExportModal: (event) => {
       if (!event || event.target === event.currentTarget)
-        document.getElementById("export-modal-overlay")?.classList.remove("active");
+        document.getElementById("export-modal-overlay")?.classList.remove("open");
     },
 
     confirmExport: () => {
-      document.getElementById("export-modal-overlay")?.classList.remove("active");
+      document.getElementById("export-modal-overlay")?.classList.remove("open");
       void beginExport();
     },
 
@@ -137,7 +137,7 @@ export function createExportActions(app, api, renderApi) {
         Number(app.state.validationData?.column_issue_count || 0) > 0;
 
       if (hasIssues) {
-        document.getElementById("export-modal-overlay")?.classList.add("active");
+        document.getElementById("export-modal-overlay")?.classList.add("open");
         return;
       }
       void beginExport();
@@ -146,10 +146,15 @@ export function createExportActions(app, api, renderApi) {
     toggleExportFilter: () =>
       document.getElementById("export-filter-body")?.classList.toggle("open"),
 
-    toggleExportOption: (row, id, checkboxEl = null) => {
+    toggleExportOption: (row, id, checkboxEl = null, event = null) => {
       const checkbox = checkboxEl || row.querySelector(".export-option-cb");
       if (!checkbox) return;
-      if (!checkboxEl) checkbox.checked = !checkbox.checked;
+      // If the click landed on the checkbox itself, the browser has already
+      // toggled `checked` — don't flip it again (that double-toggle is why
+      // clicking the box appeared to do nothing). Only flip manually when the
+      // click came from elsewhere in the row (label text, padding, badge).
+      const clickedCheckbox = event && event.target === checkbox;
+      if (!clickedCheckbox) checkbox.checked = !checkbox.checked;
       row.classList.toggle("checked", checkbox.checked);
     }
   };
