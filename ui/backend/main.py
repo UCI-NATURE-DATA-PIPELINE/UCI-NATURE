@@ -2373,10 +2373,32 @@ def validate_apply_correction(
 
 
 @app.post("/api/export/start")
-def export_start(authorization: Optional[str] = Header(default=None)):
+def export_start(
+    payload: dict = Body(default={}),
+    authorization: Optional[str] = Header(default=None),
+):
     require_auth(authorization)
-    return build_export_artifact_summary()
 
+    # When the request carries the excludeHumans flag, regenerate the output
+    # CSVs so the export reflects the checkbox. A bare {} (the initial page-load
+    # call) skips regeneration and just returns the existing artifacts, keeping
+    # page load fast and side-effect-free.
+    if "excludeHumans" in payload:
+        settings = _latest_output_settings()
+        settings["exclude_humans"] = bool(payload.get("excludeHumans"))
+
+        generate_output_csvs(
+            manifest=MANIFEST_CSV,
+            metadata=METADATA_CSV,
+            drive_index=OUTPUTS_DIR / "drive_index.csv",
+            out_dir=BY_LOCATION_DIR,
+            burst_seconds=settings["burst_seconds"],
+            burst_export=settings["burst_export"],
+            exclude_humans=settings["exclude_humans"],
+            review_decisions_path=REVIEW_DECISIONS_PATH,
+        )
+
+    return build_export_artifact_summary()
 
 @app.get("/api/statistics/summary")
 def statistics_summary(authorization: Optional[str] = Header(default=None)):
