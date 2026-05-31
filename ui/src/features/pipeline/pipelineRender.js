@@ -110,50 +110,137 @@ export function createPipelineRender(app, stateApi) {
     app.features.dashboard?.applyDashboardPipelineState?.(status);
   }
 
-  function buildPipelineResultRows(files = []) {
-    if (!files.length) {
-      return `<tr><td colspan="3" style="padding:14px 12px;color:var(--muted)">No results are available yet.</td></tr>`;
-    }
+  // function buildPipelineResultRows(files = []) {
+  //   if (!files.length) {
+  //     return `<tr><td colspan="3" style="padding:14px 12px;color:var(--muted)">No results are available yet.</td></tr>`;
+  //   }
 
-    return files.map((file) => {
-      const fileName = file.name || "";
-      const baseLabel = file.label || fileName.replace(/\.csv$/i, "") || "Unknown";
-      const isPrimary = fileName === "final_results.csv";
-      const tag = isPrimary
-        ? `<span style="margin-left:8px;font-size:11px;font-weight:600;color:#2B6CB0;background:#EBF8FF;border:1px solid #BEE3F8;padding:2px 7px;border-radius:6px">Main file</span>`
-        : "";
-      const downloadArg = escapeHtml(JSON.stringify(fileName));
+  //   return files.map((file) => {
+  //     const fileName = file.name || "";
+  //     const baseLabel = file.label || fileName.replace(/\.csv$/i, "") || "Unknown";
+  //     const isPrimary = fileName === "final_results.csv";
+  //     const tag = isPrimary
+  //       ? `<span style="margin-left:8px;font-size:11px;font-weight:600;color:#2B6CB0;background:#EBF8FF;border:1px solid #BEE3F8;padding:2px 7px;border-radius:6px">Main file</span>`
+  //       : "";
+  //     const downloadArg = escapeHtml(JSON.stringify(fileName));
 
-      return `
-      <tr${isPrimary ? ' style="background:#F7FAFC"' : ""}>
-        <td style="padding:12px">${escapeHtml(baseLabel)}${tag}</td>
-        <td style="padding:12px">${formatNumber(file.rows || 0)}</td>
-        <td style="padding:12px"><button class="btn btn-outline btn-sm" onclick="downloadPipelineResult(${downloadArg})">Download</button></td>
-      </tr>
-    `;
-    }).join("");
-  }
+  //     return `
+  //     <tr${isPrimary ? ' style="background:#F7FAFC"' : ""}>
+  //       <td style="padding:12px">${escapeHtml(baseLabel)}${tag}</td>
+  //       <td style="padding:12px">${formatNumber(file.rows || 0)}</td>
+  //       <td style="padding:12px"><button class="btn btn-outline btn-sm" onclick="downloadPipelineResult(${downloadArg})">Download</button></td>
+  //     </tr>
+  //   `;
+  //   }).join("");
+  // }
+
+  // function applyPipelineResults(results) {
+  //   app.state.pipelineResults = results;
+  //   const note = document.getElementById("pipeline-results-note");
+  //   const summary = document.getElementById("pipeline-results-summary");
+  //   const tableBody = document.getElementById("pipeline-results-body");
+
+  //   if (note) {
+  //     note.textContent = results?.status === "ready"
+  //       ? "Results are ready"
+  //       : app.state.runningModel
+  //         ? "Processing your images…"
+  //         : "Run the pipeline to generate results.";
+  //   }
+  //   if (summary) {
+  //     summary.textContent = results?.status === "ready"
+  //       ? `${formatNumber(results.file_count || 0)} file(s) · ${formatNumber(results.total_rows || 0)} records`
+  //       : results?.message || "No results are available yet.";
+  //   }
+  //   if (tableBody) {
+  //     tableBody.innerHTML = buildPipelineResultRows(results?.files || []);
+  //   }
+  // }
 
   function applyPipelineResults(results) {
-    app.state.pipelineResults = results;
-    const note = document.getElementById("pipeline-results-note");
-    const summary = document.getElementById("pipeline-results-summary");
-    const tableBody = document.getElementById("pipeline-results-body");
+    // --- THE FIX: Unwrap the data from the backend's "exports" bucket ---
+    if (results && results.exports) {
+      results = results.exports;
+    }
+    // --------------------------------------------------------------------
 
-    if (note) {
-      note.textContent = results?.status === "ready"
-        ? "Results are ready"
-        : app.state.runningModel
-          ? "Processing your images…"
-          : "Run the pipeline to generate results.";
+    app.state.pipelineResults = results;
+    
+    const emptyState = document.getElementById('insights-empty-state');
+    const dashboard = document.getElementById('insights-dashboard');
+    const downloadBtn = document.getElementById('download-latest-csv');
+
+    // FOOLPROOF CHECK: If the backend says "ready" OR if it gives us files, show the dashboard!
+    const hasFiles = results && Array.isArray(results.files) && results.files.length > 0;
+    const isReady = results && (results.status === "ready" || hasFiles);
+
+    if (!isReady) {
+      if (emptyState) emptyState.style.display = 'block';
+      if (dashboard) dashboard.style.display = 'none';
+      if (downloadBtn) downloadBtn.style.display = 'none';
+      
+      if (emptyState && app.state.runningModel) {
+        emptyState.textContent = "Processing your images…";
+      } else if (emptyState) {
+        emptyState.textContent = "Run the pipeline or select a historical run to view insights.";
+      }
+      return;
     }
-    if (summary) {
-      summary.textContent = results?.status === "ready"
-        ? `${formatNumber(results.file_count || 0)} file(s) · ${formatNumber(results.total_rows || 0)} records`
-        : results?.message || "No results are available yet.";
+
+    // --- DASHBOARD IS READY TO SHOW ---
+    if (emptyState) emptyState.style.display = 'none';
+    if (dashboard) dashboard.style.display = 'block';
+    
+    // 1. Setup the Download Button
+    if (downloadBtn) {
+      downloadBtn.style.display = 'inline-flex';
+      // Look for final_results.csv, or just grab the first file available
+      const mainFile = (results.files || []).find(f => f.name === 'final_results.csv' || f.name === 'results.csv') || results.files?.[0];
+      
+      if (mainFile) {
+        // Safe click handler that calls your window-bound download function
+        downloadBtn.onclick = () => {
+          if (typeof window.downloadPipelineResult === 'function') {
+            window.downloadPipelineResult(mainFile.name);
+          }
+        };
+      } else {
+        downloadBtn.style.display = 'none';
+      }
     }
-    if (tableBody) {
-      tableBody.innerHTML = buildPipelineResultRows(results?.files || []);
+
+    // 2. Populate Image Stats (Total Animals Only)
+    const imagesWithAnimals = results.images_with_animals;
+    const totalEl = document.getElementById('insight-total-animals');
+    
+    if (imagesWithAnimals === undefined) {
+       // Backend didn't send animal counts yet
+       if (totalEl) totalEl.textContent = "N/A";
+    } else {
+       if (totalEl) totalEl.textContent = formatNumber(imagesWithAnimals);
+    }
+
+    // 3. Species List
+    const speciesListElement = document.getElementById('insight-species-list');
+    if (speciesListElement) {
+      speciesListElement.innerHTML = ''; 
+      
+      const speciesCounts = results.species_counts || {};
+      const sortedSpecies = Object.entries(speciesCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3);
+
+      if (sortedSpecies.length === 0) {
+        speciesListElement.innerHTML = '<li style="color: #94a3b8; border: none; padding-bottom: 0; justify-content: center;">Detailed species breakdown not available for this run.</li>';
+      } else {
+        sortedSpecies.forEach(([species, count]) => {
+          speciesListElement.innerHTML += `
+            <li>
+              <span>${escapeHtml(species)}</span> 
+              <span>${formatNumber(count)}</span>
+            </li>`;
+        });
+      }
     }
   }
 

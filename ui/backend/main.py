@@ -987,15 +987,56 @@ def build_review_items_data() -> List[dict]:
     return items
 
 
-def build_export_artifact_summary() -> dict:
-    """Summary used by the frontend export page.
+# def build_export_artifact_summary() -> dict:
+#     """Summary used by the frontend export page.
 
-    Only the four simplified CSVs are surfaced to users
-    (final_results.csv, animal_results.csv, review_needed.csv,
-    summary_by_camera.csv).
-    Backend/debug CSVs stay on disk for validation but are filtered out
-    here so the export page stays clean.
-    """
+#     Only the four simplified CSVs are surfaced to users
+#     (final_results.csv, animal_results.csv, review_needed.csv,
+#     summary_by_camera.csv).
+#     Backend/debug CSVs stay on disk for validation but are filtered out
+#     here so the export page stays clean.
+#     """
+#     user_facing_paths = get_export_artifact_paths()
+#     export_files = []
+
+#     final_results_path = BY_LOCATION_DIR / FINAL_RESULTS_CSV
+#     total_rows = count_csv_rows(final_results_path) if final_results_path.exists() else 0
+
+#     for path in user_facing_paths:
+#         export_files.append({
+#             "name": path.name,
+#             "label": USER_FACING_DISPLAY_LABELS.get(path.name, path.stem),
+#             "rows": count_csv_rows(path),
+#             "path": str(path.relative_to(PROJECT_ROOT)),
+#         })
+
+#     # Stats below come from the backend/debug CSVs and feed the existing
+#     # "human detections excluded" / "burst duplicates removed" badges.
+#     human_count = 0
+#     burst_count = 0
+#     for p in get_location_csv_paths():
+#         for row in read_csv_rows(p):
+#             if (row.get("has_human") or "").strip() == "1" and (row.get("has_animal") or "").strip() != "1":
+#                 human_count += 1
+#             burst_idx = (row.get("BurstIndex") or "").strip()
+#             if burst_idx and burst_idx != "1":
+#                 burst_count += 1
+#     ready = bool(export_files)
+#     return {
+#         "message": "Export artifacts are ready" if ready else "No export artifacts available",
+#         "status": "ready" if ready else "empty",
+#         "output_dir": str(BY_LOCATION_DIR.relative_to(PROJECT_ROOT)) if BY_LOCATION_DIR.exists() else str(BY_LOCATION_DIR),
+#         "file_count": len(export_files),
+#         "total_rows": total_rows,
+#         "human_detections_excluded": human_count,
+#         "burst_duplicates_removed": burst_count,
+#         "files": export_files,
+#         "integration_mode": "artifact_backed",
+#         "note": "Drive upload is not wired yet; this route returns the generated export artifacts.",
+#     }
+
+def build_export_artifact_summary() -> dict:
+    """Summary used by the frontend export page and Pipeline Insights."""
     user_facing_paths = get_export_artifact_paths()
     export_files = []
 
@@ -1010,17 +1051,41 @@ def build_export_artifact_summary() -> dict:
             "path": str(path.relative_to(PROJECT_ROOT)),
         })
 
-    # Stats below come from the backend/debug CSVs and feed the existing
-    # "human detections excluded" / "burst duplicates removed" badges.
+    from collections import Counter
+    species_counter = Counter()
+    images_with_animals = 0
     human_count = 0
     burst_count = 0
-    for p in get_location_csv_paths():
+
+    files_to_scan = get_location_csv_paths()
+    
+    excluded_path = BY_LOCATION_DIR / EXCLUDED_NON_ANIMAL_FILENAME
+    if excluded_path.exists():
+        files_to_scan.append(excluded_path)
+
+    for p in files_to_scan:
         for row in read_csv_rows(p):
-            if (row.get("has_human") or "").strip() == "1" and (row.get("has_animal") or "").strip() != "1":
+            sp = (row.get("Species") or row.get("species") or "").strip().lower()
+            has_human_flag = str(row.get("has_human") or row.get("HasHuman") or "").strip()
+            has_animal_flag = str(row.get("has_animal") or row.get("HasAnimal") or "").strip()
+            
+            is_human = has_human_flag in {"1", "true", "True"} or sp == "human"
+            has_animal = has_animal_flag in {"1", "true", "True"}
+            
+            if is_human and not has_animal:
                 human_count += 1
+                
             burst_idx = (row.get("BurstIndex") or "").strip()
             if burst_idx and burst_idx != "1":
                 burst_count += 1
+                
+            if has_animal:
+                images_with_animals += 1
+                # Ignore blank/unknown/human so they don't clog up your top species list
+                if sp and sp not in {"unknown", "blank", "human"}:
+                    species_counter[sp] += 1
+    # ------------------------------------------------------------------
+
     ready = bool(export_files)
     return {
         "message": "Export artifacts are ready" if ready else "No export artifacts available",
@@ -1028,6 +1093,10 @@ def build_export_artifact_summary() -> dict:
         "output_dir": str(BY_LOCATION_DIR.relative_to(PROJECT_ROOT)) if BY_LOCATION_DIR.exists() else str(BY_LOCATION_DIR),
         "file_count": len(export_files),
         "total_rows": total_rows,
+        
+        "images_with_animals": images_with_animals,
+        "species_counts": dict(species_counter),
+        
         "human_detections_excluded": human_count,
         "burst_duplicates_removed": burst_count,
         "files": export_files,
