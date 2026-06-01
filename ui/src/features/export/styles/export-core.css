@@ -86,7 +86,7 @@
 /* Summary strip */
 .export-summary-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-bottom: 16px;
 }
@@ -442,6 +442,39 @@
   color: var(--muted);
   margin-top: 8px;
   text-align: center;
+}
+
+/* Apply Options button — local action (blue), distinct from the green
+   Drive upload button. Refreshes the export files based on selected options. */
+.export-apply-btn {
+  width: 100%;
+  padding: 13px;
+  border-radius: 12px;
+  border: none;
+  background: var(--blue);
+  color: #fff;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.2s;
+  box-shadow: 0 4px 14px rgba(43, 108, 176, 0.22);
+}
+.export-apply-btn:hover {
+  background: #2b6cb0;
+  box-shadow: 0 6px 20px rgba(43, 108, 176, 0.3);
+}
+.export-apply-btn:active {
+  transform: scale(0.98);
+}
+.export-apply-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* Export confirmation modal */
