@@ -74,6 +74,7 @@ export function bindGlobals(app, showPage) {
   window.toggleExportOption = app.features.export.toggleExportOption;
   window.toggleExportFilter = app.features.export.toggleExportFilter;
   window.startExport = app.features.export.startExport;
+  window.applyExportOptions = app.features.export.applyExportOptions;
   window.closeExportModal = app.features.export.closeExportModal;
   window.confirmExport = app.features.export.confirmExport;
   window.syncExportFilenamePreview = app.features.export.syncExportFilenamePreview;
