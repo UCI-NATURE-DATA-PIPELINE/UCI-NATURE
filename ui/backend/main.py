@@ -2383,11 +2383,12 @@ def export_start(
     # CSVs so the export reflects the checkbox. A bare {} (the initial page-load
     # call) skips regeneration and just returns the existing artifacts, keeping
     # page load fast and side-effect-free.
+    excluded_humans = None
     if "excludeHumans" in payload:
         settings = _latest_output_settings()
         settings["exclude_humans"] = bool(payload.get("excludeHumans"))
 
-        generate_output_csvs(
+        result = generate_output_csvs(
             manifest=MANIFEST_CSV,
             metadata=METADATA_CSV,
             drive_index=OUTPUTS_DIR / "drive_index.csv",
@@ -2397,8 +2398,18 @@ def export_start(
             exclude_humans=settings["exclude_humans"],
             review_decisions_path=REVIEW_DECISIONS_PATH,
         )
+        # Number of human-only rows actually excluded by THIS export run.
+        # generate_output_csvs only counts these when exclude_humans=True,
+        # so it is 0 when the option is unchecked — exactly what the
+        # "Human detections excluded" card should show.
+        excluded_humans = result.get("excluded_humans", 0)
 
-    return build_export_artifact_summary()
+    summary = build_export_artifact_summary()
+    # Override the dataset-wide human tally with the count actually excluded
+    # by this run, so the card reflects the current checkbox state.
+    if excluded_humans is not None:
+        summary["human_detections_excluded"] = excluded_humans
+    return summary
 
 @app.get("/api/statistics/summary")
 def statistics_summary(authorization: Optional[str] = Header(default=None)):
