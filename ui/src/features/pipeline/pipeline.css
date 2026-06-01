@@ -184,8 +184,10 @@ input[type=range].model-slider::-webkit-slider-thumb:hover {
 }
 
 .run-history-scroll {
-  max-height: 320px;
+  max-height: 450px;
   overflow-y: auto;
+  overflow-x: auto; 
+  width: 100%;     
   border-radius: 8px;
 }
 
@@ -216,8 +218,8 @@ input[type=range].model-slider::-webkit-slider-thumb:hover {
 /* Latest run dashboard*/
 .insights-grid {
   display: grid;
-  grid-template-columns: 1fr 2fr; 
-  gap: 20px;
+  grid-template-columns: 1fr 2fr;
+  gap: 20px; 
   margin-top: 10px;
 }
 
@@ -225,7 +227,7 @@ input[type=range].model-slider::-webkit-slider-thumb:hover {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 16px;
+  padding: 16px; 
   display: flex;
   flex-direction: column;
 }
@@ -239,10 +241,9 @@ input[type=range].model-slider::-webkit-slider-thumb:hover {
 }
 
 .insight-value {
-  font-size: 2rem;
-  font-weight: 700;
+  font-size: 2rem; 
   color: #0f172a;
-  margin-top: 8px;
+  margin-top: 8px; 
 }
 
 .progress-bar-bg {
@@ -288,4 +289,21 @@ input[type=range].model-slider::-webkit-slider-thumb:hover {
 .species-list li span:last-child {
   font-weight: 600;
   color: #0f172a;
+}
+
+.btn-delete-run {
+  background: transparent;
+  border: none;
+  color: #a0aec0;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.btn-delete-run:hover {
+  background: #fff5f5;
+  color: #e53e3e; 
 }

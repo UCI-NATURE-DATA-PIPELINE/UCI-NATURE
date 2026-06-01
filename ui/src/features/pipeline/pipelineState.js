@@ -14,7 +14,7 @@ import {
 } from "../../utils/helpers.js";
 
 const RUN_HISTORY_KEY = "uci_nature_run_history";
-const MAX_HISTORY = 50;
+const MAX_HISTORY = 500;
 
 const RUN_HISTORY_FILTER_KEY = "uci_nature_run_history_filter";
 
@@ -205,16 +205,24 @@ export function createPipelineState(app) {
 
     return `
       <tr>
+        <td style="text-align: center; width: 30px;" onclick="event.stopPropagation();">
+          <input type="checkbox" class="run-checkbox" value="${escapeHtml(String(run.run_id))}" onclick="toggleRunSelection()" style="cursor: pointer;">
+        </td>
+        
         <td><span class="batch-num">${escapeHtml(String(run.run_id))}</span>${isLive ? ` <span style="font-size:10px;color:var(--blue);font-weight:600;margin-left:4px">LIVE</span>` : ""}</td>
         <td>${escapeHtml(formatTimestampLabel(run.finished_at || run.started_at))}</td>
         <td>${escapeHtml(String(imageCountText))}</td>
         <td>${escapeHtml(durationText)}</td>
         <td><span class="status-pill ${statusClass}">${escapeHtml(statusLabel)}</span></td>
         <td><span class="${run.failure_count ? "failure-warn" : "failure-zero"}">${escapeHtml(String(failureText))}</span></td>
-        <td><button class="rh-expand-btn" id="rh-btn-${detailId}" onclick="toggleRunDetail('${detailId}')">Details<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button></td>
+        <td style="text-align:right; white-space:nowrap;">
+          <button class="rh-expand-btn" id="rh-btn-${detailId}" onclick="toggleRunDetail('${detailId}')">Details<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+          <button class="btn-delete-run" onclick="deleteRunHistoryItem('${run.run_id}', this); event.stopPropagation();" title="Remove from history" style="margin-left: 8px;">✕</button>
+        </td>
       </tr>
+        
       <tr class="rh-detail-row" id="rh-detail-${detailId}">
-        <td colspan="7">
+        <td colspan="8">
           <div class="rh-detail-inner">
             <div class="rh-detail-section"><div class="rh-detail-label">Results</div><div class="rh-detail-stat">${formatNumber(run.processed_rows)} <span>processed</span></div><div class="rh-detail-stat">${formatNumber(run.review_items)} <span>queued for review</span></div><div class="rh-detail-stat">${formatNumber(run.exported_rows)} <span>rows written to export files</span></div></div>
             <div class="rh-detail-section"><div class="rh-detail-label">Performance</div><div class="rh-detail-stat">${formatDecimal(run.throughput)} <span>img / sec</span></div><div class="rh-detail-stat">${escapeHtml(formatTimestampLabel(run.started_at))} → ${escapeHtml(formatTimestampLabel(run.finished_at || run.started_at))} <span>time range</span></div></div>

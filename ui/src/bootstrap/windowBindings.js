@@ -89,6 +89,97 @@ export function bindGlobals(app, showPage) {
     });
   };
   
+  window.deleteRunHistoryItem = function(runId, btnElement) {
+    if (!confirm("Are you sure you want to remove this run from your history?")) return;
+    
+    const storageKey = "uci_nature_run_history";
+    let stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    stored = stored.filter(run => run.run_id !== runId);
+    localStorage.setItem(storageKey, JSON.stringify(stored));
+    
+    if (btnElement) {
+      const row = btnElement.closest('tr');
+      if (row) row.remove();
+    }
+    
+    const detailId = String(runId).replace(/[^a-zA-Z0-9_-]/g, "");
+    const detailRow = document.getElementById(`rh-detail-${detailId}`);
+    if (detailRow) detailRow.remove();
+    
+    const historyNote = document.getElementById("run-history-note");
+    if (historyNote) {
+      const count = stored.length;
+      if (count > 0) {
+        historyNote.textContent = `${count} run${count === 1 ? "" : "s"} stored`;
+      } else {
+        historyNote.textContent = "Latest backend run";
+        const tbody = document.getElementById("run-history-body");
+        if (tbody) {
+          tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);padding:18px 12px">No runs yet. Start a pipeline run from this page to see history here.</td></tr>';
+        }
+      }
+    }
+  };
+
+  window.toggleRunSelection = function() {
+    const checkboxes = document.querySelectorAll('.run-checkbox');
+    const selected = Array.from(checkboxes).filter(cb => cb.checked);
+    const count = selected.length;
+    
+    const countEl = document.getElementById('run-history-selected-count');
+    const btnEl = document.getElementById('run-history-delete-btn');
+    const selectAllEl = document.getElementById('run-history-select-all');
+    
+    if (countEl) countEl.textContent = `${count} selected`;
+    if (btnEl) btnEl.style.display = count > 0 ? 'inline-flex' : 'none';
+    
+    if (selectAllEl && checkboxes.length > 0) {
+      selectAllEl.checked = (count === checkboxes.length);
+    }
+  };
+  
+  window.toggleAllRuns = function(isChecked) {
+    const checkboxes = document.querySelectorAll('.run-checkbox');
+    checkboxes.forEach(cb => cb.checked = isChecked);
+    toggleRunSelection();
+  };
+  
+  window.deleteSelectedRuns = function() {
+    const checkboxes = document.querySelectorAll('.run-checkbox');
+    const selectedCheckboxes = Array.from(checkboxes).filter(cb => cb.checked);
+    const selectedIds = selectedCheckboxes.map(cb => cb.value);
+  
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Are you sure you want to remove ${selectedIds.length} run(s) from your history?`)) return;
+  
+    const storageKey = "uci_nature_run_history";
+    let stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    stored = stored.filter(run => !selectedIds.includes(String(run.run_id)));
+    localStorage.setItem(storageKey, JSON.stringify(stored));
+    selectedCheckboxes.forEach(cb => {
+      const row = cb.closest('tr');
+      if (row) row.remove();
+      
+      const detailId = String(cb.value).replace(/[^a-zA-Z0-9_-]/g, "");
+      const detailRow = document.getElementById(`rh-detail-${detailId}`);
+      if (detailRow) detailRow.remove();
+    });
+    toggleRunSelection();
+    const historyNote = document.getElementById("run-history-note");
+    if (historyNote) {
+      const count = stored.length;
+      if (count > 0) {
+        historyNote.textContent = `${count} run${count === 1 ? "" : "s"} stored`;
+      } else {
+        historyNote.textContent = "Latest backend run";
+        const tbody = document.getElementById("run-history-body");
+        if (tbody) {
+          tbody.innerHTML = '<tr><td colspan="8" style="color:var(--muted);padding:18px 12px">No runs yet. Start a pipeline run from this page to see history here.</td></tr>';
+        }
+      }
+    }
+  };
+
   window.clearRunHistoryFilter = function() {
     app.features.pipeline.applyDateFilter({ from: "", to: "" });
   };

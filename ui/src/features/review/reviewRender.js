@@ -79,8 +79,7 @@ export function createReviewRender(app, stateApi) {
     if (count) count.textContent = `${items.length} items`;
 
     if (!items.length) {
-      container.innerHTML = `<div class="review-queue-item selected"><div class="rq-file">No review items available</div><div class="rq-sub">Current backend artifacts returned an empty review queue</div><div class="rq-status pending">Empty</div></div>`;
-      if (completeBanner) completeBanner.style.display = "none";
+      container.innerHTML = `<div class="review-queue-item selected" style="cursor: default;"><div class="rq-file">You're all caught up!</div><div class="rq-sub">There are no images waiting for manual review. Click on "All" to browse completed items.</div><div class="rq-status" style="border: none; color: #10b981; padding: 0;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div></div>`;      if (completeBanner) completeBanner.style.display = "none";
       return;
     }
 
