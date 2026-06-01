@@ -106,6 +106,27 @@ export function createExportActions(app, api, renderApi) {
     beginExport,
     downloadFile,
 
+    // Local "Apply Options" action: regenerate the export files based on the
+    // selected options (currently excludeHumans), refresh the summary + file
+    // rows, then let the user download via the per-file Download buttons.
+    // Reuses beginExport(); adds button feedback so the user sees it worked.
+    applyExportOptions: async () => {
+      const btn = document.getElementById("export-apply-btn");
+      const originalHTML = btn?.innerHTML;
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = "Updating…";
+      }
+      try {
+        await beginExport();
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          if (originalHTML) btn.innerHTML = originalHTML;
+        }
+      }
+    },
+
     closeExportModal: (event) => {
       if (!event || event.target === event.currentTarget)
         document.getElementById("export-modal-overlay")?.classList.remove("open");
