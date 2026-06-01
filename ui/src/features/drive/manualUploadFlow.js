@@ -17,7 +17,13 @@
  * their results so the user sees one summary.
  */
 import { appState } from "../../state/appState.js";
-import { uploadStagedImages, uploadStagedZip } from "../../services/api.js";
+import {
+  clearStagingFolders,
+  deleteStagingFolder,
+  listStagingFolders,
+  uploadStagedImages,
+  uploadStagedZip
+} from "../../services/api.js";
 import { normalizeCameraSiteName } from "./cameraSiteName.js";
 
 const ACCEPTED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".tif", ".tiff"];
@@ -309,7 +315,21 @@ export function createManualUploadFlow(app) {
     error: "",
     lastResult: null,      // merged backend payload
     listExpanded: false,
-    _uploadAbortController: null
+    _uploadAbortController: null,
+    // "Folders Ready for Processing" panel — what's actually inside
+    // data/staging/ right now on the backend. Loaded on page mount,
+    // refreshed after each successful upload and after the user
+    // removes/clears entries.
+    stagingFolders: [],
+    stagingLoading: false,
+    stagingError: "",
+    stagingLoaded: false,
+    stagingFilters: {
+      search: "",
+      dateFrom: "",
+      dateTo: ""
+    },
+    selectedStagingIds: new Set()
   };
 
   let bound = false;
@@ -361,7 +381,21 @@ export function createManualUploadFlow(app) {
       importSummarySites: getById("upload-import-summary-sites"),
       importSummaryImages: getById("upload-import-summary-images"),
       importSummaryTypes: getById("upload-import-summary-types"),
-      runtimeWarning: getById("upload-runtime-warning")
+      runtimeWarning: getById("upload-runtime-warning"),
+      // Folders Ready for Processing panel
+      stagingCard: getById("staging-folders-card"),
+      stagingSummary: getById("staging-folders-summary"),
+      stagingEmpty: getById("staging-folders-empty"),
+      stagingList: getById("staging-folders-list"),
+      stagingRefreshBtn: getById("staging-folders-refresh-btn"),
+      stagingClearBtn: getById("staging-folders-clear-btn"),
+      stagingSearchInput: getById("staging-folder-search"),
+      stagingDateFromInput: getById("staging-folder-date-from"),
+      stagingDateToInput: getById("staging-folder-date-to"),
+      stagingClearFiltersBtn: getById("staging-folders-clear-filters-btn"),
+      stagingSelectVisibleCb: getById("staging-select-visible-cb"),
+      stagingRemoveSelectedBtn: getById("staging-remove-selected-btn"),
+      stagingSelectionSummary: getById("staging-selection-summary")
     };
   }
 
@@ -477,7 +511,7 @@ export function createManualUploadFlow(app) {
       } else if (totalQueueCount()) {
         els.barInfo.innerHTML = `<strong>${totalQueueCount()} upload${totalQueueCount() === 1 ? "" : "s"}</strong> ready · ${totalImageLabel()} image(s) · ${uploadTypeLabel()}`;
       } else {
-        els.barInfo.textContent = "Drop or browse wildlife camera images to begin.";
+        els.barInfo.textContent = "Drop files here or browse to begin.";
       }
     }
     if (els.importSummaryUploads) els.importSummaryUploads.textContent = String(state.batches.length);
@@ -497,7 +531,7 @@ export function createManualUploadFlow(app) {
       empty.className = "upload-queue-empty";
       empty.textContent = state.lastResult
         ? "Queue cleared after upload. Add another batch to continue."
-        : "No uploads selected yet. Drop wildlife camera images, folders, or ZIPs above.";
+        : "No uploads selected yet. Drop files, folders, or ZIPs above.";
       els.list.appendChild(empty);
       if (els.summaryWrap) els.summaryWrap.hidden = true;
       return;
@@ -685,7 +719,7 @@ export function createManualUploadFlow(app) {
           ? `${state.lastResult.uploaded_count || 0} image(s) staged`
           : fileCount
             ? `${totalImages || totalImageLabel()} image(s)`
-            : "Drop images, a folder, or a ZIP to begin.";
+            : "Drop files, a folder, or a ZIP to begin.";
     set("upload-progress-source-name", sourceName);
     set("upload-progress-source-sub", sub);
 
@@ -852,6 +886,357 @@ export function createManualUploadFlow(app) {
     renderUploadSummary();
     renderControls();
     renderResult();
+    renderStagingFolders();
+  }
+
+  // ── Folders Ready for Processing ────────────────────────────────────
+  // The backend's data/staging/ directory is the source of truth for
+  // what the pipeline will process. We list it on render and expose
+  // per-row Remove + Clear All so users don't accidentally re-process
+  // leftover folders from earlier uploads.
+
+  function stagingFolderId(folder) {
+    return String(folder?.id || folder?.name || "").trim();
+  }
+
+  function stagingFolderName(folder) {
+    const folderId = stagingFolderId(folder);
+    return String(folder?.name || folderId || "Unnamed staged item");
+  }
+
+  function stagingDateOnly(value) {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const date = new Date(text);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toISOString().slice(0, 10);
+  }
+
+  function hasActiveStagingFilters() {
+    const filters = state.stagingFilters || {};
+    return Boolean(filters.search || filters.dateFrom || filters.dateTo);
+  }
+
+  function filteredStagingFolders() {
+    const folders = state.stagingFolders || [];
+    const filters = state.stagingFilters || {};
+    const search = String(filters.search || "").trim().toLowerCase();
+    const dateFrom = String(filters.dateFrom || "").trim();
+    const dateTo = String(filters.dateTo || "").trim();
+
+    return folders.filter((folder) => {
+      if (search) {
+        const haystack = `${stagingFolderName(folder)} ${stagingFolderId(folder)}`.toLowerCase();
+        if (!haystack.includes(search)) return false;
+      }
+      if (dateFrom || dateTo) {
+        const modifiedDate = stagingDateOnly(folder.modified_at);
+        if (!modifiedDate) return false;
+        if (dateFrom && modifiedDate < dateFrom) return false;
+        if (dateTo && modifiedDate > dateTo) return false;
+      }
+      return true;
+    });
+  }
+
+  function pruneStagingSelection() {
+    const availableIds = new Set((state.stagingFolders || []).map(stagingFolderId).filter(Boolean));
+    Array.from(state.selectedStagingIds || []).forEach((folderId) => {
+      if (!availableIds.has(folderId)) state.selectedStagingIds.delete(folderId);
+    });
+  }
+
+  function renderStagingFilterControls(els, visibleFolders) {
+    const filters = state.stagingFilters || {};
+    const isBusy = state.stagingLoading || state.isUploading;
+    const visibleIds = visibleFolders.map(stagingFolderId).filter(Boolean);
+    const visibleSelectedCount = visibleIds.filter((folderId) => state.selectedStagingIds.has(folderId)).length;
+    const selectedCount = state.selectedStagingIds.size;
+
+    if (els.stagingSearchInput) {
+      els.stagingSearchInput.value = filters.search || "";
+      els.stagingSearchInput.disabled = isBusy;
+    }
+    if (els.stagingDateFromInput) {
+      els.stagingDateFromInput.value = filters.dateFrom || "";
+      els.stagingDateFromInput.disabled = isBusy;
+    }
+    if (els.stagingDateToInput) {
+      els.stagingDateToInput.value = filters.dateTo || "";
+      els.stagingDateToInput.disabled = isBusy;
+    }
+    if (els.stagingClearFiltersBtn) {
+      els.stagingClearFiltersBtn.disabled = !hasActiveStagingFilters() || isBusy;
+    }
+    if (els.stagingSelectVisibleCb) {
+      els.stagingSelectVisibleCb.disabled = !visibleIds.length || isBusy;
+      els.stagingSelectVisibleCb.checked = Boolean(visibleIds.length && visibleSelectedCount === visibleIds.length);
+      els.stagingSelectVisibleCb.indeterminate = Boolean(visibleSelectedCount && visibleSelectedCount < visibleIds.length);
+    }
+    if (els.stagingRemoveSelectedBtn) {
+      els.stagingRemoveSelectedBtn.disabled = !selectedCount || isBusy;
+    }
+    if (els.stagingSelectionSummary) {
+      els.stagingSelectionSummary.textContent = `${selectedCount} selected`;
+    }
+  }
+
+  function renderStagingFolders() {
+    const els = elements();
+    if (!els.stagingList || !els.stagingSummary) return;
+
+    const folders = state.stagingFolders || [];
+    pruneStagingSelection();
+    const visibleFolders = filteredStagingFolders();
+    const hasAny = folders.length > 0;
+    const hasVisible = visibleFolders.length > 0;
+    const filtersActive = hasActiveStagingFilters();
+    renderStagingFilterControls(els, visibleFolders);
+
+    if (els.stagingClearBtn) {
+      els.stagingClearBtn.hidden = !hasAny;
+      els.stagingClearBtn.disabled = state.stagingLoading || state.isUploading;
+    }
+    if (els.stagingRefreshBtn) {
+      els.stagingRefreshBtn.disabled = state.stagingLoading || state.isUploading;
+    }
+    if (els.stagingEmpty) {
+      els.stagingEmpty.hidden = hasVisible || state.stagingLoading || Boolean(state.stagingError);
+      els.stagingEmpty.textContent = hasAny && filtersActive
+        ? "No folders match the current filters."
+        : "No folders are staged.";
+    }
+
+    if (state.stagingError) {
+      els.stagingSummary.textContent = state.stagingError;
+    } else if (state.stagingLoading) {
+      els.stagingSummary.textContent = "Loading staged folders…";
+    } else if (!hasAny) {
+      els.stagingSummary.textContent =
+        "Nothing is staged. Add uploads above when ready.";
+    } else {
+      const summaryFolders = filtersActive ? visibleFolders : folders;
+      const totalImages = summaryFolders.reduce((n, f) => n + Number(f.image_count || 0), 0);
+      const totalBytes = summaryFolders.reduce((n, f) => n + Number(f.size_bytes || 0), 0);
+      const countText = filtersActive
+        ? `${visibleFolders.length} of ${folders.length} staged item(s) shown`
+        : `${folders.length} staged item(s)`;
+      els.stagingSummary.textContent =
+        `${countText} · ${totalImages} image(s) · ${formatBytes(totalBytes)}`;
+    }
+
+    if (!hasAny || !hasVisible) {
+      els.stagingList.innerHTML = "";
+      return;
+    }
+
+    els.stagingList.innerHTML = "";
+    visibleFolders.forEach((folder) => {
+      const folderId = stagingFolderId(folder);
+      const folderName = stagingFolderName(folder);
+      const kind = folder.is_directory ? "Folder" : "File";
+      const imageCount = Number(folder.image_count || 0);
+      const imgs = `${imageCount} image${imageCount === 1 ? "" : "s"}`;
+      const size = folder.size_bytes ? ` · ${formatBytes(folder.size_bytes)}` : "";
+      const updated = folder.modified_at ? ` · updated ${String(folder.modified_at).replace("T", " ")}` : "";
+      const iconColor = folder.is_directory ? "#3182CE" : "#718096";
+      const icon = folder.is_directory
+        ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`
+        : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+
+      const row = document.createElement("div");
+      row.className = "upload-queue-item staging-folder-row";
+      row.dataset.folderId = folderId;
+
+      const checkWrap = document.createElement("label");
+      checkWrap.className = "staging-row-check";
+      checkWrap.title = `Select ${folderName}`;
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "staging-checkbox staging-folder-checkbox";
+      checkbox.dataset.folderId = folderId;
+      checkbox.checked = state.selectedStagingIds.has(folderId);
+      checkbox.disabled = state.stagingLoading || state.isUploading || !folderId;
+      checkbox.setAttribute("aria-label", `Select ${folderName}`);
+      checkWrap.append(checkbox);
+
+      const iconWrap = document.createElement("div");
+      iconWrap.className = "queue-file-icon";
+      iconWrap.innerHTML = icon;
+
+      const main = document.createElement("div");
+      main.className = "queue-batch-main";
+
+      const name = document.createElement("div");
+      name.className = "queue-file-name";
+      name.textContent = folderName;
+
+      const meta = document.createElement("div");
+      meta.className = "queue-file-meta";
+      meta.textContent = `${kind} · ${imgs}${size}${updated}`;
+
+      const typeTag = document.createElement("span");
+      typeTag.className = "queue-location-tag";
+      typeTag.dataset.noedit = "true";
+      typeTag.textContent = kind;
+
+      const imageLabel = document.createElement("span");
+      imageLabel.className = "queue-size-text";
+      imageLabel.textContent = imgs;
+
+      const actions = document.createElement("div");
+      actions.className = "queue-batch-actions";
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "queue-remove-btn staging-remove-btn";
+      remove.dataset.folderId = folderId;
+      remove.textContent = "Remove";
+
+      main.append(name, meta);
+      actions.append(remove);
+      row.append(checkWrap, iconWrap, main, typeTag, imageLabel, actions);
+      els.stagingList.append(row);
+    });
+  }
+
+  async function loadStagingFolders({ silent = false } = {}) {
+    if (!isBackendConnected()) {
+      state.stagingFolders = [];
+      state.stagingError = "Backend offline - staged folders unavailable.";
+      state.stagingLoaded = false;
+      renderStagingFolders();
+      return;
+    }
+    state.stagingLoading = true;
+    state.stagingError = "";
+    renderStagingFolders();
+    try {
+      const payload = await listStagingFolders();
+      state.stagingFolders = Array.isArray(payload?.entries) ? payload.entries : [];
+      state.stagingLoaded = true;
+      pruneStagingSelection();
+    } catch (error) {
+      state.stagingFolders = [];
+      state.stagingError = error?.message || "Failed to load staged folders.";
+      state.stagingLoaded = true;
+      state.selectedStagingIds.clear();
+      if (!silent) app.showToast?.(state.stagingError, "warn");
+    } finally {
+      state.stagingLoading = false;
+      renderStagingFolders();
+    }
+  }
+
+  async function removeStagingFolder(folderId) {
+    if (!folderId || state.stagingLoading) return;
+    const proceed = window.confirm(
+      `"${folderId}" will be deleted from data/staging/ and will not be processed in the next run. This cannot be undone.`
+    );
+    if (!proceed) return;
+    try {
+      await deleteStagingFolder(folderId);
+      state.selectedStagingIds.delete(folderId);
+      app.showToast?.(`Removed "${folderId}" from staging.`, "success");
+    } catch (error) {
+      app.showToast?.(error?.message || "Failed to remove folder.", "warn");
+    }
+    await loadStagingFolders({ silent: true });
+  }
+
+  async function clearAllStagingFolders() {
+    if (state.stagingLoading) return;
+    const proceed = window.confirm(
+      "Every staged upload folder and image currently in data/staging/ will be deleted. Pipeline outputs, run history, and CSVs are not affected. This cannot be undone."
+    );
+    if (!proceed) return;
+    try {
+      const result = await clearStagingFolders();
+      state.selectedStagingIds.clear();
+      app.showToast?.(
+        `Cleared ${result?.removed_count || 0} staged item(s).`,
+        "success"
+      );
+    } catch (error) {
+      app.showToast?.(error?.message || "Failed to clear staging.", "warn");
+    }
+    await loadStagingFolders({ silent: true });
+  }
+
+  function updateStagingFilter(name, value) {
+    state.stagingFilters = {
+      ...(state.stagingFilters || {}),
+      [name]: String(value || "")
+    };
+    renderStagingFolders();
+  }
+
+  function clearStagingFilters() {
+    state.stagingFilters = { search: "", dateFrom: "", dateTo: "" };
+    renderStagingFolders();
+  }
+
+  function setVisibleStagingSelection(checked) {
+    const visibleIds = filteredStagingFolders().map(stagingFolderId).filter(Boolean);
+    visibleIds.forEach((folderId) => {
+      if (checked) state.selectedStagingIds.add(folderId);
+      else state.selectedStagingIds.delete(folderId);
+    });
+    renderStagingFolders();
+  }
+
+  async function removeSelectedStagingFolders() {
+    if (state.stagingLoading) return;
+    const selectedIds = Array.from(state.selectedStagingIds).filter(Boolean);
+    if (!selectedIds.length) return;
+    const sample = selectedIds.slice(0, 3).map((folderId) => `"${folderId}"`).join(", ");
+    const more = selectedIds.length > 3 ? ` and ${selectedIds.length - 3} more` : "";
+    const proceed = window.confirm(
+      `${selectedIds.length} selected staged item(s) (${sample}${more}) will be deleted from data/staging/ and will not be processed in the next run. This cannot be undone.`
+    );
+    if (!proceed) return;
+
+    state.stagingLoading = true;
+    renderStagingFolders();
+    let removedCount = 0;
+    const failures = [];
+    for (const folderId of selectedIds) {
+      try {
+        await deleteStagingFolder(folderId);
+        removedCount += 1;
+        state.selectedStagingIds.delete(folderId);
+      } catch (error) {
+        failures.push({ folderId, message: error?.message || "Failed to remove folder." });
+      }
+    }
+    state.stagingLoading = false;
+
+    if (removedCount) {
+      app.showToast?.(`Removed ${removedCount} staged item(s).`, "success");
+    }
+    if (failures.length) {
+      app.showToast?.(`Could not remove ${failures.length} selected item(s).`, "warn");
+    }
+    await loadStagingFolders({ silent: true });
+  }
+
+  function handleStagingListClick(event) {
+    const btn = event.target.closest(".staging-remove-btn");
+    if (!btn) return;
+    event.preventDefault();
+    void removeStagingFolder(btn.dataset.folderId || "");
+  }
+
+  function handleStagingListChange(event) {
+    const checkbox = event.target.closest(".staging-folder-checkbox");
+    if (!checkbox) return;
+    const folderId = checkbox.dataset.folderId || "";
+    if (!folderId) return;
+    if (checkbox.checked) state.selectedStagingIds.add(folderId);
+    else state.selectedStagingIds.delete(folderId);
+    renderStagingFolders();
   }
 
   async function addFiles(fileList) {
@@ -1030,6 +1415,7 @@ export function createManualUploadFlow(app) {
       state.lastResult = merged;
       state.progress = 100;
       app.showToast(`Queue complete · ${merged.uploaded_count} image(s) staged`, "success");
+      await loadStagingFolders({ silent: true });
     } catch (error) {
       const message = error?.message || "Upload failed";
       if (state.cancelRequested || message === "Upload cancelled.") {
@@ -1310,6 +1696,26 @@ export function createManualUploadFlow(app) {
     els.siteModalCancel?.addEventListener("click", closeSiteModal);
     els.siteModalSave?.addEventListener("click", applySiteOverride);
     els.siteModalInput?.addEventListener("keydown", handleSiteModalKeydown);
+    els.stagingList?.addEventListener("click", handleStagingListClick);
+    els.stagingList?.addEventListener("change", handleStagingListChange);
+    els.stagingRefreshBtn?.addEventListener("click", () => { void loadStagingFolders(); });
+    els.stagingClearBtn?.addEventListener("click", () => { void clearAllStagingFolders(); });
+    els.stagingSearchInput?.addEventListener("input", (event) => {
+      updateStagingFilter("search", event.target?.value || "");
+    });
+    els.stagingDateFromInput?.addEventListener("input", (event) => {
+      updateStagingFilter("dateFrom", event.target?.value || "");
+    });
+    els.stagingDateToInput?.addEventListener("input", (event) => {
+      updateStagingFilter("dateTo", event.target?.value || "");
+    });
+    els.stagingClearFiltersBtn?.addEventListener("click", clearStagingFilters);
+    els.stagingSelectVisibleCb?.addEventListener("change", (event) => {
+      setVisibleStagingSelection(Boolean(event.target?.checked));
+    });
+    els.stagingRemoveSelectedBtn?.addEventListener("click", () => {
+      void removeSelectedStagingFolders();
+    });
     els.siteModal?.addEventListener("click", (event) => {
       if (event.target === els.siteModal) closeSiteModal();
     });
@@ -1327,11 +1733,15 @@ export function createManualUploadFlow(app) {
     if (!bindEvents()) return;
     refreshSiteDetection();
     render();
+    void loadStagingFolders({ silent: true });
   }
 
   function refresh() {
     if (!bound) return;
     render();
+    if (isBackendConnected() && !state.stagingLoaded && !state.stagingLoading) {
+      void loadStagingFolders({ silent: true });
+    }
   }
 
   // Stop a running manual upload. Cancels any in-flight pipeline run via

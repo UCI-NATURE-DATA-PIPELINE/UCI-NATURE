@@ -107,3 +107,48 @@ export function uploadStagedZip(zipFile, { cameraLocation = "", onProgress, sign
   if (normalizedCameraLocation) formData.append("camera_location", normalizedCameraLocation);
   return sendFormData(`${API_BASE}/upload/zip`, formData, onProgress, signal);
 }
+
+// ── Staging-folder management ────────────────────────────────────────────
+// Used by the "Folders Ready for Processing" panel on the Manual Upload
+// page. Lets the user inspect what's currently staged for the next
+// pipeline run and remove leftovers from previous runs.
+
+function getJsonAuthHeaders() {
+  const token = getStoredAuthToken();
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+async function jsonFetch(url, options = {}) {
+  const res = await fetch(url, {
+    ...options,
+    headers: { ...getJsonAuthHeaders(), ...(options.headers || {}) },
+    cache: "no-store",
+  });
+  let payload = null;
+  try { payload = await res.json(); } catch (_) { payload = null; }
+  if (!res.ok) {
+    throw new Error(
+      (payload && (payload.detail || payload.message)) || `Request failed: ${res.status}`
+    );
+  }
+  return payload || {};
+}
+
+/** List entries currently inside data/staging/. */
+export function listStagingFolders() {
+  return jsonFetch(`${API_BASE}/uploads/staging-folders`, { method: "GET" });
+}
+
+/** Remove one folder/file directly under data/staging/. */
+export function deleteStagingFolder(folderName) {
+  const safe = encodeURIComponent(String(folderName || "").trim());
+  if (!safe) return Promise.reject(new Error("Folder name is required."));
+  return jsonFetch(`${API_BASE}/uploads/staging-folders/${safe}`, { method: "DELETE" });
+}
+
+/** Remove every user-uploaded entry from data/staging/. */
+export function clearStagingFolders() {
+  return jsonFetch(`${API_BASE}/uploads/staging-folders`, { method: "DELETE" });
+}

@@ -13,8 +13,9 @@
 import { API_BASE, fetchWithTimeout, getAuthHeaders, handleResponse } from "./core/http.js";
 
 export async function getReviewItems() {
-  const res = await fetchWithTimeout(`${API_BASE}/review/items`, {
+  const res = await fetchWithTimeout(`${API_BASE}/review/items?ts=${Date.now()}`, {
     method: "GET",
+    cache: "no-store",
     headers: getAuthHeaders()
   });
   return handleResponse(res);

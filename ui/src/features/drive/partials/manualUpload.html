@@ -22,13 +22,21 @@
   <div class="upload-workspace-grid">
     <div class="upload-main-column">
       <div class="card card-p">
-        <div class="card-title">Upload wildlife camera images</div>
-        <div class="upload-subtitle">Drop image files, folders, or ZIP archives. Each detected batch is queued separately.</div>
-        <div class="upload-dropzone" id="upload-zone" role="button" tabindex="0" aria-label="Drop wildlife camera images or click to browse">
+        <div class="upload-site-title-row">
+          <div class="card-title">Upload wildlife camera images</div>
+          <span class="upload-site-help-wrap tooltip-align-left">
+            <button type="button" class="upload-site-help" id="upload-help-btn" aria-label="Upload help" aria-expanded="false" aria-controls="upload-help-popover">?</button>
+            <span class="upload-site-popover upload-help-popover" id="upload-help-popover" role="tooltip">
+              Upload files, folders, or ZIPs. ZIPs are recommended because the folder or ZIP name can become the camera site.
+            </span>
+          </span>
+        </div>
+        <div class="upload-subtitle">Drop files, folders, or ZIPs. Each batch is queued separately.</div>
+        <div class="upload-dropzone" id="upload-zone" role="button" tabindex="0" aria-label="Drop files or click to browse">
           <div class="dropzone-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#718096" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></div>
-          <div class="dropzone-title">Drop images, a folder, or a ZIP file here</div>
+          <div class="dropzone-title">Drop files, a folder, or a ZIP here</div>
           <div class="dropzone-sub">From SD card, USB drive, or local folder</div>
-          <div class="dropzone-meta">JPG · PNG · TIFF · ZIP &nbsp;·&nbsp; Queue for processing when ready</div>
+          <div class="dropzone-meta">JPG · PNG · TIFF · ZIP &nbsp;·&nbsp; Queue when ready</div>
           <div class="dropzone-actions">
             <button type="button" class="dropzone-browse-btn" id="upload-browse-files-btn">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -43,7 +51,15 @@
 
       <div class="card card-p">
         <div class="upload-card-head">
-          <div class="card-title">Upload Queue</div>
+          <div class="upload-card-head-title">
+            <div class="card-title">Upload Queue</div>
+            <span class="upload-site-help-wrap tooltip-align-left">
+              <button type="button" class="upload-site-help" id="upload-queue-help-btn" aria-label="Upload queue help" aria-expanded="false" aria-controls="upload-queue-help-popover">?</button>
+              <span class="upload-site-popover upload-help-popover" id="upload-queue-help-popover" role="tooltip">
+                Loose image files may not reveal a camera site automatically. Name the upload before queueing so images are staged under the right site.
+              </span>
+            </span>
+          </div>
           <span class="upload-card-meta" id="upload-queue-meta">No files selected yet</span>
         </div>
 
@@ -55,7 +71,7 @@
         <div class="upload-queue-list" id="upload-queue-list"></div>
 
         <div class="upload-action-bar">
-          <div class="upload-action-bar-info" id="upload-action-bar-info">Drop or browse wildlife camera images to begin.</div>
+          <div class="upload-action-bar-info" id="upload-action-bar-info">Drop files here or browse to begin.</div>
           <div class="upload-action-btns">
             <button type="button" class="btn btn-outline btn-sm" id="upload-clear-btn" disabled>Clear</button>
             <!-- Stop button mirrors the Drive sync Stop. Only visible while
@@ -74,6 +90,60 @@
           <div class="upload-result-details" id="upload-result-details"></div>
         </div>
       </div>
+
+      <!-- ── Folders Ready for Processing ─────────────────────────────────
+           Shows whatever is currently inside data/staging/. The pipeline
+           processes everything that lives here, so this panel lets users
+           remove leftovers from previous uploads before clicking Run. -->
+      <div class="card card-p" id="staging-folders-card">
+        <div class="upload-card-head">
+          <div class="upload-card-head-title">
+            <div class="card-title">Folders Ready for Processing</div>
+            <span class="upload-site-help-wrap tooltip-align-left">
+              <button type="button" class="upload-site-help" id="staging-folders-help-btn" aria-label="Folders ready for processing help" aria-expanded="false" aria-controls="staging-folders-help-popover">?</button>
+              <span class="upload-site-popover upload-help-popover" id="staging-folders-help-popover" role="tooltip">
+                This list is included in the next pipeline run. Remove old folders or clear the list first if you only want new uploads.
+              </span>
+            </span>
+          </div>
+          <div class="upload-action-btns">
+            <button type="button" class="btn btn-outline btn-sm" id="staging-folders-refresh-btn">Refresh</button>
+            <button type="button" class="btn btn-outline btn-sm" id="staging-folders-clear-btn" hidden>Clear All Staged Uploads</button>
+          </div>
+        </div>
+        <div class="staging-filter-bar" id="staging-filter-bar" aria-label="Filter staged folders">
+          <label class="staging-filter-field staging-filter-search">
+            <span>Search</span>
+            <input type="search" class="staging-filter-input" id="staging-folder-search" placeholder="Folder or camera site" autocomplete="off" />
+          </label>
+          <label class="staging-filter-field">
+            <span>Modified after</span>
+            <input type="date" class="staging-filter-input" id="staging-folder-date-from" />
+          </label>
+          <label class="staging-filter-field">
+            <span>Modified before</span>
+            <input type="date" class="staging-filter-input" id="staging-folder-date-to" />
+          </label>
+          <button type="button" class="btn btn-outline btn-sm staging-clear-filters-btn" id="staging-folders-clear-filters-btn" disabled>Clear filters</button>
+        </div>
+        <div class="staging-bulk-row" id="staging-bulk-row">
+          <label class="staging-select-label">
+            <input type="checkbox" class="staging-checkbox" id="staging-select-visible-cb" />
+            <span>Select all visible</span>
+          </label>
+          <div class="staging-bulk-actions">
+            <span class="staging-selection-summary" id="staging-selection-summary">0 selected</span>
+            <button type="button" class="btn btn-outline btn-sm" id="staging-remove-selected-btn" disabled>Remove selected</button>
+          </div>
+        </div>
+        <div class="upload-subtitle" id="staging-folders-summary">
+          Loading staged folders…
+        </div>
+        <div id="staging-folders-empty" class="staging-folders-empty" hidden>
+          No folders are staged.
+        </div>
+        <div class="upload-queue-list" id="staging-folders-list"></div>
+      </div>
     </div>
 
     <div class="upload-side-column">
@@ -83,7 +153,7 @@
           <span class="upload-site-help-wrap">
             <button type="button" class="upload-site-help" id="upload-site-help-btn" aria-label="Camera site help" aria-expanded="false" aria-controls="upload-site-help-popover">?</button>
             <span class="upload-site-popover" id="upload-site-help-popover" role="tooltip">
-              We use the folder, ZIP, or Drive folder name as the camera site. You can also create one manually.
+              Folder, ZIP, and Drive folder names can become camera sites. You can also create one manually.
             </span>
           </span>
         </div>
@@ -124,7 +194,7 @@
           <div class="upload-progress-title">Upload progress</div>
           <span class="upload-progress-status-pill idle" id="upload-progress-status">Ready</span>
         </div>
-        <!-- The duplicate "No files selected / Drop images…" placeholder card
+        <!-- The duplicate empty-state placeholder card
              previously lived here. It mirrored the dropzone above, so it has
              been removed. The renderer still writes to the source-name / sub
              / site-pill ids harmlessly when those nodes are absent. -->

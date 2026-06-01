@@ -12,7 +12,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.config import OUT_DIR as CONFIG_STAGING_DIR
-from scripts.ml.postprocess_speciesnet import postprocess_speciesnet_results
+from scripts.ml.postprocess_speciesnet import (
+    REVIEW_CSV as POSTPROCESS_REVIEW_CSV,
+    postprocess_speciesnet_results,
+)
 from scripts.ml.run_inference import OUT_ML, SPECIESNET_JSON, run_speciesnet
 from scripts.ml.run_speciesnet import run_speciesnet_model
 from scripts.pipeline.extract_metadata import (
@@ -48,6 +51,10 @@ def _remove_stale_file(path: Union[Path, str], *, label: str) -> None:
 
 def resolve_pipeline_staging_dir(path: Optional[Union[Path, str]] = None) -> Path:
     return _resolve_repo_path(path or DEFAULT_STAGING_DIR)
+
+
+def _remove_stale_review_csv() -> None:
+    _remove_stale_file(POSTPROCESS_REVIEW_CSV, label="current review CSV")
 
 
 @dataclass
@@ -164,6 +171,8 @@ def run_pipeline_service(
             _writer.writerows(_limited_rows)
         rows_to_process = len(_limited_rows)
         print(f"Manifest truncated to {rows_to_process} rows")
+
+    _remove_stale_review_csv()
 
     print("\n" + "=" * 80)
     print("STEP: Extract Metadata (EXIF)")

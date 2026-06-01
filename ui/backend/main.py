@@ -653,9 +653,56 @@ def build_metadata_lookup() -> Dict[str, Dict[str, str]]:
         local_file_name = (row.get("local_file_name") or "").strip()
         if local_path:
             lookup[local_path] = row
+            lookup[normalize_review_path(local_path)] = row
         if local_file_name and local_file_name not in lookup:
             lookup[local_file_name] = row
     return lookup
+
+
+def _review_lookup_keys(*values: str, include_basename: bool = True) -> set[str]:
+    keys: set[str] = set()
+    for value in values:
+        text = (value or "").strip()
+        if not text:
+            continue
+        normalized = normalize_review_path(text)
+        keys.add(normalized)
+        keys.add(text.replace("\\", "/"))
+        if include_basename:
+            try:
+                path = PurePosixPath(normalized)
+                if path.name:
+                    keys.add(path.name)
+            except Exception:
+                pass
+            try:
+                path = Path(text)
+                if path.name:
+                    keys.add(path.name)
+            except Exception:
+                pass
+    return {key for key in keys if key}
+
+
+def build_current_manifest_lookup() -> set[str]:
+    keys: set[str] = set()
+    for row in read_csv_rows(MANIFEST_CSV):
+        keys.update(
+            _review_lookup_keys(
+                row.get("local_path", ""),
+                row.get("local_file_name", ""),
+                row.get("file_name", ""),
+            )
+        )
+    return keys
+
+
+def _matches_current_manifest(manifest_keys: set[str], *values: str) -> bool:
+    if not manifest_keys:
+        return True
+    has_path_value = any("/" in normalize_review_path(value) for value in values if value)
+    candidate_keys = _review_lookup_keys(*values, include_basename=not has_path_value)
+    return bool(manifest_keys.intersection(candidate_keys))
 
 
 def _display_species_label(value: str) -> str:
@@ -840,11 +887,8 @@ def build_validation_report(start_date: str = "", end_date: str = "") -> dict:
 def build_dashboard_summary_data(project_name: str) -> dict:
     manifest_total = count_csv_rows(MANIFEST_CSV)
     metadata_total = count_csv_rows(METADATA_CSV)
-    review_decisions = load_review_decisions(REVIEW_DECISIONS_PATH)
     review_total = sum(
-        1
-        for row in read_csv_rows(REVIEW_CSV)
-        if (review_decisions.get(normalize_review_path(row.get("filepath", "")), {}).get("review_status") or "pending") == "pending"
+        1 for item in build_review_items_data() if (item.get("status") or "pending") == "pending"
     )
     animals_detected = _count_resolved_output_rows()
     animal_unclassified_path = BY_LOCATION_DIR / ANIMAL_UNCLASSIFIED_FILENAME
@@ -908,6 +952,7 @@ def build_review_items_data() -> List[dict]:
     decisions = load_review_decisions(REVIEW_DECISIONS_PATH)
     camera_map = build_camera_map()
     metadata_lookup = build_metadata_lookup()
+    current_manifest = build_current_manifest_lookup()
     items = []
 
     # Low-confidence threshold for promoting suspect "blank" verdicts to
@@ -917,9 +962,18 @@ def build_review_items_data() -> List[dict]:
 
     for idx, row in enumerate(rows, start=1):
         filepath = (row.get("filepath") or "").strip()
-        decision = decisions.get(normalize_review_path(filepath), {})
         filename = Path(filepath).name if filepath else f"review-item-{idx}"
-        metadata = metadata_lookup.get(filepath) or metadata_lookup.get(filename) or {}
+        if not _matches_current_manifest(current_manifest, filepath or filename):
+            continue
+
+        normalized_filepath = normalize_review_path(filepath)
+        metadata = (
+            metadata_lookup.get(filepath)
+            or metadata_lookup.get(normalized_filepath)
+            or metadata_lookup.get(filename)
+            or {}
+        )
+        decision = decisions.get(normalized_filepath, {})
         camera = camera_map.get(filename) or Path(filepath).parent.name or "Unknown"
         datetime_label = format_ui_datetime(
             date_value=metadata.get("date", ""),
@@ -2133,6 +2187,206 @@ async def upload_zip(
         "staging_dir": staging_display,
         "camera_location": safe_subdir or None,
         "files": saved,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Staging folder management
+#
+# These three routes back the "Folders Ready for Processing" UI on the
+# Manual Upload page. Users can see exactly which folders/files are
+# currently staged for the next pipeline run and remove ones they don't
+# want included, so a fresh upload doesn't accidentally process leftovers
+# from previous runs.
+#
+# Safety:
+#   * Both DELETE endpoints reject any folder name that escapes data/staging/
+#     (path traversal via "..", absolute paths, slashes, etc.).
+#   * Only entries directly under data/staging/ can be removed.
+#   * Outputs (data/outputs/), cached run history, and CSVs are NOT touched.
+# ---------------------------------------------------------------------------
+
+def _staging_image_count(path: Path) -> int:
+    if not path.is_dir():
+        return 0
+    return sum(
+        1
+        for p in path.rglob("*")
+        if p.is_file() and p.suffix.lower() in UPLOAD_ALLOWED_EXTENSIONS
+    )
+
+
+def _staging_dir_bytes(path: Path) -> int:
+    if not path.is_dir():
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+    total = 0
+    for p in path.rglob("*"):
+        try:
+            if p.is_file():
+                total += p.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def _is_supported_staging_entry(path: Path) -> bool:
+    if path.name.startswith("."):
+        return False
+    if path.is_dir():
+        return _staging_image_count(path) > 0
+    return path.is_file() and path.suffix.lower() in UPLOAD_ALLOWED_EXTENSIONS
+
+
+def _resolve_staging_root() -> Path:
+    from ui.backend.services.pipeline_service import resolve_pipeline_staging_dir
+
+    staging_dir = Path(resolve_pipeline_staging_dir())
+    expected = PROJECT_ROOT / "data" / "staging"
+    if staging_dir.absolute() != expected.absolute():
+        raise HTTPException(
+            status_code=500,
+            detail="Configured staging directory is not the project data/staging folder.",
+        )
+    return staging_dir
+
+
+def _resolve_staging_child(staging_dir: Path, folder_name: str) -> Path:
+    """Return staging_dir/<safe-name>, or raise 400 if it would escape.
+
+    Accepts only single-segment names — no slashes, no "..", no leading dot,
+    no absolute paths. Re-resolves and re-checks that the final path's
+    parent really is staging_dir.
+    """
+    raw = (folder_name or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Folder name is required")
+    # Reject anything that even *looks* like a path expression up front.
+    if any(ch in raw for ch in ("/", "\\")) or raw in {".", ".."} or raw.startswith("."):
+        raise HTTPException(status_code=400, detail="Invalid folder name")
+    # Path(...).name strips any residual directory parts as a safety net.
+    safe_name = Path(raw).name
+    if not safe_name or safe_name != raw:
+        raise HTTPException(status_code=400, detail="Invalid folder name")
+    target = (staging_dir / safe_name).resolve()
+    # The resolved target must live directly under the staging directory.
+    if target.parent != staging_dir.resolve():
+        raise HTTPException(status_code=400, detail="Folder name escapes staging directory")
+    return target
+
+
+@app.get("/api/uploads/staging-folders")
+def list_staging_folders(authorization: Optional[str] = Header(default=None)):
+    """List every folder / loose image currently staged for the next run."""
+    require_auth(authorization)
+
+    staging_dir = _resolve_staging_root()
+    if not staging_dir.exists():
+        return {"staging_dir": str(staging_dir), "entries": [], "total_images": 0, "total_bytes": 0}
+
+    entries: List[Dict[str, Any]] = []
+    for child in sorted(staging_dir.iterdir(), key=lambda p: p.name.lower()):
+        # Skip dotfiles and unsupported loose files. Those are internal
+        # bookkeeping or unrelated artifacts, not user uploads.
+        if not _is_supported_staging_entry(child):
+            continue
+        is_dir = child.is_dir()
+        image_count = _staging_image_count(child) if is_dir else (
+            1 if child.suffix.lower() in UPLOAD_ALLOWED_EXTENSIONS else 0
+        )
+        size_bytes = _staging_dir_bytes(child)
+        try:
+            modified_ts = child.stat().st_mtime
+            modified_iso = datetime.fromtimestamp(modified_ts).isoformat(timespec="seconds")
+        except OSError:
+            modified_iso = ""
+        entries.append({
+            "id": child.name,                 # already a safe single segment
+            "name": child.name,
+            "is_directory": is_dir,
+            "image_count": image_count,
+            "size_bytes": size_bytes,
+            "modified_at": modified_iso,
+        })
+
+    return {
+        "staging_dir": str(staging_dir),
+        "entries": entries,
+        "total_images": sum(e["image_count"] for e in entries),
+        "total_bytes": sum(e["size_bytes"] for e in entries),
+    }
+
+
+@app.delete("/api/uploads/staging-folders/{folder_name}")
+def delete_staging_folder(
+    folder_name: str,
+    authorization: Optional[str] = Header(default=None),
+):
+    """Delete a single folder (or loose file) directly under data/staging/."""
+    require_auth(authorization)
+
+    staging_dir = _resolve_staging_root()
+    target = _resolve_staging_child(staging_dir, folder_name)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"Staged item not found: {folder_name}")
+    if not _is_supported_staging_entry(target):
+        raise HTTPException(status_code=400, detail="Staged item is not a supported upload folder or image")
+
+    try:
+        if target.is_dir():
+            import shutil as _shutil
+            _shutil.rmtree(target)
+        else:
+            target.unlink()
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to remove staged item: {exc}",
+        ) from exc
+
+    return {"removed": folder_name, "staging_dir": str(staging_dir)}
+
+
+@app.delete("/api/uploads/staging-folders")
+def clear_staging_folders(authorization: Optional[str] = Header(default=None)):
+    """Remove ALL user-uploaded entries from data/staging/.
+
+    Skips dotfiles (`.drive_staging_manifest.json` etc) so internal
+    bookkeeping survives. Does NOT touch data/outputs/, run history, or
+    final CSVs — only clears the staging dir for a fresh upload.
+    """
+    require_auth(authorization)
+
+    staging_dir = _resolve_staging_root()
+    if not staging_dir.exists():
+        return {"removed_count": 0, "staging_dir": str(staging_dir)}
+
+    removed = 0
+    errors: List[str] = []
+    for child in list(staging_dir.iterdir()):
+        if not _is_supported_staging_entry(child):
+            continue
+        try:
+            if child.is_dir():
+                import shutil as _shutil
+                _shutil.rmtree(child)
+            else:
+                child.unlink()
+            removed += 1
+        except OSError as exc:
+            errors.append(f"{child.name}: {exc}")
+
+    if errors and removed == 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to clear staging directory: {'; '.join(errors)}",
+        )
+    return {
+        "removed_count": removed,
+        "staging_dir": str(staging_dir),
+        "errors": errors,
     }
 
 
