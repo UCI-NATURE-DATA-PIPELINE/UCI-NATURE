@@ -49,7 +49,8 @@ export function createPageController(app) {
       review: "Review & Modify",
       validate: "Validate",
       export: "Export",
-      statistics: "Statistics"
+      statistics: "Statistics",
+      about: "About Us"
     };
     const titleEl = document.getElementById("page-title");
     if (titleEl) titleEl.textContent = titleMap[pageName] || "Dashboard";

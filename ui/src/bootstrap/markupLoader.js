@@ -1,7 +1,7 @@
 /** App bootstrap helper for loading page and feature HTML partials into the shell. */
 import { loadHtmlPartial } from "../utils/dom.js";
 
-const FEATURE_NAMES = ["dashboard", "drive", "pipeline", "review", "validate", "export", "statistics"];
+const FEATURE_NAMES = ["dashboard", "drive", "pipeline", "review", "validate", "export", "statistics", "about"];
 const FEATURES_BASE_URL = new URL("../features/", import.meta.url);
 const AUTH_MARKUP_URL = new URL("auth/auth.html", FEATURES_BASE_URL).href;
 const FEATURE_PARTIALS = FEATURE_NAMES.map(
