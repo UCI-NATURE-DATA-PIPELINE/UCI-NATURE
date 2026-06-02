@@ -3,7 +3,7 @@ import { appState } from "../../state/appState.js";
 
 export function createBackendStatus() {
   function applyBackendHealthStatus(health = null) {
-    const connected = Boolean(health?.connected);
+    const connected = Boolean(health?.connected || health?.status === "ok" || health?.backend === "connected");
     const runtimeReady = connected && health?.pipeline_runtime_ready !== false;
 
     appState.backendHealth = {
