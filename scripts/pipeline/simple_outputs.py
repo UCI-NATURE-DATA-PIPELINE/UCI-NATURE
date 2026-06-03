@@ -428,12 +428,18 @@ def build_simple_rows(
             simple = _simplify_row(
                 row, low_confidence_threshold=low_confidence_threshold
             )
-            key = (
+            # De-dup on the stable per-image id (file_id/local_path/filename),
+            # not on display fields. This keeps "one row per image per species"
+            # while ensuring two genuinely different images are never collapsed
+            # just because their name/camera/species/date happen to match
+            # (common when many images have a blank date_time). Falls back to
+            # the display key when no id is present.
+            image_key = row.get("_image_key") or (
                 simple["image_name"],
                 simple["camera_location"],
-                simple["species"],
                 simple["date_time"],
             )
+            key = (image_key, simple["species"])
             if key in seen_keys:
                 continue
             seen_keys.add(key)
