@@ -45,6 +45,7 @@ export function createPipelineActions(app, api, renderApi, loadPipelineStatus, l
         exclude_humans: true
       });
       app.state.runningModel = true;
+      app.features.pipeline?.markPipelineDashboardStale?.();
       renderApi.applyPipelineResults(null);
       if (sourceMode === "drive") {
         window.setTimeout(() => void app.features.drive.loadDriveSyncStatus({ silent: true }), 150);

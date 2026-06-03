@@ -66,6 +66,7 @@ export function createExportActions(app, api, renderApi) {
       // POST options/filters to the backend so future versions can act on them.
       const data = await api.startExportRequest({ ...options, ...filters });
       renderApi.applyExportData(data, app.state.validationData);
+      app.features.pipeline?.markPipelineDashboardStale?.();
 
       if (fill) fill.style.width = "100%";
       if (pct)  pct.textContent  = "100%";

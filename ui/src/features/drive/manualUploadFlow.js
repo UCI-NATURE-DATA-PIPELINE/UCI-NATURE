@@ -1414,6 +1414,7 @@ export function createManualUploadFlow(app) {
       const merged = mergeResults(...partials);
       state.lastResult = merged;
       state.progress = 100;
+      app.features.pipeline?.markPipelineDashboardStale?.();
       app.showToast(`Queue complete · ${merged.uploaded_count} image(s) staged`, "success");
       await loadStagingFolders({ silent: true });
     } catch (error) {

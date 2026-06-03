@@ -14,6 +14,7 @@ import {
 } from "../../utils/helpers.js";
 
 const RUN_HISTORY_KEY = "uci_nature_run_history";
+const PIPELINE_DASHBOARD_MUTATION_KEY = "uci_nature_pipeline_dashboard_mutation";
 const MAX_HISTORY = 500;
 
 const RUN_HISTORY_FILTER_KEY = "uci_nature_run_history_filter";
@@ -71,6 +72,24 @@ function saveStoredRuns(runs) {
     localStorage.setItem(RUN_HISTORY_KEY, JSON.stringify(trimmed));
   } catch (e) {
     console.warn("Failed to save run history", e);
+  }
+}
+
+function loadDashboardMutationAt() {
+  try {
+    const stored = localStorage.getItem(PIPELINE_DASHBOARD_MUTATION_KEY);
+    const parsed = Number(stored);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function saveDashboardMutationAt(timestamp = Date.now()) {
+  try {
+    localStorage.setItem(PIPELINE_DASHBOARD_MUTATION_KEY, String(timestamp));
+  } catch (e) {
+    // ignore
   }
 }
 
@@ -151,6 +170,14 @@ export function createPipelineState(app) {
   function getLatestCompletedRunStatus() {
     const storedRuns = loadStoredRuns();
     const latestCompletedRun = storedRuns.find((run) => run.status === "completed");
+    if (!latestCompletedRun) return null;
+
+    const mutationAt = loadDashboardMutationAt();
+    if (mutationAt) {
+      const finishedAt = Date.parse(latestCompletedRun.finished_at || latestCompletedRun.started_at || "");
+      if (Number.isFinite(finishedAt) && finishedAt < mutationAt) return null;
+    }
+
     return buildStoredRunStatus(latestCompletedRun);
   }
 
@@ -327,6 +354,7 @@ export function createPipelineState(app) {
   return {
     buildRunHistoryRows,
     getPipelinePanelSnapshot,
+    markPipelineDashboardStale: saveDashboardMutationAt,
     getLatestCompletedRunStatus,
     getRunSurfaceConfigs,
     applyDateFilter,
