@@ -147,6 +147,7 @@ def run_pipeline_service(
         staging=resolved_staging_dir,
         out=config.manifest_path,
         batch_size=config.manifest_batch_size,
+        cancel_check=cancel_check,
     )
     manifest_path = Path(manifest_result["manifest_path"])
 
@@ -187,6 +188,7 @@ def run_pipeline_service(
     metadata_exif_result = extract_metadata_from_manifest(
         manifest_path=manifest_path,
         out_path=config.metadata_path,
+        cancel_check=cancel_check,
     )
 
     print("\n" + "=" * 80)
@@ -278,6 +280,7 @@ def run_pipeline_service(
         metadata_csv=config.metadata_path,
         burst_window_seconds=config.ml_burst_window,
         confidence_threshold=threshold,
+        cancel_check=cancel_check,
     )
 
     print("\n" + "=" * 80)
@@ -317,6 +320,7 @@ def run_pipeline_service(
         manifest_path=manifest_path,
         out_path=config.metadata_path,
         ml_path=config.ml_outputs_path,
+        cancel_check=cancel_check,
     )
 
     print("\n" + "=" * 80)
@@ -335,6 +339,7 @@ def run_pipeline_service(
         burst_seconds=config.burst_seconds,
         burst_export=burst_export,
         exclude_humans=config.exclude_humans,
+        cancel_check=cancel_check,
     )
 
     elapsed = time.time() - started

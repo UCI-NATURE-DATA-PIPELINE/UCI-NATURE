@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 import argparse
 import csv
@@ -10,6 +10,8 @@ import sys
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
+
+from ui.backend.cancellation import raise_if_cancelled
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -444,6 +446,7 @@ def generate_output_csvs(
     offset_apply_to: str = "both",
     exclude_humans: bool = False,
     review_decisions_path: Path = REVIEW_DECISIONS_CSV,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> dict:
     args = argparse.Namespace(
         manifest=str(manifest),
@@ -480,6 +483,7 @@ def generate_output_csvs(
     if not meta_path.exists():
         raise FileNotFoundError("metadata.csv not found. Run extract_metadata.py first.")
 
+    raise_if_cancelled(cancel_check)
     manifest_by_id = load_csv_by_key(manifest_path, "file_id")
     meta_by_id = load_csv_by_key(meta_path, "file_id")
     meta_by_path = load_csv_by_key(meta_path, "local_path")
@@ -561,6 +565,7 @@ def generate_output_csvs(
 
     with open(manifest_path, "r", encoding="utf-8") as f:
         for row in csv.DictReader(f):
+            raise_if_cancelled(cancel_check)
             file_id = (row.get("file_id") or "").strip()
             filename = (row.get("file_name") or row.get("local_file_name") or "").strip()
 
@@ -825,7 +830,9 @@ def generate_output_csvs(
 
     total_output = 0
 
+    raise_if_cancelled(cancel_check)
     for camera_name, rows in sorted(rows_by_camera.items()):
+        raise_if_cancelled(cancel_check)
         rows.sort(
             key=lambda row: (
                 _normalize_date_token(row.get("Date", "")),
@@ -856,6 +863,7 @@ def generate_output_csvs(
         image_index = 0
 
         while image_index < len(image_groups):
+            raise_if_cancelled(cancel_check)
             burst_start = image_index
             burst_groups = [image_groups[image_index]]
             burst_start_ts = image_groups[image_index][0].get("_timestamp")
@@ -863,6 +871,7 @@ def generate_output_csvs(
             image_index += 1
 
             while image_index < len(image_groups):
+                raise_if_cancelled(cancel_check)
                 next_group = image_groups[image_index]
                 next_ts = next_group[0].get("_timestamp")
                 if prev_ts is None or next_ts is None:
@@ -891,6 +900,7 @@ def generate_output_csvs(
                 selected_groups = burst_groups[:1]
 
             for group_rows in selected_groups:
+                raise_if_cancelled(cancel_check)
                 kept_rows.extend(group_rows)
 
         csv_path = out_dir / f"{safe_filename(camera_name)}_results.csv"

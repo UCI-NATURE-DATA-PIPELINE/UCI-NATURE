@@ -4,11 +4,13 @@ import { readFileSync } from "node:fs";
 
 const OVERVIEW = readFileSync("ui/src/features/dashboard/partials/overview.html", "utf8");
 const INSIGHTS = readFileSync("ui/src/features/dashboard/partials/insights.html", "utf8");
+const DASHBOARD_MAIN = readFileSync("ui/src/features/dashboard/dashboardMain.js", "utf8");
+const DASHBOARD_RENDER = readFileSync("ui/src/features/dashboard/dashboardRender.js", "utf8");
 
-test("dashboard includes a species histogram panel", () => {
-  assert.match(OVERVIEW, /dashboard-overview-panel--species/);
-  assert.match(OVERVIEW, /dashboard-species-chart/);
-  assert.match(OVERVIEW, /dashboard-park-toggle/);
+test("dashboard does not expose the species histogram panel while it is on hold", () => {
+  assert.doesNotMatch(OVERVIEW, /dashboard-overview-panel--species/);
+  assert.doesNotMatch(OVERVIEW, /dashboard-species-chart/);
+  assert.doesNotMatch(OVERVIEW, /dashboard-park-toggle/);
 });
 
 test("dashboard insight cards use compact grid wrappers", () => {
@@ -18,4 +20,10 @@ test("dashboard insight cards use compact grid wrappers", () => {
   assert.match(INSIGHTS, /dashboard-insight-card--activity/);
   assert.doesNotMatch(INSIGHTS, /Camera Sites/);
   assert.doesNotMatch(INSIGHTS, /Recent Activity/);
+});
+
+test("dashboard no longer fetches or renders the histogram while it is on hold", () => {
+  assert.doesNotMatch(DASHBOARD_MAIN, /getDashboardSpeciesHistogram/);
+  assert.doesNotMatch(DASHBOARD_RENDER, /dashboard-park-toggle/);
+  assert.doesNotMatch(DASHBOARD_RENDER, /dashboard-species-chart/);
 });

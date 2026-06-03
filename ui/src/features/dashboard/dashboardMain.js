@@ -10,18 +10,17 @@ export function createDashboardFeature(app) {
 
   async function loadDashboardData() {
     try {
-      const [summary, exportSummary, validationData, speciesHistogram, pipelineStatus] = await Promise.all([
+      const [summary, exportSummary, validationData, pipelineStatus] = await Promise.all([
         api.getDashboardSummary(),
         api.startExportRequest().catch(() => null),
         app.features.validate.loadValidationData({ showToastOnError: false }).catch(() => null),
-        api.getDashboardSpeciesHistogram().catch(() => null),
         app.features.pipeline.loadPipelineStatus({ silent: true })
       ]);
       if (exportSummary) app.state.exportData = exportSummary;
       if (validationData) app.state.validationData = validationData;
-      app.state.dashboardSpeciesHistogram = speciesHistogram || null;
-      app.state.dashboardSpeciesHistogramSelected = speciesHistogram?.default_park_key || "";
-      renderApi.applyDashboardSummary(summary, app.state.validationData, app.state.exportData, pipelineStatus || app.state.pipelineStatus, app.state.dashboardSpeciesHistogram);
+      app.state.dashboardSpeciesHistogram = null;
+      app.state.dashboardSpeciesHistogramSelected = "";
+      renderApi.applyDashboardSummary(summary, app.state.validationData, app.state.exportData, pipelineStatus || app.state.pipelineStatus, null);
       app.state.pageLoadState.dashboard = true;
     } catch (error) {
       app.state.dashboardSpeciesHistogram = null;

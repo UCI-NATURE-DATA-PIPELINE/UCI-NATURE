@@ -9,12 +9,14 @@ import sys
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path, PurePosixPath
+from typing import Callable, Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.ml.speciesnet_parsing import resolve_prediction, safe_float
+from ui.backend.cancellation import raise_if_cancelled
 
 
 IN_JSON = Path("data/outputs/speciesnet_results.json")
@@ -330,6 +332,7 @@ def postprocess_speciesnet_results(
     review_csv: Path = REVIEW_CSV,
     burst_window_seconds: int = BURST_WINDOW_SECONDS,
     confidence_threshold: float = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> dict:
     burst_window_seconds = max(10, min(300, int(burst_window_seconds)))
 
@@ -399,7 +402,9 @@ def postprocess_speciesnet_results(
         return None
 
     pred_rows = []
+    raise_if_cancelled(cancel_check)
     for prediction in predictions:
+        raise_if_cancelled(cancel_check)
         filepath = normalize_path(prediction.get("filepath", ""))
         raw_score = safe_float(prediction.get("prediction_score", 0.0), 0.0)
 
@@ -507,7 +512,9 @@ def postprocess_speciesnet_results(
         out_writer.writeheader()
         review_writer.writeheader()
 
+        raise_if_cancelled(cancel_check)
         for index, row in enumerate(pred_rows):
+            raise_if_cancelled(cancel_check)
             score_for_review = row["resolved_score"] or row["score"]
             burst_label = voted_label_by_idx.get(index, row["resolved_label"])
             burst_species_level = voted_species_level_by_idx.get(

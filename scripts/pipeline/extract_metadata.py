@@ -4,13 +4,15 @@ import argparse
 import csv
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional
 
 try:
     from PIL import ExifTags, Image
 except ImportError:
     ExifTags = None
     Image = None
+
+from ui.backend.cancellation import raise_if_cancelled
 
 
 OUT_CSV_DEFAULT = Path("data/outputs/metadata.csv")
@@ -132,6 +134,7 @@ def extract_metadata_from_manifest(
     out_path: Path = OUT_CSV_DEFAULT,
     ml_path: Path = ML_OUT_DEFAULT,
     merge_ml: bool = True,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> dict[str, Any]:
     manifest_path = Path(manifest_path)
     out_path = Path(out_path)
@@ -165,7 +168,9 @@ def extract_metadata_from_manifest(
 
     out_rows: list[dict[str, Any]] = []
 
+    raise_if_cancelled(cancel_check)
     for r in manifest_rows:
+        raise_if_cancelled(cancel_check)
         file_id = (r.get("file_id", "") or "").strip()
         local_path = (r.get("local_path", "") or "").strip()
 

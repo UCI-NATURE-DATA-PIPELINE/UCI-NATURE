@@ -8,8 +8,6 @@ const DASHBOARD_PIPELINE_DONE_ICON = '<svg width="13" height="13" viewBox="0 0 2
 const DASHBOARD_PIPELINE_ACTIVE_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4" fill="#fff"/></svg>';
 
 export function createDashboardRender(app, chartsApi) {
-  let speciesToggleBound = false;
-
   function resolveDashboardPipelineStatus(status) {
     const state = String(status?.status || "idle").toLowerCase();
     if (state !== "idle") return status;
@@ -45,49 +43,6 @@ export function createDashboardRender(app, chartsApi) {
           </span>
         `).join("")
       : `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;background:#F7FAFC;border:1.5px solid var(--border);border-radius:20px;font-size:11.5px;font-weight:500;color:var(--muted)">No export artifacts yet</span>`;
-  }
-
-  function renderDashboardSpeciesHistogram(app, chartsApi, speciesHistogram) {
-    const toggleContainer = document.getElementById("dashboard-park-toggle");
-    const canvas = document.getElementById("dashboard-species-chart");
-    const emptyState = document.getElementById("dashboard-species-empty");
-    if (!toggleContainer || !canvas || !emptyState) return;
-
-    const parks = Array.isArray(speciesHistogram?.parks) ? speciesHistogram.parks : [];
-    if (!parks.length) {
-      toggleContainer.innerHTML = "";
-      canvas.hidden = true;
-      emptyState.hidden = false;
-      chartsApi.buildSpeciesHistogram(app, canvas, null);
-      return;
-    }
-
-    const selectedKey = parks.some((park) => park.key === app.state.dashboardSpeciesHistogramSelected)
-      ? app.state.dashboardSpeciesHistogramSelected
-      : speciesHistogram?.default_park_key || parks[0].key;
-    const selectedPark = parks.find((park) => park.key === selectedKey) || parks[0];
-    app.state.dashboardSpeciesHistogramSelected = selectedPark.key;
-    app.state.dashboardSpeciesHistogram = speciesHistogram;
-
-    toggleContainer.innerHTML = parks.map((park) => `
-      <button type="button" class="dashboard-park-toggle-btn${park.key === selectedPark.key ? " active" : ""}" data-park-key="${escapeHtml(park.key)}">
-        ${escapeHtml(park.label)}
-      </button>
-    `).join("");
-
-    canvas.hidden = !selectedPark.total_detections || !selectedPark.species_labels.length;
-    emptyState.hidden = selectedPark.total_detections > 0 && selectedPark.species_labels.length > 0;
-
-    if (canvas.hidden) {
-      chartsApi.buildSpeciesHistogram(app, canvas, null);
-      return;
-    }
-
-    chartsApi.buildSpeciesHistogram(app, canvas, {
-      label: selectedPark.label,
-      labels: selectedPark.species_labels,
-      values: selectedPark.species_values
-    });
   }
 
   function renderDashboardActivity(summary, validation, exportSummary, pipelineStatus) {
@@ -200,23 +155,6 @@ export function createDashboardRender(app, chartsApi) {
     renderDashboardExportChips(exportFiles);
     renderDashboardActivity(summary, validation, exportSummary, displayPipelineStatus);
     renderDashboardPipelineState(displayPipelineStatus);
-    renderDashboardSpeciesHistogram(app, chartsApi, speciesHistogram);
-
-    if (!speciesToggleBound) {
-      const toggleContainer = document.getElementById("dashboard-park-toggle");
-      if (toggleContainer) {
-        toggleContainer.addEventListener("click", (event) => {
-          const button = event.target.closest(".dashboard-park-toggle-btn");
-          if (!button) return;
-          const parkKey = button.dataset.parkKey;
-          if (!parkKey || parkKey === app.state.dashboardSpeciesHistogramSelected) return;
-          app.state.dashboardSpeciesHistogramSelected = parkKey;
-          renderDashboardSpeciesHistogram(app, chartsApi, app.state.dashboardSpeciesHistogram);
-        });
-        speciesToggleBound = true;
-      }
-    }
-
   }
 
   function applyDashboardPipelineState(status) {

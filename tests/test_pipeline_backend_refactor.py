@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from ui.backend.cancellation import OperationCancelled
 from scripts.pipeline.extract_metadata import merge_metadata_with_ml_outputs
 from scripts.pipeline.make_manifest import append_manifest_file_ids_to_cache
 from scripts.pipeline.make_output import generate_output_csvs
@@ -22,6 +23,182 @@ def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, object]]) 
 
 
 class PipelineBackendRefactorTests(unittest.TestCase):
+    def test_pipeline_service_passes_cancel_check_into_each_step(self) -> None:
+        from ui.backend.services import pipeline_service as service
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            staging_dir = tmp_path / "staging"
+            staging_dir.mkdir(parents=True, exist_ok=True)
+
+            calls = []
+
+            def cancel_check() -> bool:
+                return False
+
+            def assert_cancel_check(step_name: str, kwargs: dict) -> None:
+                calls.append(step_name)
+                self.assertIn("cancel_check", kwargs)
+                self.assertIs(kwargs["cancel_check"], cancel_check)
+
+            original_build_manifest = service.build_manifest
+            original_extract_metadata = service.extract_metadata_from_manifest
+            original_run_speciesnet = service.run_speciesnet_model
+            original_run_speciesnet_csv = service.run_speciesnet
+            original_postprocess = service.postprocess_speciesnet_results
+            original_generate_output = service.generate_output_csvs
+
+            def fake_build_manifest(*args, **kwargs):
+                assert_cancel_check("build_manifest", kwargs)
+                manifest_path = tmp_path / "manifest.csv"
+                write_csv(
+                    manifest_path,
+                    ["file_id", "local_path"],
+                    [{"file_id": "img-1", "local_path": str(tmp_path / "one.jpg")}],
+                )
+                return {"manifest_path": str(manifest_path), "rows_written": 1}
+
+            def fake_extract_metadata(*args, **kwargs):
+                assert_cancel_check("extract_metadata_from_manifest", kwargs)
+                return {"metadata_path": str(tmp_path / "metadata.csv"), "rows_written": 1}
+
+            def fake_run_speciesnet(*args, **kwargs):
+                assert_cancel_check("run_speciesnet_model", kwargs)
+                speciesnet_json = tmp_path / "speciesnet.json"
+                speciesnet_json.write_text("{\"predictions\": []}", encoding="utf-8")
+                return {"speciesnet_json": str(speciesnet_json), "classified_images": 1}
+
+            def fake_run_speciesnet_csv(*args, **kwargs):
+                out_csv = Path(kwargs.get("out_csv") or tmp_path / "ml_outputs.csv")
+                write_csv(
+                    out_csv,
+                    ["filepath", "final_label", "needs_review"],
+                    [],
+                )
+                return {"ml_outputs_path": str(out_csv), "threshold": 0.8}
+
+            def fake_postprocess(*args, **kwargs):
+                assert_cancel_check("postprocess_speciesnet_results", kwargs)
+                return {
+                    "results_csv": str(tmp_path / "speciesnet_results.csv"),
+                    "review_csv": str(tmp_path / "speciesnet_review.csv"),
+                    "total_predictions": 1,
+                    "total_bursts": 1,
+                    "review_items": 0,
+                    "generic_label_review_items": 0,
+                    "burst_window_seconds": 300,
+                }
+
+            def fake_generate_output(*args, **kwargs):
+                assert_cancel_check("generate_output_csvs", kwargs)
+                return {
+                    "drive_index_present": False,
+                    "out_dir": str(tmp_path / "by_location"),
+                }
+
+            service.build_manifest = fake_build_manifest
+            service.extract_metadata_from_manifest = fake_extract_metadata
+            service.run_speciesnet_model = fake_run_speciesnet
+            service.run_speciesnet = fake_run_speciesnet_csv
+            service.postprocess_speciesnet_results = fake_postprocess
+            service.generate_output_csvs = fake_generate_output
+
+            try:
+                result = service.run_pipeline_service(
+                    service.PipelineRunConfig(staging_dir=staging_dir),
+                    cancel_check=cancel_check,
+                )
+            finally:
+                service.build_manifest = original_build_manifest
+                service.extract_metadata_from_manifest = original_extract_metadata
+                service.run_speciesnet_model = original_run_speciesnet
+                service.run_speciesnet = original_run_speciesnet_csv
+                service.postprocess_speciesnet_results = original_postprocess
+                service.generate_output_csvs = original_generate_output
+
+            self.assertEqual(
+                calls,
+                [
+                    "build_manifest",
+                    "extract_metadata_from_manifest",
+                    "run_speciesnet_model",
+                    "postprocess_speciesnet_results",
+                    "extract_metadata_from_manifest",
+                    "generate_output_csvs",
+                ],
+            )
+            self.assertEqual(result["steps"]["output"]["drive_index_present"], False)
+
+    def test_generate_output_csvs_honors_cancel_check_before_working_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            manifest_path = tmp_path / "manifest.csv"
+            metadata_path = tmp_path / "metadata.csv"
+            out_dir = tmp_path / "by_location"
+
+            write_csv(
+                manifest_path,
+                ["file_id", "file_name", "local_file_name", "local_path"],
+                [
+                    {
+                        "file_id": "img-1",
+                        "file_name": "one.jpg",
+                        "local_file_name": "one.jpg",
+                        "local_path": str(tmp_path / "one.jpg"),
+                    }
+                ],
+            )
+            write_csv(
+                metadata_path,
+                [
+                    "file_id",
+                    "file_name",
+                    "local_file_name",
+                    "local_path",
+                    "date",
+                    "time",
+                    "has_animal",
+                    "has_human",
+                    "species",
+                    "species_level",
+                    "species_raw",
+                    "model_certainty",
+                    "prediction_source",
+                    "resolved_source",
+                    "count",
+                ],
+                [
+                    {
+                        "file_id": "img-1",
+                        "file_name": "one.jpg",
+                        "local_file_name": "one.jpg",
+                        "local_path": str(tmp_path / "one.jpg"),
+                        "date": "20260419",
+                        "time": "08:00:00",
+                        "has_animal": "1",
+                        "has_human": "0",
+                        "species": "coyote",
+                        "species_level": "1",
+                        "species_raw": "Canis latrans",
+                        "model_certainty": "0.98",
+                        "prediction_source": "speciesnet",
+                        "resolved_source": "speciesnet",
+                        "count": "1",
+                    }
+                ],
+            )
+
+            with self.assertRaises(OperationCancelled):
+                generate_output_csvs(
+                    manifest=manifest_path,
+                    metadata=metadata_path,
+                    drive_index=None,
+                    out_dir=out_dir,
+                    cancel_check=lambda: True,
+                )
+
+            self.assertFalse((out_dir / "final_results.csv").exists())
+
     def test_pipeline_cancel_state_is_cancelled_not_failed(self) -> None:
         from ui.backend import main as backend_main
 

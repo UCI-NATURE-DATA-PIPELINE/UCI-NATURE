@@ -55,7 +55,7 @@ export function createPipelineRender(app, stateApi) {
       else note.textContent = surface.kind === "drive" || app.state.uploadTab === "drive" ? app.features.drive.getDriveRunIdleNote() : "Click Run to start pipeline.";
     }
 
-    if (panel) panel.style.display = (!status || state === "idle") ? "none" : "block";
+    if (panel) panel.style.display = state === "running" ? "block" : "none";
     if (progressLabel) progressLabel.textContent = state === "running" ? status?.progress?.step || "Pipeline running in backend" : state === "completed" ? "Latest run completed" : state === "cancelled" ? "Latest run stopped" : state === "failed" ? "Latest run failed" : "No active pipeline run";
     if (eta) eta.textContent = state === "running" ? status?.progress?.message || status?.latest_log_line || "Backend log is updating" : state === "completed" ? `Completed ${formatTimestampLabel(status.finished_at)}` : state === "cancelled" ? "Stopped by user" : state === "failed" ? status.error || "See backend log for details" : surface.kind === "drive" ? "Run becomes available once a Drive folder is selected" : "No active run";
     if (fill) fill.style.width = state === "completed" || state === "failed" || state === "cancelled" ? "100%" : state === "running" ? `${app.features.drive.getDriveSyncStepPercent()}%` : "0%";
@@ -87,7 +87,7 @@ export function createPipelineRender(app, stateApi) {
     app.state.runningModel = (status?.status || "idle") === "running";
     stateApi.getRunSurfaceConfigs().forEach((surface) => applyPipelineStatusToSurface(surface, status));
     const state = String(status?.status || "idle").toLowerCase();
-    const panelVisible = !!status && state !== "idle";
+    const panelVisible = state === "running";
     const historyWrap = document.getElementById("run-history-wrap");
     if (historyWrap) historyWrap.classList.toggle("has-active-run", panelVisible);
 

@@ -6,6 +6,9 @@ import argparse
 import csv
 from datetime import datetime
 from pathlib import Path
+from typing import Callable, Optional
+
+from ui.backend.cancellation import raise_if_cancelled
 
 
 STAGING = Path("data/staging")
@@ -73,6 +76,7 @@ def build_manifest(
     new_out: Path = NEW_OUT,
     write_new_only: bool = False,
     update_cache: bool = False,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> dict:
     staging = Path(staging)
     out = Path(out)
@@ -86,7 +90,9 @@ def build_manifest(
     image_extensions = {".jpg", ".jpeg", ".png"}
 
     rows = []
+    raise_if_cancelled(cancel_check)
     for p in sorted(staging.rglob("*")):
+        raise_if_cancelled(cancel_check)
         if not p.is_file():
             continue
         if p.name.startswith(".") or p.name.startswith("._"):
