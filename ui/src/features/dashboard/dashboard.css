@@ -24,7 +24,9 @@
 /* Continuous flow track behind all steps */
 .pipeline-flow-track {
   position: absolute;
-  top: 50%; left: 2%; right: 2%;
+  /* Shift the connector down so it visually sits through the card bodies,
+     not the gap above them. */
+  top: calc(50% + 18px); left: 2%; right: 2%;
   height: 2px;
   background: #E2E8F0;
   transform: translateY(-50%);
@@ -263,7 +265,10 @@
 }
 
 #page-dashboard .dashboard-insight-card--summary .run-stat-row {
-  gap: 10px;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 6px;
 }
 
 #page-dashboard .dashboard-insight-card--activity .activity-list {
