@@ -260,9 +260,10 @@ export function createPipelineState(app) {
     const rawProcessedImages = Number(progressDetails?.processed_images);
     const rawTotalImages = Number(progressDetails?.total_images);
     const mlActive = state === "running" && currentStepKey.includes("run speciesnet");
-    const totalImages = mlActive && Number.isFinite(rawTotalImages) && rawTotalImages >= 0 ? rawTotalImages : null;
-    const processedImages = mlActive ? (Number.isFinite(rawProcessedImages) && rawProcessedImages >= 0 ? rawProcessedImages : 0) : null;
-    const mlProgressPercent = mlActive && totalImages && totalImages > 0 ? Math.max(0, Math.min(100, Math.round((processedImages / totalImages) * 100))) : 0;
+    const totalImages = Number.isFinite(rawTotalImages) && rawTotalImages >= 0 ? rawTotalImages : null;
+    const processedImages = Number.isFinite(rawProcessedImages) && rawProcessedImages >= 0 ? rawProcessedImages : null;
+    const remainingImages = totalImages !== null && processedImages !== null ? Math.max(totalImages - processedImages, 0) : null;
+    const mlProgressPercent = mlActive && totalImages && totalImages > 0 && processedImages !== null ? Math.max(0, Math.min(100, Math.round((processedImages / totalImages) * 100))) : 0;
 
     let discovered = null;
     let downloaded = null;
@@ -284,6 +285,7 @@ export function createPipelineState(app) {
       mlActive: mlActive && totalImages !== null,
       processedImages,
       totalImages,
+      remainingImages,
       mlProgressPercent
     };
   }

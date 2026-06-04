@@ -12,7 +12,12 @@ export function createPipelineRender(app, stateApi) {
 
   function applyPipelineStatusToSurface(surface, status) {
     const state = status?.status || "idle";
+    const isRunning = state === "running";
+    const isCompleted = state === "completed";
+    const isFailed = state === "failed";
+    const isVisible = isRunning || isCompleted || isFailed;
     const snapshot = stateApi.getPipelinePanelSnapshot(status);
+    const metrics = getPipelineMetrics(status);
     const throughputValue = document.getElementById("rs-throughput");
     const failuresValue = document.getElementById("rs-failures");
     const button = document.getElementById(surface.buttonId);
@@ -36,33 +41,64 @@ export function createPipelineRender(app, stateApi) {
     const currentFile = document.getElementById(surface.currentFileId);
     const logPath = document.getElementById(surface.logPathId);
     const errorValue = document.getElementById(surface.errorId);
+    const processedValue = document.getElementById("rs-processed");
+    const remainingValue = document.getElementById("rs-remaining");
 
     if (button) {
       button.classList.remove("idle", "running");
-      button.classList.add(state === "running" ? "running" : "idle");
-      button.disabled = state === "running" || (surface.kind === "drive" && !app.features.drive.canRunDrivePipeline());
+      button.classList.add(isRunning ? "running" : "idle");
+      button.disabled = isRunning || (surface.kind === "drive" && !app.features.drive.canRunDrivePipeline());
     }
     if (stopButton) {
-      stopButton.style.display = state === "running" ? "inline-flex" : "none";
+      stopButton.style.display = isRunning ? "inline-flex" : "none";
       stopButton.disabled = Boolean(status?.cancellation_requested);
       stopButton.textContent = status?.cancellation_requested ? "Stopping..." : "Stop";
     }
-    if (label) label.textContent = state === "running" ? "Pipeline Running" : surface.kind === "drive" ? "Run Pipeline (Drive Source)" : "Run Pipeline";
+    if (label) label.textContent = isRunning ? "Pipeline Running" : surface.kind === "drive" ? "Run Pipeline (Drive Source)" : "Run Pipeline";
     if (note) {
-      if (state === "running") note.textContent = status?.progress?.step || `Run ${status.run_id} started ${formatTimestampLabel(status.started_at)}.`;
-      else if (state === "completed") note.textContent = `Last run ${status.run_id} completed ${formatTimestampLabel(status.finished_at)}.`;
+      if (isRunning) note.textContent = status?.progress?.step || `Run ${status.run_id} started ${formatTimestampLabel(status.started_at)}.`;
+      else if (isCompleted) note.textContent = `Last run ${status.run_id} completed ${formatTimestampLabel(status.finished_at)}.`;
       else if (state === "cancelled") note.textContent = `Last run ${status.run_id} was stopped.`;
-      else if (state === "failed") note.textContent = status.error ? `Last run ${status.run_id} failed: ${status.error}` : `Last run ${status.run_id} failed.`;
+      else if (isFailed) note.textContent = status.error ? `Last run ${status.run_id} failed: ${status.error}` : `Last run ${status.run_id} failed.`;
       else note.textContent = surface.kind === "drive" || app.state.uploadTab === "drive" ? app.features.drive.getDriveRunIdleNote() : "Click Run to start pipeline.";
     }
     if (noteCard) {
-      noteCard.hidden = state === "running";
+      noteCard.hidden = isRunning;
     }
-
-    if (panel) panel.style.display = state === "running" ? "block" : "none";
-    if (progressLabel) progressLabel.textContent = state === "running" ? status?.progress?.step || "Pipeline running in backend" : state === "completed" ? "Latest run completed" : state === "cancelled" ? "Latest run stopped" : state === "failed" ? "Latest run failed" : "No active pipeline run";
-    if (eta) eta.textContent = state === "running" ? status?.progress?.message || status?.latest_log_line || "Backend log is updating" : state === "completed" ? `Completed ${formatTimestampLabel(status.finished_at)}` : state === "cancelled" ? "Stopped by user" : state === "failed" ? status.error || "See backend log for details" : surface.kind === "drive" ? "Run becomes available once a Drive folder is selected" : "No active run";
-    if (fill) fill.style.width = state === "completed" || state === "failed" || state === "cancelled" ? "100%" : state === "running" ? `${app.features.drive.getDriveSyncStepPercent()}%` : "0%";
+    if (panel) {
+      panel.style.display = isVisible ? "block" : "none";
+      panel.classList.remove("state-running", "state-completed", "state-failed");
+      if (isRunning) panel.classList.add("state-running");
+      else if (isCompleted) panel.classList.add("state-completed");
+      else if (isFailed) panel.classList.add("state-failed");
+    }
+    if (progressLabel) progressLabel.textContent = isRunning ? status?.progress?.step || "Processing images…" : isCompleted ? "Processing Complete" : isFailed ? "Pipeline Failed" : "No active pipeline run";
+    if (eta) eta.textContent = isRunning ? status?.progress?.message || status?.latest_log_line || "Backend log is updating" : isCompleted ? `Completed ${formatTimestampLabel(status.finished_at)}` : state === "cancelled" ? "Stopped by user" : isFailed ? status.error || "See backend log for details" : surface.kind === "drive" ? "Run becomes available once a Drive folder is selected" : "No active run";
+    if (fill) {
+      fill.style.width = isCompleted || isFailed ? "100%" : isRunning ? `${app.features.drive.getDriveSyncStepPercent()}%` : "0%";
+      fill.classList.remove("state-completed", "state-failed");
+      if (isCompleted) fill.classList.add("state-completed");
+      if (isFailed) fill.classList.add("state-failed");
+    }
+    const liveProcessedCount = Number.isFinite(Number(snapshot.processedImages)) ? Number(snapshot.processedImages) : null;
+    const liveTotalCount = Number.isFinite(Number(snapshot.totalImages)) ? Number(snapshot.totalImages) : null;
+    const terminalProcessedCount = Number.isFinite(Number(metrics.processedRows)) ? Number(metrics.processedRows) : null;
+    const terminalTotalCount = Number.isFinite(Number(metrics.manifestRows)) ? Number(metrics.manifestRows) : null;
+    const processedCount = isRunning
+      ? (liveProcessedCount ?? terminalProcessedCount)
+      : (terminalProcessedCount ?? liveProcessedCount);
+    const totalCount = isRunning
+      ? (liveTotalCount ?? terminalTotalCount)
+      : (terminalTotalCount ?? liveTotalCount);
+    const remainingCount = totalCount !== null && processedCount !== null
+      ? Math.max(totalCount - processedCount, 0)
+      : null;
+    if (processedValue) {
+      processedValue.textContent = processedCount === null ? "—" : formatNumber(processedCount);
+    }
+    if (remainingValue) {
+      remainingValue.textContent = remainingCount === null ? "—" : formatNumber(remainingCount);
+    }
     if (statusValue) statusValue.textContent = snapshot.overallStatus;
     if (stepValue) setPipelineDetailValue(stepValue, snapshot.currentStep, "Waiting for a run");
     if (discoveredValue) discoveredValue.textContent = snapshot.discovered === null ? "—" : formatNumber(snapshot.discovered);
@@ -76,7 +112,6 @@ export function createPipelineRender(app, stateApi) {
     setPipelineDetailValue(logPath, snapshot.logPath);
     setPipelineDetailValue(errorValue, snapshot.error);
 
-    const metrics = getPipelineMetrics(status);
     if (throughputValue) {
       throughputValue.textContent = metrics.throughput ? formatDecimal(metrics.throughput) : "—";
     }
@@ -91,7 +126,7 @@ export function createPipelineRender(app, stateApi) {
     app.state.runningModel = (status?.status || "idle") === "running";
     stateApi.getRunSurfaceConfigs().forEach((surface) => applyPipelineStatusToSurface(surface, status));
     const state = String(status?.status || "idle").toLowerCase();
-    const panelVisible = state === "running";
+    const panelVisible = state === "running" || state === "completed" || state === "failed";
     const historyWrap = document.getElementById("run-history-wrap");
     if (historyWrap) historyWrap.classList.toggle("has-active-run", panelVisible);
 
