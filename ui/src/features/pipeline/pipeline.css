@@ -69,6 +69,43 @@ input[type=range].model-slider::-webkit-slider-thumb:hover {
 .run-btn-icon { display:inline-flex; transition:transform .2s; }
 .run-model-btn.idle:hover .run-btn-icon { transform:scale(1.15); }
 
+.run-action-row {
+  min-height: 0;
+}
+
+.run-timestamp-note {
+  position:absolute;
+  right:0;
+  top:10px;
+  width:min(390px, calc(100% - 370px));
+  pointer-events:none;
+}
+
+.run-timestamp-note[hidden] {
+  display:none !important;
+}
+
+.upload-note-card {
+  background:#FFFBEB;
+  border:1.5px solid #F6E05E;
+  border-radius:12px;
+  padding:13px 15px;
+}
+.upload-note-title {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  font-size:13px;
+  font-weight:600;
+  color:#744210;
+  margin-bottom:4px;
+}
+.upload-note-text {
+  font-size:12px;
+  color:#7B341E;
+  line-height:1.5;
+}
+
 /* Progress panel */
 .run-progress-panel {
   display: none;
