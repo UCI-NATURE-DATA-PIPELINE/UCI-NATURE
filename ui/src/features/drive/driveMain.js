@@ -31,6 +31,7 @@ export function createDriveFeature(app) {
     initializeManualUpload: manualUploadFlow.initialize,
     refreshManualUpload: manualUploadFlow.refresh,
     cancelManualUpload: manualUploadFlow.cancelManualUpload,
+    getManualUploadSnapshot: manualUploadFlow.getManualUploadSnapshot,
     loadDriveStatusSummary: api.getDriveStatus
   };
 }

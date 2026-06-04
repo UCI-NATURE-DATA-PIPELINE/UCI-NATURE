@@ -11,6 +11,7 @@ test("dashboard does not expose the species histogram panel while it is on hold"
   assert.doesNotMatch(OVERVIEW, /dashboard-overview-panel--species/);
   assert.doesNotMatch(OVERVIEW, /dashboard-species-chart/);
   assert.doesNotMatch(OVERVIEW, /dashboard-park-toggle/);
+  assert.doesNotMatch(OVERVIEW, /Validate/);
 });
 
 test("dashboard insight cards use compact grid wrappers", () => {

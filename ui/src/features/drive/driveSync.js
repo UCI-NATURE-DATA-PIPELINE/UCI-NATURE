@@ -58,6 +58,7 @@ export function createDriveSync(app, api, stateApi, renderApi) {
       buttonEl.textContent = isResume ? "Resuming..." : "Syncing...";
     }
     appState.driveFolderError = "";
+    app.features.pipeline?.markPipelineDashboardStale?.();
     stateApi.applyDriveSyncStatus({ ...normalizeDriveSyncStatus(null), status: "syncing", source_ready: false, started_at: new Date().toISOString(), folder: { id: appState.selectedDriveFolder.id, name: appState.selectedDriveFolder.name }, selected_folder: appState.selectedDriveFolder, selected_folder_matches: true, staging_dir: appState.driveSyncState.staging_dir || "data/staging", last_sync_message: `Syncing ${appState.selectedDriveFolder.name} into backend staging` });
     renderApi.syncDriveUI();
     renderApi.renderDriveFolderSelection();
@@ -114,6 +115,7 @@ export function createDriveSync(app, api, stateApi, renderApi) {
     }
     try {
       const response = await api.clearDriveSync();
+      app.features.pipeline?.markPipelineDashboardStale?.();
       stateApi.applyDriveSyncStatus(response?.sync || null);
       renderApi.syncDriveUI();
       renderApi.renderDriveFolderSelection();

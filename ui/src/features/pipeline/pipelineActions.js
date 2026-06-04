@@ -93,6 +93,8 @@ export function createPipelineActions(app, api, renderApi, loadPipelineStatus, l
       link.click();
       link.remove();
       window.URL.revokeObjectURL(objectUrl);
+      app.features.pipeline?.markPipelineExportDownloaded?.(result.fileName || fileName);
+      app.features.dashboard?.applyDashboardPipelineState?.(app.state.pipelineStatus);
       app.showToast(`Downloaded ${result.fileName}`, "success");
     } catch (error) {
       app.showToast(error.message || "Unable to download pipeline result", "warn");

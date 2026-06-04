@@ -15,6 +15,7 @@ import {
 
 const RUN_HISTORY_KEY = "uci_nature_run_history";
 const PIPELINE_DASHBOARD_MUTATION_KEY = "uci_nature_pipeline_dashboard_mutation";
+const PIPELINE_EXPORT_DOWNLOAD_KEY = "uci_nature_pipeline_export_download";
 const MAX_HISTORY = 500;
 
 const RUN_HISTORY_FILTER_KEY = "uci_nature_run_history_filter";
@@ -82,6 +83,45 @@ function loadDashboardMutationAt() {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   } catch (e) {
     return 0;
+  }
+}
+
+function loadExportDownloadState() {
+  try {
+    const stored = localStorage.getItem(PIPELINE_EXPORT_DOWNLOAD_KEY);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object") return null;
+    const runId = String(parsed.run_id || "").trim();
+    const fileName = String(parsed.file_name || "").trim();
+    const numericDownloadedAt = Number(parsed.downloaded_at);
+    const downloadedAt = Number.isFinite(numericDownloadedAt) && numericDownloadedAt > 0
+      ? numericDownloadedAt
+      : Date.parse(String(parsed.downloaded_at || ""));
+    if (!runId || !fileName || !Number.isFinite(downloadedAt) || downloadedAt <= 0) return null;
+    return {
+      run_id: runId,
+      file_name: fileName,
+      downloaded_at: downloadedAt
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveExportDownloadState(state) {
+  try {
+    if (!state?.run_id || !state?.file_name || !state?.downloaded_at) {
+      localStorage.removeItem(PIPELINE_EXPORT_DOWNLOAD_KEY);
+      return;
+    }
+    localStorage.setItem(PIPELINE_EXPORT_DOWNLOAD_KEY, JSON.stringify({
+      run_id: String(state.run_id),
+      file_name: String(state.file_name),
+      downloaded_at: Number(state.downloaded_at)
+    }));
+  } catch (e) {
+    // ignore
   }
 }
 
@@ -179,6 +219,34 @@ export function createPipelineState(app) {
     }
 
     return buildStoredRunStatus(latestCompletedRun);
+  }
+
+  function getCurrentExportRunId() {
+    const liveStatus = app.state.pipelineStatus;
+    const liveState = String(liveStatus?.status || "").toLowerCase();
+    if (liveStatus?.run_id && (liveState === "running" || liveState === "completed")) {
+      return String(liveStatus.run_id);
+    }
+    const latestCompletedRun = getLatestCompletedRunStatus();
+    return latestCompletedRun?.run_id || "";
+  }
+
+  function markPipelineExportDownloaded(fileName) {
+    const normalized = String(fileName || "").trim().toLowerCase();
+    if (!normalized) return;
+    if (normalized !== "final_results.csv" && normalized !== "results.csv") return;
+
+    const runId = getCurrentExportRunId();
+    if (!runId) return;
+    saveExportDownloadState({
+      run_id: runId,
+      file_name: normalized,
+      downloaded_at: Date.now()
+    });
+  }
+
+  function getPipelineExportDownloadState() {
+    return loadExportDownloadState();
   }
 
   function getPipelinePanelSnapshot(status) {
@@ -354,10 +422,20 @@ export function createPipelineState(app) {
   return {
     buildRunHistoryRows,
     getPipelinePanelSnapshot,
+    getPipelineExportDownloadState,
     markPipelineDashboardStale: saveDashboardMutationAt,
+    markPipelineExportDownloaded,
     getLatestCompletedRunStatus,
     getRunSurfaceConfigs,
     applyDateFilter,
     restoreDateFilter
   };
+}
+
+export function getPipelineDashboardMutationAt() {
+  return loadDashboardMutationAt();
+}
+
+export function getPipelineExportDownloadState() {
+  return loadExportDownloadState();
 }

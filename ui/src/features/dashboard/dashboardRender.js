@@ -14,6 +14,66 @@ export function createDashboardRender(app, chartsApi) {
     return app.features.pipeline?.getLatestCompletedRunStatus?.() || null;
   }
 
+  function resolveDashboardUploadSnapshot(displayStatus) {
+    const manualUploadSnapshot = app.features.drive?.getManualUploadSnapshot?.();
+    if (manualUploadSnapshot && (
+      manualUploadSnapshot.status !== "idle" ||
+      manualUploadSnapshot.last_result ||
+      manualUploadSnapshot.queue_count > 0 ||
+      manualUploadSnapshot.image_count > 0
+    )) {
+      return manualUploadSnapshot;
+    }
+
+    const driveSyncState = app.state.driveSyncState || {};
+    const driveSyncStatus = String(driveSyncState.status || "idle").toLowerCase();
+    const hasDriveSyncProgress =
+      driveSyncStatus === "syncing" ||
+      Number(driveSyncState.downloaded_count || 0) > 0 ||
+      Number(driveSyncState.discovered_count || 0) > 0 ||
+      driveSyncState.source_ready ||
+      ["completed", "failed", "cancelled", "stopped", "paused"].includes(driveSyncStatus);
+
+    if (!hasDriveSyncProgress) return null;
+
+    const done = Number(driveSyncState.downloaded_count || driveSyncState.discovered_count || 0);
+    const total = Number(driveSyncState.discovered_count || driveSyncState.requested_total || 0) || null;
+    const percent = Number.isFinite(Number(driveSyncState.progress_percent))
+      ? Number(driveSyncState.progress_percent)
+      : total && total > 0
+        ? Math.round((done / total) * 100)
+        : 0;
+
+    return {
+      status: driveSyncStatus,
+      percent,
+      done,
+      total,
+      image_count: done,
+      updated_at: driveSyncState.finished_at || driveSyncState.started_at || null
+    };
+  }
+
+  function resolveDashboardReviewSnapshot() {
+    const items = Array.isArray(app.state.reviewItems) ? app.state.reviewItems : [];
+    const total = items.length;
+    if (!total) return null;
+    const reviewed = items.filter((item) => item.status === "confirmed" || item.status === "flagged").length;
+    return {
+      total,
+      reviewed,
+      percent: Math.round((reviewed / total) * 100)
+    };
+  }
+
+  function resolveDashboardExportSnapshot(exportSummary = app.state.exportData) {
+    return {
+      ready: Boolean(exportSummary?.files?.length),
+      files: exportSummary?.files || [],
+      downloadState: app.features.pipeline?.getPipelineExportDownloadState?.() || null
+    };
+  }
+
   function animateValue(element, start, end, duration, format) {
     const startTime = performance.now();
     function update(now) {
@@ -73,8 +133,14 @@ export function createDashboardRender(app, chartsApi) {
         : "";
   }
 
-  function renderDashboardPipelineState(status) {
-    const pipelineState = buildDashboardPipelineState(resolveDashboardPipelineStatus(status));
+  function renderDashboardPipelineState(status, exportSummary = app.state.exportData) {
+    const displayStatus = resolveDashboardPipelineStatus(status);
+    const pipelineState = buildDashboardPipelineState({
+      pipelineStatus: displayStatus,
+      uploadSnapshot: resolveDashboardUploadSnapshot(displayStatus),
+      reviewSnapshot: resolveDashboardReviewSnapshot(),
+      exportSnapshot: resolveDashboardExportSnapshot(exportSummary)
+    });
     const flowFill = document.getElementById("pipeline-flow-fill");
     const stepElements = document.querySelectorAll("#page-dashboard .pipeline-step");
 
@@ -154,12 +220,12 @@ export function createDashboardRender(app, chartsApi) {
     chartsApi.buildSpeciesDonut([{ value: animalShare, color: "#DD6B20" }, { value: otherShare, color: "#CBD5E0" }]);
     renderDashboardExportChips(exportFiles);
     renderDashboardActivity(summary, validation, exportSummary, displayPipelineStatus);
-    renderDashboardPipelineState(displayPipelineStatus);
+    renderDashboardPipelineState(displayPipelineStatus, exportSummary);
   }
 
   function applyDashboardPipelineState(status) {
     const displayPipelineStatus = resolveDashboardPipelineStatus(status);
-    renderDashboardPipelineState(displayPipelineStatus);
+    renderDashboardPipelineState(displayPipelineStatus, app.state.exportData);
     renderDashboardActivity(
       app.state.dashboardSummary,
       app.state.validationData,

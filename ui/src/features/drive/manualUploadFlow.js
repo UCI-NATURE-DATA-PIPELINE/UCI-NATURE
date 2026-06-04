@@ -456,6 +456,49 @@ export function createManualUploadFlow(app) {
     return "Ready";
   }
 
+  function getManualUploadSnapshot() {
+    const totalImages = totalKnownImages();
+    const isActive = Boolean(state.isUploading);
+    const hasResult = Boolean(state.lastResult);
+    const status = isActive
+      ? "uploading"
+      : state.error
+        ? "failed"
+        : state.stopped
+          ? "stopped"
+          : hasResult
+            ? "completed"
+            : "idle";
+    const percent = isActive
+      ? Math.max(0, Math.min(100, Math.round(Number(state.progress) || 0)))
+      : hasResult
+        ? 100
+        : 0;
+    const done = isActive
+      ? Math.max(0, Math.min(totalImages || 0, Math.round((percent / 100) * (totalImages || 0))))
+      : hasResult
+        ? Number(state.lastResult.uploaded_count || totalImages || 0)
+        : 0;
+    const total = hasResult
+      ? Number(state.lastResult.uploaded_count || totalImages || 0)
+      : totalImages || null;
+
+    return {
+      status,
+      percent,
+      done,
+      total,
+      queue_count: totalQueueCount(),
+      image_count: totalImages || 0,
+      error: state.error || "",
+      stopped: state.stopped,
+      started_at: state._uploadStartedAt || null,
+      finished_at: state._uploadEndedAt || null,
+      updated_at: state._uploadEndedAt || state._uploadStartedAt || null,
+      last_result: state.lastResult || null
+    };
+  }
+
   function renderSummaryCards() {
     const els = elements();
     refreshSiteDetection();
@@ -1268,6 +1311,7 @@ export function createManualUploadFlow(app) {
       return;
     }
 
+    app.features.pipeline?.markPipelineDashboardStale?.();
     state.error = "";
     state.lastResult = null;
     state.stopped = false;
@@ -1295,6 +1339,7 @@ export function createManualUploadFlow(app) {
   }
 
   function clearFiles() {
+    app.features.pipeline?.markPipelineDashboardStale?.();
     state.batches = [];
     state.selectedBatchId = "";
     state.error = "";
@@ -1351,6 +1396,7 @@ export function createManualUploadFlow(app) {
     state.lastResult = null;
     state._uploadStartedAt = Date.now();
     state._uploadEndedAt = null;
+    app.features.pipeline?.markPipelineDashboardStale?.();
     const uploadAbortController = new AbortController();
     state._uploadAbortController = uploadAbortController;
     render();
@@ -1774,5 +1820,5 @@ export function createManualUploadFlow(app) {
     app.showToast?.("Upload stopped. Resume when ready.", "warn");
   }
 
-  return { initialize, refresh, startUpload, clearFiles, cancelManualUpload };
+  return { initialize, refresh, startUpload, clearFiles, cancelManualUpload, getManualUploadSnapshot };
 }

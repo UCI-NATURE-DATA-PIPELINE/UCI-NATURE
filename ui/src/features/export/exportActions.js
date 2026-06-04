@@ -97,6 +97,8 @@ export function createExportActions(app, api, renderApi) {
     try {
       app.showToast(`Downloading ${fileName}…`, "");
       await api.downloadExportFile(fileName);
+      app.features.pipeline?.markPipelineExportDownloaded?.(fileName);
+      app.features.dashboard?.applyDashboardPipelineState?.(app.state.pipelineStatus);
       app.showToast(`${fileName} downloaded`, "success");
     } catch (error) {
       app.showToast(error.message || `Failed to download ${fileName}`, "warn");
