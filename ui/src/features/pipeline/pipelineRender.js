@@ -24,7 +24,6 @@ export function createPipelineRender(app, stateApi) {
     const stopButton = document.getElementById(surface.stopButtonId);
     const label = document.getElementById(surface.labelId);
     const note = document.getElementById(surface.noteId);
-    const noteCard = document.getElementById(surface.noteCardId);
     const panel = document.getElementById(surface.panelId);
     const progressLabel = document.getElementById(surface.progressLabelId);
     const fill = document.getElementById(surface.fillId);
@@ -61,9 +60,6 @@ export function createPipelineRender(app, stateApi) {
       else if (state === "cancelled") note.textContent = `Last run ${status.run_id} was stopped.`;
       else if (isFailed) note.textContent = status.error ? `Last run ${status.run_id} failed: ${status.error}` : `Last run ${status.run_id} failed.`;
       else note.textContent = surface.kind === "drive" || app.state.uploadTab === "drive" ? app.features.drive.getDriveRunIdleNote() : "Click Run to start pipeline.";
-    }
-    if (noteCard) {
-      noteCard.hidden = isRunning;
     }
     if (panel) {
       panel.style.display = isVisible ? "block" : "none";

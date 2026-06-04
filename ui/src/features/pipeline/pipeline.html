@@ -81,18 +81,11 @@
               <span id="run-btn-label">Run Detection &amp; Classification</span>
             </button>
             <button class="run-model-btn running" id="run-stop-btn" onclick="cancelPipelineRun()" style="display:none">Stop</button>
+            <span class="has-tooltip run-row-tooltip">
+              <span class="help-icon help-icon-yellow">!</span>
+              <span class="tooltip-box">If Stop still reports another run in progress, wait a few minutes and try again. The backend can take a few minutes to come to a complete stop.</span>
+            </span>
             <span style="font-size:12.5px;color:var(--muted)" id="run-ready-note">-- images ready to process</span>
-            <div class="upload-note-card run-timestamp-note" id="run-timestamp-note" hidden>
-              <div class="upload-note-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D69E2E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"/>
-                  <line x1="12" y1="8" x2="12" y2="12"/>
-                  <line x1="12" y1="16" x2="12.01" y2="16"/>
-                </svg>
-                Note
-              </div>
-              <div class="upload-note-text">If Stop still reports another run in progress, wait a few minutes and try again. The backend can take a few minutes to come to a complete stop.</div>
-            </div>
           </div>
 
 
@@ -107,18 +100,11 @@
               <span id="drive-run-btn-label">Run Pipeline (Drive Source)</span>
             </button>
             <button class="run-model-btn running" id="drive-run-stop-btn" onclick="cancelPipelineRun()" style="display:none">Stop</button>
+            <span class="has-tooltip run-row-tooltip">
+              <span class="help-icon help-icon-yellow">!</span>
+              <span class="tooltip-box">If Stop still reports another run in progress, wait a few minutes and try again. The backend can take a few minutes to come to a complete stop.</span>
+            </span>
             <span style="font-size:12.5px;color:var(--muted)" id="drive-run-note"></span>
-            <div class="upload-note-card run-timestamp-note" id="drive-timestamp-note" hidden>
-              <div class="upload-note-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D69E2E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"/>
-                  <line x1="12" y1="8" x2="12" y2="12"/>
-                  <line x1="12" y1="16" x2="12.01" y2="16"/>
-                </svg>
-                Note
-              </div>
-              <div class="upload-note-text">If Stop still reports another run in progress, wait a few minutes and try again. The backend can take a few minutes to come to a complete stop.</div>
-            </div>
           </div>
 
           <!-- Progress panel — hidden until run starts -->

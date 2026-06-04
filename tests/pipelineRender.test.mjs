@@ -8,8 +8,6 @@ test("run model progress card hides after the pipeline reaches a terminal state"
   assert.match(RENDER, /const isVisible = isRunning \|\| isCompleted \|\| isFailed;/);
   assert.match(RENDER, /panel\.style\.display = isVisible \? "block" : "none";/);
   assert.match(RENDER, /const panelVisible = state === "running" \|\| state === "completed" \|\| state === "failed";/);
-  assert.match(RENDER, /const noteCard = document\.getElementById\(surface\.noteCardId\);/);
-  assert.match(RENDER, /noteCard\.hidden = isRunning;/);
   assert.match(RENDER, /panel\.classList\.remove\("state-running", "state-completed", "state-failed"\);/);
   assert.match(RENDER, /progressLabel\.textContent = isRunning \? status\?\.progress\?\.step \|\| "Processing images…" : isCompleted \? "Processing Complete" : isFailed \? "Pipeline Failed" : "No active pipeline run";/);
   assert.match(RENDER, /const terminalProcessedCount = Number\.isFinite\(Number\(metrics\.processedRows\)\) \? Number\(metrics\.processedRows\) : null;/);

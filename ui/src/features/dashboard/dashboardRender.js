@@ -189,17 +189,7 @@ export function createDashboardRender(app, chartsApi) {
     setDashboardStat("stat-animals-detected", animals);
     setDashboardStat("stat-pending-review", pendingReview);
     setDashboardStat("stat-warnings", warnings);
-    setText(
-      "stat-total-images-sub",
-      summary?.last_run?.batch
-        ? `Latest batch ${summary.last_run.batch}`
-        : summary?.last_run?.date
-          ? `Updated ${summary.last_run.date}`
-          : "Manifest total"
-    );
     setText("stat-processed-images-sub", total ? `${formatPercent(getPercent(processed, total))} complete` : "Awaiting run data");
-    setText("stat-animals-detected-sub", summary ? `${formatNumber(animals)} detections` : "Resolved outputs");
-    setText("stat-pending-review-sub", `${formatNumber(pendingReview)} open in queue`);
     setText("stat-warnings-sub", validation ? `${formatNumber(warnings)} validation issue${warnings === 1 ? "" : "s"}` : "Latest validation");
     setText("run-pct", formatPercent(runSuccess));
     document.getElementById("run-circle")?.setAttribute("stroke-dasharray", `${(Math.max(0, Math.min(100, runSuccess)) / 100) * 327} 327`);
