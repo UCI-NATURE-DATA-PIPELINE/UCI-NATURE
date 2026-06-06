@@ -41,7 +41,7 @@ export function createPipelineActions(app, api, renderApi, loadPipelineStatus, l
         source_mode: sourceMode,
         confidence_threshold: threshold,
         batch_size: batchSize,
-        remove_burst_duplicates: true,
+        remove_burst_duplicates: false,
         exclude_humans: true
       });
       app.state.runningModel = true;
