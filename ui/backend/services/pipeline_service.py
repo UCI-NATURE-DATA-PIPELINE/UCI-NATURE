@@ -62,7 +62,7 @@ class PipelineRunConfig:
     manifest_batch_size: int = 0
     speciesnet_batch_size: int = 8
     confidence_threshold: int = 80
-    remove_burst_duplicates: bool = True
+    remove_burst_duplicates: bool = False
     exclude_humans: bool = True
     ml_burst_window: int = 300
     burst_seconds: int = 300
