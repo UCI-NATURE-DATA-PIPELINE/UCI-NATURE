@@ -254,7 +254,7 @@ class RunPipelineRequest(BaseModel):
     ml_burst_window: int = 300
     burst_seconds: int = 300
     burst_export: str = "all"
-    remove_burst_duplicates: bool = True
+    remove_burst_duplicates: bool = False
     exclude_humans: bool = True
 
 
@@ -1160,7 +1160,7 @@ def _latest_output_settings() -> dict:
     latest_state = _latest_pipeline_state()
     payload = latest_state.get("payload") if isinstance(latest_state.get("payload"), dict) else {}
     burst_export = normalize_burst_export(payload.get("burst_export", "all"))
-    if payload.get("remove_burst_duplicates", True):
+    if payload.get("remove_burst_duplicates", False):
         burst_export = "first"
 
     return {
