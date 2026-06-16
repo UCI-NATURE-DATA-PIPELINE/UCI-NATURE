@@ -24,6 +24,7 @@ never see raw model labels, taxonomy strings, or debug fields.
 from __future__ import annotations
 
 import csv
+import math
 import re
 from collections import Counter, defaultdict
 from datetime import datetime
@@ -309,6 +310,12 @@ def _to_confidence(value) -> float:
         return 0.0
 
 
+def _truncate_confidence(value, digits: int = 2) -> float:
+    confidence = _to_confidence(value)
+    factor = 10 ** max(0, int(digits))
+    return math.floor(confidence * factor) / factor
+
+
 def _safe_int(value, default: int = 0) -> int:
     try:
         return int(float(value))
@@ -344,7 +351,14 @@ def _simplify_row(
 
     raw_species = _first_value(row, "Species", "species", "final_label", "resolved_label")
     normalized_species = normalize_species(raw_species)
-    raw_confidence = _first_value(row, "model_certainty", "confidence", "resolved_score", "score")
+    raw_confidence = _first_value(
+        row,
+        "model_certainty",
+        "prediction_score_raw",
+        "confidence",
+        "resolved_score",
+        "score",
+    )
     confidence_raw = _to_confidence(raw_confidence)
     raw_certainty = str(raw_confidence or "").strip()
     individuals = _safe_int(_first_value(row, "# of Individuals", "count", "animal_count"))
@@ -365,31 +379,31 @@ def _simplify_row(
         if normalized_species == "human":
             animal_detected = "no"
             species = "human"
-            confidence = round(confidence_raw, 2) if confidence_raw else 1.00
+            confidence = _truncate_confidence(confidence_raw)
         elif normalized_species == "vehicle":
             animal_detected = "no"
             species = "vehicle"
-            confidence = round(confidence_raw, 2) if confidence_raw else 1.00
+            confidence = _truncate_confidence(confidence_raw)
         else:
             animal_detected = "yes"
             species = normalized_species
-            confidence = round(confidence_raw, 2) if confidence_raw else 1.00
+            confidence = _truncate_confidence(confidence_raw)
     elif normalized_species == "human":
         animal_detected = "no"
         species = "human"
-        confidence = 0.00
+        confidence = _truncate_confidence(confidence_raw)
     elif normalized_species == "vehicle":
         animal_detected = "no"
         species = "vehicle"
-        confidence = 0.00
+        confidence = _truncate_confidence(confidence_raw)
     elif has_animal:
         animal_detected = "yes"
         species = normalized_species or ANIMAL_UNCLASSIFIED
-        confidence = round(confidence_raw, 2)
+        confidence = _truncate_confidence(confidence_raw)
     else:
         animal_detected = "no"
         species = "blank"
-        confidence = 0.00
+        confidence = _truncate_confidence(confidence_raw)
 
     low_conf = animal_detected == "yes" and confidence_raw < low_confidence_threshold and not is_human_reviewed
     unclassified = species == ANIMAL_UNCLASSIFIED and not is_human_reviewed

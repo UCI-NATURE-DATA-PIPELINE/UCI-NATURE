@@ -469,6 +469,44 @@ class PipelineBackendRefactorTests(unittest.TestCase):
         self.assertEqual(by_name["blank.jpg"]["animal_detected"], "no")
         self.assertEqual(by_name["blank.jpg"]["species"], "blank")
 
+    def test_simple_rows_truncate_confidence_without_rounding_or_zeroing_blank_rows(self) -> None:
+        rows = build_simple_rows(
+            [
+                {
+                    "local_file_name": "human.jpg",
+                    "camera": "CameraA",
+                    "date": "20260419",
+                    "time": "08:00:00",
+                    "has_animal": "0",
+                    "species": "human",
+                    "model_certainty": "0.93",
+                },
+                {
+                    "local_file_name": "animal.jpg",
+                    "camera": "CameraA",
+                    "date": "20260419",
+                    "time": "08:01:00",
+                    "has_animal": "1",
+                    "species": "coyote",
+                    "model_certainty": "0.999",
+                },
+                {
+                    "local_file_name": "blank.jpg",
+                    "camera": "CameraA",
+                    "date": "20260419",
+                    "time": "08:02:00",
+                    "has_animal": "0",
+                    "species": "blank",
+                    "prediction_score_raw": "0.36",
+                },
+            ]
+        )
+
+        by_name = {row["image_name"]: row for row in rows}
+        self.assertEqual(by_name["human.jpg"]["confidence"], "0.93")
+        self.assertEqual(by_name["animal.jpg"]["confidence"], "0.99")
+        self.assertEqual(by_name["blank.jpg"]["confidence"], "0.36")
+
     def test_resolve_source_root_distinguishes_manual_and_staging_modes(self) -> None:
         with tempfile.TemporaryDirectory() as manual_dir, tempfile.TemporaryDirectory() as staging_dir:
             manual_args = argparse.Namespace(mode="manual", folder=manual_dir)
