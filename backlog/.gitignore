@@ -1,0 +1,15 @@
+# Runtime files, never commit
+state.csv
+logs/
+outputs/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Secrets and environments
+secrets/
+.env
+*.pem
+.venv*/
